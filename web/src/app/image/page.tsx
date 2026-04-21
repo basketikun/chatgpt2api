@@ -486,7 +486,6 @@ export default function ImagePage() {
                     }}
                   >
                     Turn ideas into images
-
                   </h1>
                   <p
                     className="mt-4 text-[15px] italic tracking-[0.01em] text-stone-500"
@@ -501,7 +500,7 @@ export default function ImagePage() {
             ) : (
               <div className="mx-auto flex w-full max-w-[980px] flex-col gap-5">
                 <div className="flex justify-end">
-                  <div className="max-w-[80%] px-1 pt-1 text-right text-[15px] leading-8 text-stone-700">
+                  <div className="max-w-[80%] rounded-[22px] bg-stone-100 px-5 py-3 text-left text-[15px] leading-7 whitespace-pre-wrap text-stone-800">
                     {selectedConversation.prompt}
                   </div>
                 </div>
@@ -532,14 +531,17 @@ export default function ImagePage() {
                         <div className="mb-2 text-xs font-medium tracking-[0.12em] text-stone-400 uppercase">
                           Reference
                         </div>
-                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                        <div className="flex flex-wrap gap-3">
                           {selectedConversation.referenceImages.map((image) => (
-                            <div key={image.id} className="overflow-hidden rounded-[18px] border border-stone-200 bg-stone-50">
+                            <div
+                              key={image.id}
+                              className="w-[140px] overflow-hidden rounded-[16px] border border-stone-200 bg-stone-50"
+                            >
                               <Image
                                 src={image.data_url}
                                 alt={image.name}
-                                width={320}
-                                height={320}
+                                width={280}
+                                height={280}
                                 unoptimized
                                 className="block aspect-square h-auto w-full object-cover"
                               />
@@ -593,11 +595,11 @@ export default function ImagePage() {
 
           <div className="shrink-0 flex justify-center">
             <div
-              className="overflow-hidden rounded-[32px] border border-stone-200/80 bg-white shadow-[0_18px_48px_rgba(28,25,23,0.08)]"
+              className="overflow-hidden rounded-[32px] border border-stone-200/80 bg-white shadow-[0_18px_48px_rgba(28,25,23,0.08)] transition focus-within:border-stone-300 focus-within:shadow-[0_20px_56px_rgba(28,25,23,0.12)]"
               style={{ width: "min(980px, 100%)" }}
             >
               <div
-                className="relative cursor-text"
+                className="flex cursor-text flex-col"
                 onClick={() => {
                   textareaRef.current?.focus();
                 }}
@@ -615,7 +617,7 @@ export default function ImagePage() {
                       }
                     }
                   }}
-                  className="min-h-[148px] resize-none rounded-[32px] border-0 bg-transparent px-6 pt-6 pb-20 text-[15px] leading-7 text-stone-900 shadow-none placeholder:text-stone-400 focus-visible:ring-0"
+                  className="min-h-[120px] resize-none rounded-none border-0 bg-transparent px-6 pt-6 pb-4 text-[15px] leading-7 text-stone-900 shadow-none placeholder:text-stone-400 focus-visible:ring-0"
                 />
 
                 <input
@@ -631,38 +633,44 @@ export default function ImagePage() {
                 />
 
                 {referenceImages.length > 0 ? (
-                  <div className="absolute inset-x-0 bottom-20 flex gap-3 overflow-x-auto px-6 pb-2">
-                    {referenceImages.map((image) => (
-                      <div
-                        key={image.id}
-                        className="relative h-20 w-20 shrink-0 overflow-hidden rounded-2xl border border-stone-200 bg-stone-100"
-                      >
-                        <Image
-                          src={image.data_url}
-                          alt={image.name}
-                          width={160}
-                          height={160}
-                          unoptimized
-                          className="h-full w-full object-cover"
-                        />
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            handleRemoveReferenceImage(image.id);
-                          }}
-                          className="absolute top-1 right-1 inline-flex size-6 items-center justify-center rounded-full bg-black/60 text-white transition hover:bg-black/80"
-                          aria-label={`删除参考图 ${image.name}`}
+                  <div className="border-t border-stone-100 px-5 pt-3 pb-3 sm:px-6">
+                    <div className="mb-2 flex items-center gap-2 text-[11px] font-medium tracking-[0.1em] text-stone-400 uppercase">
+                      <span>Reference</span>
+                      <span className="text-stone-300">{referenceImages.length}/4</span>
+                    </div>
+                    <div className="flex gap-3 overflow-x-auto pb-1">
+                      {referenceImages.map((image) => (
+                        <div
+                          key={image.id}
+                          className="relative h-20 w-20 shrink-0 overflow-hidden rounded-2xl border border-stone-200 bg-stone-100"
                         >
-                          <X className="size-3.5" />
-                        </button>
-                      </div>
-                    ))}
+                          <Image
+                            src={image.data_url}
+                            alt={image.name}
+                            width={160}
+                            height={160}
+                            unoptimized
+                            className="h-full w-full object-cover"
+                          />
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleRemoveReferenceImage(image.id);
+                            }}
+                            className="absolute top-1 right-1 inline-flex size-6 items-center justify-center rounded-full bg-black/60 text-white transition hover:bg-black/80"
+                            aria-label={`删除参考图 ${image.name}`}
+                          >
+                            <X className="size-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ) : null}
 
-                <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-white via-white/95 to-transparent px-4 pb-4 pt-10 sm:px-6">
-                  <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-stone-100 px-4 py-3 sm:px-6">
+                  <div className="flex flex-wrap items-center gap-2">
                     <div className="rounded-full bg-stone-100 px-3 py-2 text-xs font-medium text-stone-600">
                       剩余额度 {availableQuota}
                     </div>
@@ -691,7 +699,7 @@ export default function ImagePage() {
                       </SelectContent>
                     </Select>
 
-                    <div className="flex items-center gap-2 rounded-full border border-stone-200 bg-white px-3 py-1">
+                    <div className="flex h-10 items-center gap-2 rounded-full border border-stone-200 bg-white px-3">
                       <span className="text-sm font-medium text-stone-700">张数</span>
                       <Input
                         type="number"
@@ -700,7 +708,7 @@ export default function ImagePage() {
                         step="1"
                         value={imageCount}
                         onChange={(event) => setImageCount(event.target.value)}
-                        className="h-8 w-[64px] border-0 bg-transparent px-0 text-center text-sm font-medium text-stone-700 shadow-none focus-visible:ring-0"
+                        className="h-8 w-[56px] border-0 bg-transparent px-0 text-center text-sm font-medium text-stone-700 shadow-none focus-visible:ring-0"
                       />
                     </div>
                   </div>
