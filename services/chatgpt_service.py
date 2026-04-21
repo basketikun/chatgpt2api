@@ -121,6 +121,8 @@ class ChatGPTService:
         index: int,
         total: int,
         input_images: list[InputImage] | None = None,
+        *,
+        response_format: str = "b64_json",
     ) -> dict[str, object]:
         while True:
             try:
@@ -132,7 +134,16 @@ class ChatGPTService:
             print(f"[image-generate] start pooled token={request_token[:12]}... model={model} index={index}/{total}")
             started_at = time.perf_counter()
             try:
-                result = generate_image_result(request_token, prompt, model, input_images=input_images)
+                if response_format == "b64_json":
+                    result = generate_image_result(request_token, prompt, model, input_images=input_images)
+                else:
+                    result = generate_image_result(
+                        request_token,
+                        prompt,
+                        model,
+                        input_images=input_images,
+                        response_format=response_format,
+                    )
                 upstream_model = str(result.get("upstream_model") or "").strip() or None
                 account = self.account_service.mark_image_result(request_token, success=True)
                 print(
@@ -183,6 +194,8 @@ class ChatGPTService:
         index: int,
         total: int,
         input_images: list[InputImage] | None = None,
+        *,
+        response_format: str = "b64_json",
     ) -> dict[str, object]:
         attempted_tokens: set[str] = set()
         while True:
@@ -194,7 +207,16 @@ class ChatGPTService:
             print(f"[image-generate] start cpa token={request_token[:12]}... model={model} index={index}/{total}")
             started_at = time.perf_counter()
             try:
-                result = generate_image_result(request_token, prompt, model, input_images=input_images)
+                if response_format == "b64_json":
+                    result = generate_image_result(request_token, prompt, model, input_images=input_images)
+                else:
+                    result = generate_image_result(
+                        request_token,
+                        prompt,
+                        model,
+                        input_images=input_images,
+                        response_format=response_format,
+                    )
                 upstream_model = str(result.get("upstream_model") or "").strip() or None
                 # Also update local account metrics if this token is tracked locally
                 self.account_service.mark_image_result(request_token, success=True)
@@ -238,15 +260,31 @@ class ChatGPTService:
         model: str,
         n: int,
         input_images: list[InputImage] | None = None,
+        *,
+        response_format: str = "b64_json",
     ):
         created = None
         image_items: list[dict[str, object]] = []
 
         for index in range(1, n + 1):
             if cpa_service.enabled:
-                result = self._generate_single_image_with_cpa(prompt, model, index, n, input_images)
+                result = self._generate_single_image_with_cpa(
+                    prompt,
+                    model,
+                    index,
+                    n,
+                    input_images,
+                    response_format=response_format,
+                )
             else:
-                result = self._generate_single_image_with_local_pool(prompt, model, index, n, input_images)
+                result = self._generate_single_image_with_local_pool(
+                    prompt,
+                    model,
+                    index,
+                    n,
+                    input_images,
+                    response_format=response_format,
+                )
 
             if created is None:
                 created = result.get("created")
@@ -273,7 +311,16 @@ class ChatGPTService:
         input_images = self._extract_preparsed_input_images(body, require_input_images=require_input_images)
 
         try:
-            image_result = self.generate_with_pool(prompt, model, n, input_images)
+            if response_format == "b64_json":
+                image_result = self.generate_with_pool(prompt, model, n, input_images)
+            else:
+                image_result = self.generate_with_pool(
+                    prompt,
+                    model,
+                    n,
+                    input_images,
+                    response_format=response_format,
+                )
         except ImageGenerationError as exc:
             raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
         return self._format_image_generation_result(image_result, response_format=response_format)

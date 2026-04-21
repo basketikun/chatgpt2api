@@ -78,3 +78,32 @@ def test_generate_single_image_with_local_pool_logs_upstream_model_on_failures(m
     assert account_service.mark_calls == [("token-1234567890abcdef", False)]
     assert captured["success"] is False
     assert captured["upstream_model"] == "gpt-5-3"
+
+
+def test_create_image_generation_forwards_url_response_format(monkeypatch) -> None:
+    account_service = _FakeAccountService()
+    service = ChatGPTService(account_service)
+    captured: dict[str, object] = {}
+
+    def _fake_generate_with_pool(prompt, model, n, input_images=None, response_format="b64_json"):
+        captured["prompt"] = prompt
+        captured["model"] = model
+        captured["n"] = n
+        captured["response_format"] = response_format
+        return {
+            "created": 1,
+            "data": [{"url": "https://example.com/generated.png", "revised_prompt": prompt}],
+        }
+
+    monkeypatch.setattr(service, "generate_with_pool", _fake_generate_with_pool)
+
+    result = service.create_image_generation(
+        {
+            "prompt": "生成一张电影海报",
+            "model": "gpt-image-2",
+            "response_format": "url",
+        }
+    )
+
+    assert result["data"][0]["url"] == "https://example.com/generated.png"
+    assert captured["response_format"] == "url"

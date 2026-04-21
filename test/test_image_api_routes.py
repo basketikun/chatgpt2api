@@ -70,11 +70,12 @@ def test_images_edits_route_accepts_multipart_file(monkeypatch) -> None:
         b"\x00\x00\x00\x00IEND\xaeB`\x82"
     )
 
-    def fake_generate_with_pool(self, prompt, model, n, input_images=None):
+    def fake_generate_with_pool(self, prompt, model, n, input_images=None, response_format="b64_json"):
         captured["prompt"] = prompt
         captured["model"] = model
         captured["n"] = n
         captured["input_images"] = input_images or []
+        captured["response_format"] = response_format
         return {"created": 5, "data": [{"b64_json": "ZmFrZQ==", "revised_prompt": prompt, "url": "https://example.com/image.png"}]}
 
     monkeypatch.setattr(api_module, "start_limited_account_watcher", lambda stop_event: _DummyThread())
@@ -98,12 +99,16 @@ def test_images_edits_route_accepts_multipart_file(monkeypatch) -> None:
     assert captured["model"] == "gpt-image-2"
     assert captured["n"] == 1
     assert len(captured["input_images"]) == 1
+    assert captured["response_format"] == "url"
     assert payload["data"][0]["url"] == "https://example.com/image.png"
     assert "b64_json" not in payload["data"][0]
 
 
 def test_images_generation_route_honors_url_response_format(monkeypatch) -> None:
-    def fake_generate_with_pool(self, prompt, model, n, input_images=None):
+    captured: dict[str, object] = {}
+
+    def fake_generate_with_pool(self, prompt, model, n, input_images=None, response_format="b64_json"):
+        captured["response_format"] = response_format
         return {
             "created": 6,
             "data": [
@@ -131,6 +136,7 @@ def test_images_generation_route_honors_url_response_format(monkeypatch) -> None
 
     payload = response.json()
     assert response.status_code == 200
+    assert captured["response_format"] == "url"
     assert payload["data"][0]["url"] == "https://example.com/generated.png"
     assert "b64_json" not in payload["data"][0]
 

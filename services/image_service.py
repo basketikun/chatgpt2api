@@ -7,7 +7,7 @@ import random
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Optional
+from typing import Callable, Optional
 
 from curl_cffi.requests import Session
 from curl_cffi.requests.exceptions import RequestException
@@ -565,17 +565,42 @@ def _fetch_download_url(session: Session, access_token: str, device_id: str, con
     return str((response.json() or {}).get("download_url") or "")
 
 
-def _download_as_base64(session: Session, download_url: str) -> str:
+def _build_download_error_detail(response) -> str:
+    status = getattr(response, "status_code", 0)
+    content = response.content or b""
+    detail = f"status={status} bytes={len(content)}"
+    headers = getattr(response, "headers", {}) or {}
+    content_type = str(headers.get("content-type") or "").strip()
+    if content_type:
+        detail += f" content_type={content_type}"
+    if content:
+        preview = content[:120].decode("utf-8", errors="replace")
+        preview = " ".join(preview.split())
+        if preview:
+            detail += f" body={preview[:80]}"
+    return detail
+
+
+def _download_as_base64(
+    session: Session,
+    download_url: str,
+    *,
+    refresh_download_url: Callable[[], str] | None = None,
+) -> str:
     max_attempts = 3
     last_detail = "unknown"
+    current_download_url = download_url
     for attempt in range(1, max_attempts + 1):
         try:
-            response = session.get(download_url, timeout=(10, 120))
-            status = getattr(response, "status_code", 0)
+            response = session.get(current_download_url, timeout=(10, 120))
             content = response.content or b""
             if response.ok and content:
                 return base64.b64encode(content).decode("ascii")
-            last_detail = f"status={status} bytes={len(content)}"
+            last_detail = _build_download_error_detail(response)
+            if attempt < max_attempts and refresh_download_url is not None:
+                refreshed_url = str(refresh_download_url() or "").strip()
+                if refreshed_url:
+                    current_download_url = refreshed_url
         except RequestException as exc:
             last_detail = f"exception={type(exc).__name__}: {exc}"
         print(
@@ -604,13 +629,18 @@ def generate_image_result(
     prompt: str,
     model: str = DEFAULT_MODEL,
     input_images: list[InputImage] | None = None,
+    *,
+    response_format: str = "b64_json",
 ) -> dict:
     prompt = str(prompt or "").strip()
     access_token = str(access_token or "").strip()
+    response_format = str(response_format or "b64_json").strip().lower() or "b64_json"
     if not prompt:
         raise ImageGenerationError("prompt is required")
     if not access_token:
         raise ImageGenerationError("token is required")
+    if response_format not in {"b64_json", "url"}:
+        raise ImageGenerationError(f"unsupported response format: {response_format}")
 
     session, fp = _new_session(access_token)
     try:
@@ -659,8 +689,29 @@ def generate_image_result(
         download_url = _fetch_download_url(session, access_token, device_id, actual_conversation_id, first_file_id)
         if not download_url:
             raise ImageGenerationError("failed to get download url")
+        b64_json = ""
+        if response_format == "b64_json":
+            current_download_url = download_url
+
+            def _refresh_download_url() -> str:
+                nonlocal current_download_url
+                current_download_url = _fetch_download_url(
+                    session,
+                    access_token,
+                    device_id,
+                    actual_conversation_id,
+                    first_file_id,
+                )
+                return current_download_url
+
+            b64_json = _download_as_base64(
+                session,
+                current_download_url,
+                refresh_download_url=_refresh_download_url,
+            )
+            download_url = current_download_url
         result = GeneratedImage(
-            b64_json=_download_as_base64(session, download_url),
+            b64_json=b64_json,
             revised_prompt=prompt,
             url=download_url,
         )
