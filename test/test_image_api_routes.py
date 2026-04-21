@@ -59,6 +59,7 @@ def test_chat_completions_accepts_image_inputs(monkeypatch) -> None:
 
     def fake_generate_with_pool(self, prompt, model, n, input_images=None):
         captured["prompt"] = prompt
+        captured["model"] = model
         captured["input_images"] = input_images or []
         return {"created": 2, "data": [{"b64_json": "ZmFrZQ==", "revised_prompt": prompt}]}
 
@@ -85,7 +86,48 @@ def test_chat_completions_accepts_image_inputs(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert captured["prompt"] == "参考这张图，改成漫画"
+    assert captured["model"] == "gpt-image-1"
     assert len(captured["input_images"]) == 1
+    assert response.json()["choices"][0]["message"]["images"][0]["b64_json"] == "ZmFrZQ=="
+
+
+def test_chat_completions_accepts_non_image_model_when_message_has_image_inputs(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_generate_with_pool(self, prompt, model, n, input_images=None):
+        captured["prompt"] = prompt
+        captured["model"] = model
+        captured["input_images"] = input_images or []
+        return {"created": 4, "data": [{"b64_json": "ZmFrZQ==", "revised_prompt": prompt}]}
+
+    monkeypatch.setattr(api_module, "start_limited_account_watcher", lambda stop_event: _DummyThread())
+    monkeypatch.setattr(ChatGPTService, "generate_with_pool", fake_generate_with_pool)
+
+    with TestClient(create_app()) as client:
+        response = client.post(
+            "/v1/chat/completions",
+            headers=_auth_headers(),
+            json={
+                "model": "gpt-4.1",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "按这张图的主体生成新海报"},
+                            {"type": "image_url", "image_url": {"url": PNG_DATA_URL}},
+                        ],
+                    }
+                ],
+            },
+        )
+
+    payload = response.json()
+    assert response.status_code == 200
+    assert captured["prompt"] == "按这张图的主体生成新海报"
+    assert captured["model"] == "gpt-image-1"
+    assert len(captured["input_images"]) == 1
+    assert payload["model"] == "gpt-4.1"
+    assert payload["choices"][0]["message"]["images"][0]["b64_json"] == "ZmFrZQ=="
 
 
 def test_responses_accepts_input_image(monkeypatch) -> None:

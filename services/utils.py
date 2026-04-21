@@ -45,6 +45,8 @@ def is_image_chat_request(body: dict[str, object]) -> bool:
     if isinstance(modalities, list):
         normalized = {str(item or "").strip().lower() for item in modalities}
         return "image" in normalized
+    if has_chat_image_inputs(body):
+        return True
     return False
 
 
@@ -307,6 +309,37 @@ def _extract_prompt_and_images_from_message_content(content: object) -> tuple[li
     return prompt_parts, images
 
 
+def _message_content_has_image_inputs(content: object) -> bool:
+    if not isinstance(content, list):
+        return False
+    for item in content:
+        if not isinstance(item, dict):
+            continue
+        item_type = str(item.get("type") or "").strip()
+        if item_type in {"image_url", "input_image"}:
+            return True
+    return False
+
+
+def has_chat_image_inputs(body: dict[str, object]) -> bool:
+    if body.get("image") is not None or body.get("images") is not None:
+        return True
+
+    messages = body.get("messages")
+    if not isinstance(messages, list):
+        return False
+
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        role = str(message.get("role") or "").strip().lower()
+        if role != "user":
+            continue
+        if _message_content_has_image_inputs(message.get("content")):
+            return True
+    return False
+
+
 def extract_prompt_from_message_content(content: object) -> str:
     prompt_parts, _ = _extract_prompt_and_images_from_message_content(content)
     return "\n".join(prompt_parts).strip()
@@ -402,6 +435,7 @@ def build_chat_image_completion(
     image_items = image_result.get("data") if isinstance(image_result.get("data"), list) else []
 
     markdown_images = []
+    output_images = []
 
     for index, item in enumerate(image_items, start=1):
         if not isinstance(item, dict):
@@ -411,6 +445,12 @@ def build_chat_image_completion(
             continue
         image_data_url = f"data:image/png;base64,{b64_json}"
         markdown_images.append(f"![image_{index}]({image_data_url})")
+        output_images.append(
+            {
+                "b64_json": b64_json,
+                "revised_prompt": str(item.get("revised_prompt") or prompt).strip(),
+            }
+        )
 
     text_content = "\n\n".join(markdown_images) if markdown_images else "Image generation completed."
 
@@ -425,6 +465,7 @@ def build_chat_image_completion(
                 "message": {
                     "role": "assistant",
                     "content": text_content,
+                    "images": output_images,
                 },
                 "finish_reason": "stop",
             }

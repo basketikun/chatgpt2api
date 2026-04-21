@@ -140,18 +140,19 @@ class ChatGPTService:
         if bool(body.get("stream")):
             raise HTTPException(status_code=400, detail={"error": "stream is not supported for image generation"})
 
-        model = str(body.get("model") or "gpt-image-1").strip() or "gpt-image-1"
+        requested_model = str(body.get("model") or "gpt-image-1").strip() or "gpt-image-1"
+        generation_model = requested_model if requested_model in {"gpt-image-1", "gpt-image-2"} else "gpt-image-1"
         n = parse_image_count(body.get("n"))
         prompt, input_images = extract_chat_prompt_and_images(body)
         if not prompt:
             raise HTTPException(status_code=400, detail={"error": "prompt is required"})
 
         try:
-            image_result = self.generate_with_pool(prompt, model, n, input_images)
+            image_result = self.generate_with_pool(prompt, generation_model, n, input_images)
         except ImageGenerationError as exc:
             raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
 
-        return build_chat_image_completion(model, prompt, image_result)
+        return build_chat_image_completion(requested_model, prompt, image_result)
 
     def create_response(self, body: dict[str, object]) -> dict[str, object]:
         if bool(body.get("stream")):

@@ -85,7 +85,7 @@ POST /v1/responses
 说明：
 
 - `/v1/images/edits` 当前支持 JSON 方式传入参考图，`image` 或 `images` 都可以，值支持远程 URL 或 data URL。
-- `/v1/chat/completions` 支持在 `messages[].content` 里带 `image_url`。
+- `/v1/chat/completions` 支持在 `messages[].content` 里带 `image_url`，即使 `model` 不是 `gpt-image-*`，只要消息里有图片附件也会按生图请求处理。
 - `/v1/responses` 支持在 `input[].content` 里带 `input_image`。
 
 ## 部署
