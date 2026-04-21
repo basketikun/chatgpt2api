@@ -1,6 +1,6 @@
 {
-  "last_turn_at": "2026-04-21T10:09:13.403Z",
-  "turn_count": 9,
-  "last_progress_at": "2026-04-21T10:09:13.403Z",
-  "last_agent_output": "这个日志报错已经修掉了，根因不是图生图主流程失败，而是 FastAPI 在处理某个请求校验错误时，把错误详情里的原始二进制 `bytes` 当 UTF-8 去编码，结果异常处理器自己崩了。主修复在 ["
+  "last_turn_at": "2026-04-21T11:20:02.702Z",
+  "turn_count": 11,
+  "last_progress_at": "2026-04-21T11:20:02.702Z",
+  "last_agent_output": "图片编辑链路的 `HTTP/2 stream ... INTERNAL_ERROR` 现在不会再以未处理异常炸成 500 了。\n\n**结果**\n- [services/image_service.py"
 }

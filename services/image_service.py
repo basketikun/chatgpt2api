@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from curl_cffi.requests import Session
+from curl_cffi.requests.exceptions import RequestException
 
 from services.account_service import account_service
 from services import proof_of_work
@@ -421,7 +422,20 @@ def _parse_sse(response) -> dict:
     file_ids: list[str] = []
     conversation_id = ""
     text_parts: list[str] = []
-    for raw_line in response.iter_lines():
+    iterator = iter(response.iter_lines())
+    while True:
+        try:
+            raw_line = next(iterator)
+        except StopIteration:
+            break
+        except RequestException as exc:
+            if conversation_id or file_ids or text_parts:
+                print(
+                    "[image-upstream] warn sse interrupted "
+                    f"conversation_id={conversation_id or '-'} file_ids={len(file_ids)} error={exc}"
+                )
+                break
+            raise ImageGenerationError(f"upstream stream read failed: {exc}") from exc
         if not raw_line:
             continue
         if isinstance(raw_line, bytes):
@@ -644,6 +658,13 @@ def generate_image_result(
                 }
             ],
         }
+    except ImageGenerationError as exc:
+        print(f"[image-upstream] fail token={access_token[:12]}... error={exc}")
+        raise
+    except RequestException as exc:
+        message = f"upstream request failed: {exc}"
+        print(f"[image-upstream] fail token={access_token[:12]}... error={message}")
+        raise ImageGenerationError(message) from exc
     except Exception as exc:
         print(f"[image-upstream] fail token={access_token[:12]}... error={exc}")
         raise

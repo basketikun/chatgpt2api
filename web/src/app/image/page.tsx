@@ -2,7 +2,18 @@
 
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, ImagePlus, LoaderCircle, MessageSquarePlus, Trash2, X } from "lucide-react";
+import {
+  ArrowUp,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  ImagePlus,
+  LoaderCircle,
+  Maximize2,
+  MessageSquarePlus,
+  Trash2,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -110,6 +121,12 @@ type PreviewImage = {
   src: string;
 };
 
+type PreviewState = {
+  images: PreviewImage[];
+  index: number;
+  zoomed: boolean;
+};
+
 export default function ImagePage() {
   const didLoadQuotaRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -122,7 +139,7 @@ export default function ImagePage() {
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [availableQuota, setAvailableQuota] = useState("加载中");
-  const [previewImage, setPreviewImage] = useState<PreviewImage | null>(null);
+  const [preview, setPreview] = useState<PreviewState | null>(null);
   const resultsViewportRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -199,6 +216,51 @@ export default function ImagePage() {
       behavior: "smooth",
     });
   }, [selectedConversation, isGenerating]);
+
+  useEffect(() => {
+    if (!preview) {
+      return;
+    }
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        setPreview((prev) =>
+          prev && prev.images.length > 1
+            ? {
+                ...prev,
+                index: (prev.index - 1 + prev.images.length) % prev.images.length,
+                zoomed: false,
+              }
+            : prev,
+        );
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        setPreview((prev) =>
+          prev && prev.images.length > 1
+            ? {
+                ...prev,
+                index: (prev.index + 1) % prev.images.length,
+                zoomed: false,
+              }
+            : prev,
+        );
+      }
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [preview]);
+
+  const handleDownloadPreview = () => {
+    if (!preview) return;
+    const current = preview.images[preview.index];
+    if (!current) return;
+    const link = document.createElement("a");
+    link.href = current.src;
+    link.download = `image-${preview.index + 1}-${Date.now()}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const persistConversation = async (conversation: ImageConversation) => {
     setConversations((prev) => {
@@ -566,12 +628,26 @@ export default function ImagePage() {
                             {image.status === "success" && image.b64_json ? (
                               <button
                                 type="button"
-                                onClick={() =>
-                                  setPreviewImage({
-                                    alt: `Generated result ${index + 1}`,
-                                    src: `data:image/png;base64,${image.b64_json}`,
-                                  })
-                                }
+                                onClick={() => {
+                                  const successList: PreviewImage[] = [];
+                                  let targetIdx = 0;
+                                  selectedConversation.images.forEach((img, i) => {
+                                    if (img.status === "success" && img.b64_json) {
+                                      if (img.id === image.id) {
+                                        targetIdx = successList.length;
+                                      }
+                                      successList.push({
+                                        src: `data:image/png;base64,${img.b64_json}`,
+                                        alt: `Generated result ${i + 1}`,
+                                      });
+                                    }
+                                  });
+                                  setPreview({
+                                    images: successList,
+                                    index: targetIdx,
+                                    zoomed: false,
+                                  });
+                                }}
                                 className="group relative block w-full cursor-zoom-in overflow-hidden rounded-[22px] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-400 focus-visible:ring-offset-2"
                                 aria-label={`放大查看第 ${index + 1} 张生成图片`}
                               >
@@ -581,10 +657,11 @@ export default function ImagePage() {
                                   width={1024}
                                   height={1024}
                                   unoptimized
-                                  className="block h-auto w-full transition duration-200 group-hover:scale-[1.01]"
+                                  className="block h-auto w-full transition duration-300 group-hover:scale-[1.02]"
                                 />
-                                <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent px-4 py-3 text-xs font-medium tracking-[0.08em] text-white/92 opacity-0 transition group-hover:opacity-100">
-                                  点击放大
+                                <span className="pointer-events-none absolute inset-0 bg-black/0 transition duration-200 group-hover:bg-black/15" />
+                                <span className="pointer-events-none absolute right-3 top-3 inline-flex size-8 items-center justify-center rounded-full bg-black/55 text-white opacity-0 backdrop-blur-sm transition duration-200 group-hover:opacity-100">
+                                  <Maximize2 className="size-4" />
                                 </span>
                               </button>
                             ) : image.status === "error" ? (
@@ -751,28 +828,112 @@ export default function ImagePage() {
         </div>
       </section>
 
-      <Dialog open={Boolean(previewImage)} onOpenChange={(open) => (!open ? setPreviewImage(null) : null)}>
+      <Dialog open={Boolean(preview)} onOpenChange={(open) => (!open ? setPreview(null) : null)}>
         <DialogContent
-          className="w-[min(96vw,1200px)] border-stone-800 bg-stone-950 p-3 text-white sm:p-4"
+          className="max-w-none w-[min(98vw,1400px)] gap-0 overflow-hidden border-0 bg-black/95 p-0 text-white shadow-2xl"
           showCloseButton={false}
         >
-          <DialogTitle className="sr-only">{previewImage?.alt ?? "生成图片预览"}</DialogTitle>
-          {previewImage ? (
-            <button
-              type="button"
-              onClick={() => setPreviewImage(null)}
-              className="block w-full cursor-zoom-out overflow-hidden rounded-[24px] bg-black"
-              aria-label="关闭图片预览"
-            >
-              <Image
-                src={previewImage.src}
-                alt={previewImage.alt}
-                width={1536}
-                height={1536}
-                unoptimized
-                className="h-auto max-h-[85vh] w-full object-contain"
-              />
-            </button>
+          <DialogTitle className="sr-only">
+            {preview
+              ? `图片预览 ${preview.index + 1} / ${preview.images.length}`
+              : "图片预览"}
+          </DialogTitle>
+          {preview && preview.images[preview.index] ? (
+            <div className="relative flex h-[90vh] w-full flex-col">
+              <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center justify-between bg-gradient-to-b from-black/70 via-black/40 to-transparent px-4 py-3">
+                <div className="pointer-events-auto rounded-full bg-white/10 px-3 py-1 text-sm font-medium text-white/90 backdrop-blur-sm">
+                  {preview.index + 1} / {preview.images.length}
+                </div>
+                <div className="pointer-events-auto flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleDownloadPreview}
+                    className="inline-flex size-9 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-sm transition hover:bg-white/20"
+                    aria-label="下载图片"
+                  >
+                    <Download className="size-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPreview(null)}
+                    className="inline-flex size-9 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-sm transition hover:bg-white/20"
+                    aria-label="关闭预览"
+                  >
+                    <X className="size-4" />
+                  </button>
+                </div>
+              </div>
+
+              <div
+                className={cn(
+                  "flex h-full w-full items-center justify-center",
+                  preview.zoomed ? "overflow-auto" : "overflow-hidden",
+                )}
+                onClick={() => setPreview(null)}
+                role="presentation"
+              >
+                <Image
+                  src={preview.images[preview.index].src}
+                  alt={preview.images[preview.index].alt}
+                  width={2048}
+                  height={2048}
+                  unoptimized
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setPreview((prev) => (prev ? { ...prev, zoomed: !prev.zoomed } : null));
+                  }}
+                  className={cn(
+                    "block h-auto select-none transition-transform duration-200",
+                    preview.zoomed
+                      ? "max-h-none max-w-none cursor-zoom-out"
+                      : "max-h-[88vh] w-auto max-w-[96vw] cursor-zoom-in object-contain",
+                  )}
+                  draggable={false}
+                />
+              </div>
+
+              {preview.images.length > 1 ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPreview((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              index:
+                                (prev.index - 1 + prev.images.length) % prev.images.length,
+                              zoomed: false,
+                            }
+                          : null,
+                      )
+                    }
+                    className="absolute left-4 top-1/2 z-20 inline-flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-sm transition hover:bg-white/20"
+                    aria-label="上一张"
+                  >
+                    <ChevronLeft className="size-5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPreview((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              index: (prev.index + 1) % prev.images.length,
+                              zoomed: false,
+                            }
+                          : null,
+                      )
+                    }
+                    className="absolute right-4 top-1/2 z-20 inline-flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-sm transition hover:bg-white/20"
+                    aria-label="下一张"
+                  >
+                    <ChevronRight className="size-5" />
+                  </button>
+                </>
+              ) : null}
+            </div>
           ) : null}
         </DialogContent>
       </Dialog>
