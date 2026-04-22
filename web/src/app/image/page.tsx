@@ -11,6 +11,7 @@ import { editImage, fetchAccounts, generateImage, type Account, type ImageModel 
 import {
   clearImageConversations,
   deleteImageConversation,
+  getImageConversationStats,
   listImageConversations,
   saveImageConversation,
   type ImageConversation,
@@ -92,24 +93,6 @@ function buildReferenceImageFromResult(image: StoredImage, fileName: string): St
     type: "image/png",
     dataUrl: `data:image/png;base64,${image.b64_json}`,
   };
-}
-
-function getConversationStats(conversation: ImageConversation | null) {
-  if (!conversation) {
-    return { queued: 0, running: 0 };
-  }
-
-  return conversation.turns.reduce(
-    (acc, turn) => {
-      if (turn.status === "queued") {
-        acc.queued += 1;
-      } else if (turn.status === "generating") {
-        acc.running += 1;
-      }
-      return acc;
-    },
-    { queued: 0, running: 0 },
-  );
 }
 
 function pickFallbackConversationId(conversations: ImageConversation[]) {
@@ -207,13 +190,13 @@ export default function ImagePage() {
     [conversations, selectedConversationId],
   );
   const selectedConversationStats = useMemo(
-    () => getConversationStats(selectedConversation),
+    () => getImageConversationStats(selectedConversation),
     [selectedConversation],
   );
   const activeTaskCount = useMemo(
     () =>
       conversations.reduce((sum, conversation) => {
-        const stats = getConversationStats(conversation);
+        const stats = getImageConversationStats(conversation);
         return sum + stats.queued + stats.running;
       }, 0),
     [conversations],
@@ -725,7 +708,7 @@ export default function ImagePage() {
     await persistConversation(baseConversation);
     void runConversationQueue(conversationId);
 
-    const targetStats = getConversationStats(baseConversation);
+    const targetStats = getImageConversationStats(baseConversation);
     if (targetStats.running > 0 || targetStats.queued > 1) {
       toast.success("已加入当前对话队列");
     } else if (!targetConversation) {

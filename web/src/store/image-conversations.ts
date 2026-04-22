@@ -42,6 +42,11 @@ export type ImageConversation = {
   turns: ImageTurn[];
 };
 
+export type ImageConversationStats = {
+  queued: number;
+  running: number;
+};
+
 const imageConversationStorage = localforage.createInstance({
   name: "chatgpt2api",
   storeName: "image_conversations",
@@ -185,4 +190,22 @@ export async function deleteImageConversation(id: string): Promise<void> {
 
 export async function clearImageConversations(): Promise<void> {
   await imageConversationStorage.removeItem(IMAGE_CONVERSATIONS_KEY);
+}
+
+export function getImageConversationStats(conversation: ImageConversation | null): ImageConversationStats {
+  if (!conversation) {
+    return { queued: 0, running: 0 };
+  }
+
+  return conversation.turns.reduce(
+    (acc, turn) => {
+      if (turn.status === "queued") {
+        acc.queued += 1;
+      } else if (turn.status === "generating") {
+        acc.running += 1;
+      }
+      return acc;
+    },
+    { queued: 0, running: 0 },
+  );
 }
