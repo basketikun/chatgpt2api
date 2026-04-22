@@ -12,6 +12,7 @@ from datetime import datetime
 from curl_cffi.requests import Session
 
 from services.config import config
+from services.utils import anonymize_token
 
 
 class AccountService:
@@ -251,11 +252,12 @@ class AccountService:
             return access_token
 
     def refresh_account_state(self, access_token: str) -> dict | None:
+        token_ref = anonymize_token(access_token)
         try:
             remote_info = self.fetch_remote_info(access_token)
         except Exception as exc:
             message = str(exc)
-            print(f"[account-available] refresh token={access_token[:12]}... fail {message}")
+            print(f"[account-available] refresh token={token_ref} fail {message}")
             if "/backend-api/me failed: HTTP 401" in message:
                 return self.update_account(
                     access_token,
@@ -272,11 +274,12 @@ class AccountService:
         while True:
             access_token = self._pick_next_candidate_token(excluded_tokens=attempted_tokens)
             attempted_tokens.add(access_token)
+            token_ref = anonymize_token(access_token)
             account = self.refresh_account_state(access_token)
             if self._is_image_account_available(account or {}):
                 return access_token
             print(
-                f"[account-available] skip token={access_token[:12]}... "
+                f"[account-available] skip token={token_ref} "
                 f"quota={account.get('quota') if account else 'unknown'} "
                 f"status={account.get('status') if account else 'unknown'}"
             )
@@ -429,7 +432,8 @@ class AccountService:
             raise ValueError("access_token is required")
 
         headers, impersonate = self._build_remote_headers(access_token)
-        print(f"[account-refresh] start {access_token[:12]}...")
+        token_ref = anonymize_token(access_token)
+        print(f"[account-refresh] start {token_ref}")
         session = Session(
             impersonate=impersonate,
             verify=True,
@@ -491,8 +495,7 @@ class AccountService:
             }
             print(
                 "[account-refresh] ok",
-                result.get("user_id"),
-                result.get("email"),
+                token_ref,
                 f"quota={result.get('quota')}",
                 f"restore_at={result.get('restore_at')}",
             )
@@ -519,7 +522,7 @@ class AccountService:
                         refreshed += 1
                 except Exception as exc:
                     message = str(exc)
-                    print(f"[account-refresh] fail {access_token[:12]}... {message}")
+                    print(f"[account-refresh] fail {anonymize_token(access_token)} {message}")
                     if "/backend-api/me failed: HTTP 401" in message:
                         self.update_account(
                             access_token,

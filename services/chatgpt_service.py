@@ -5,6 +5,7 @@ from fastapi import HTTPException
 from services.account_service import AccountService
 from services.image_service import ImageGenerationError, edit_image_result, generate_image_result, is_token_invalid_error
 from services.utils import (
+    anonymize_token,
     build_chat_image_completion,
     extract_chat_prompt,
     extract_response_prompt,
@@ -48,8 +49,9 @@ class ChatGPTService:
             account = self.account_service.refresh_account_state(request_token)
             if not self.account_service._is_image_account_available(account or {}):
                 raise ImageGenerationError("bound account for continued image conversation is unavailable")
+            token_ref = anonymize_token(request_token)
             print(
-                f"[image-generate] continue token={request_token[:12]}... model={model} "
+                f"[image-generate] continue token={token_ref} model={model} "
                 f"account_id={preferred_account_id} conversation_id={upstream_conversation_id or '-'}"
             )
             try:
@@ -63,7 +65,7 @@ class ChatGPTService:
                 account = self.account_service.mark_image_result(request_token, success=False)
                 message = str(exc)
                 print(
-                    f"[image-generate] continue fail token={request_token[:12]}... "
+                    f"[image-generate] continue fail token={token_ref} "
                     f"error={message} quota={account.get('quota') if account else 'unknown'} "
                     f"status={account.get('status') if account else 'unknown'}"
                 )
@@ -81,7 +83,7 @@ class ChatGPTService:
                 "upstream_parent_message_id": result.get("upstream_parent_message_id"),
             }
             print(
-                f"[image-generate] continue success token={request_token[:12]}... "
+                f"[image-generate] continue success token={token_ref} "
                 f"quota={account.get('quota') if account else 'unknown'} status={account.get('status') if account else 'unknown'}"
             )
             if not image_items:
@@ -100,7 +102,8 @@ class ChatGPTService:
                     print(f"[image-generate] stop index={index}/{n} error={exc}")
                     break
 
-                print(f"[image-generate] start pooled token={request_token[:12]}... model={model} index={index}/{n}")
+                token_ref = anonymize_token(request_token)
+                print(f"[image-generate] start pooled token={token_ref} model={model} index={index}/{n}")
                 try:
                     result = runner(
                         request_token,
@@ -120,7 +123,7 @@ class ChatGPTService:
                             "upstream_parent_message_id": result.get("upstream_parent_message_id"),
                         }
                     print(
-                        f"[image-generate] success pooled token={request_token[:12]}... "
+                        f"[image-generate] success pooled token={token_ref} "
                         f"quota={account.get('quota') if account else 'unknown'} status={account.get('status') if account else 'unknown'}"
                     )
                     break
@@ -128,12 +131,12 @@ class ChatGPTService:
                     account = self.account_service.mark_image_result(request_token, success=False)
                     message = str(exc)
                     print(
-                        f"[image-generate] fail pooled token={request_token[:12]}... "
+                        f"[image-generate] fail pooled token={token_ref} "
                         f"error={message} quota={account.get('quota') if account else 'unknown'} status={account.get('status') if account else 'unknown'}"
                     )
                     if is_token_invalid_error(message):
                         self.account_service.remove_token(request_token)
-                        print(f"[image-generate] remove invalid token={request_token[:12]}...")
+                        print(f"[image-generate] remove invalid token={token_ref}")
                         continue
                     break
 
