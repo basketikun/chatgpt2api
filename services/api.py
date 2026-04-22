@@ -14,6 +14,11 @@ from services.account_service import account_service
 from services.chatgpt_service import ChatGPTService
 from services.config import config
 from services.cpa_service import cpa_config, cpa_import_service, list_remote_files
+from services.image_session_service import (
+    ImageSessionExpiredError,
+    ImageSessionService,
+    serialize_image_session_response,
+)
 from services.proxy_service import test_proxy
 from services.sub2api_service import (
     list_remote_accounts as sub2api_list_remote_accounts,
@@ -182,6 +187,19 @@ def resolve_image_base_url(request: Request) -> str:
     return config.base_url or f"{request.url.scheme}://{request.headers.get('host', request.url.netloc)}"
 
 
+async def read_uploaded_images(uploads: list[UploadFile]) -> list[tuple[bytes, str, str]]:
+    images: list[tuple[bytes, str, str]] = []
+    for upload in uploads:
+        image_data = await upload.read()
+        if not image_data:
+            raise HTTPException(status_code=400, detail={"error": "image file is empty"})
+
+        file_name = upload.filename or "image.png"
+        mime_type = upload.content_type or "image/png"
+        images.append((image_data, file_name, mime_type))
+    return images
+
+
 def start_limited_account_watcher(stop_event: Event) -> Thread:
     interval_seconds = config.refresh_account_interval_minute * 60
 
@@ -229,6 +247,7 @@ def resolve_web_asset(requested_path: str) -> Path | None:
 
 def create_app() -> FastAPI:
     chatgpt_service = ChatGPTService(account_service)
+    image_session_service = ImageSessionService(account_service)
     app_version = get_app_version()
 
     @asynccontextmanager
@@ -380,16 +399,7 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=400, detail={"error": "image file is required"})
 
         base_url = resolve_image_base_url(request)
-
-        images: list[tuple[bytes, str, str]] = []
-        for upload in uploads:
-            image_data = await upload.read()
-            if not image_data:
-                raise HTTPException(status_code=400, detail={"error": "image file is empty"})
-
-            file_name = upload.filename or "image.png"
-            mime_type = upload.content_type or "image/png"
-            images.append((image_data, file_name, mime_type))
+        images = await read_uploaded_images(uploads)
 
         try:
             return await run_in_threadpool(
@@ -397,6 +407,54 @@ def create_app() -> FastAPI:
             )
         except ImageGenerationError as exc:
             raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
+
+    @router.post("/api/image/sessions")
+    async def create_image_session(
+            authorization: str | None = Header(default=None),
+            image: list[UploadFile] | None = File(default=None),
+            image_list: list[UploadFile] | None = File(default=None, alias="image[]"),
+            prompt: str = Form(...),
+            model: str = Form(default="gpt-image-1"),
+    ):
+        require_auth_key(authorization)
+        uploads = [*(image or []), *(image_list or [])]
+        images = await read_uploaded_images(uploads) if uploads else None
+        try:
+            session, result = await run_in_threadpool(
+                image_session_service.create_session,
+                prompt,
+                model,
+                images,
+            )
+        except ImageGenerationError as exc:
+            raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
+        return serialize_image_session_response(session, result)
+
+    @router.post("/api/image/sessions/{session_id}/turns")
+    async def create_image_session_turn(
+            session_id: str,
+            authorization: str | None = Header(default=None),
+            image: list[UploadFile] | None = File(default=None),
+            image_list: list[UploadFile] | None = File(default=None, alias="image[]"),
+            prompt: str = Form(...),
+            model: str = Form(default="gpt-image-1"),
+    ):
+        require_auth_key(authorization)
+        uploads = [*(image or []), *(image_list or [])]
+        images = await read_uploaded_images(uploads) if uploads else None
+        try:
+            session, result = await run_in_threadpool(
+                image_session_service.create_turn,
+                session_id,
+                prompt,
+                model,
+                images,
+            )
+        except ImageSessionExpiredError as exc:
+            raise HTTPException(status_code=410, detail={"error": str(exc)}) from exc
+        except ImageGenerationError as exc:
+            raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
+        return serialize_image_session_response(session, result)
 
     @router.post("/v1/chat/completions")
     async def create_chat_completion(body: ChatCompletionRequest, authorization: str | None = Header(default=None)):

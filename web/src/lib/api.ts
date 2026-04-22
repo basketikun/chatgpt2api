@@ -48,6 +48,14 @@ type AccountUpdateResponse = {
   items: Account[];
 };
 
+export type ImageSessionResponse = {
+  session_id: string;
+  created: number;
+  data: Array<{ b64_json: string; revised_prompt?: string }>;
+  updated_at: string;
+  expires_at: string;
+};
+
 export type SettingsConfig = {
   proxy: string;
   "auth-key"?: string;
@@ -142,6 +150,50 @@ export async function editImage(files: File | File[], prompt: string, model: Ima
       body: formData,
     },
   );
+}
+
+function appendImageFiles(formData: FormData, files: File | File[] | null | undefined) {
+  if (!files) {
+    return;
+  }
+
+  const uploadFiles = Array.isArray(files) ? files : [files];
+  uploadFiles.forEach((file) => {
+    formData.append("image", file);
+  });
+}
+
+export async function createImageSession(
+  files: File | File[] | null,
+  prompt: string,
+  model: ImageModel = "gpt-image-1",
+) {
+  const formData = new FormData();
+  appendImageFiles(formData, files);
+  formData.append("prompt", prompt);
+  formData.append("model", model);
+
+  return httpRequest<ImageSessionResponse>("/api/image/sessions", {
+    method: "POST",
+    body: formData,
+  });
+}
+
+export async function createImageSessionTurn(
+  sessionId: string,
+  files: File | File[] | null,
+  prompt: string,
+  model: ImageModel = "gpt-image-1",
+) {
+  const formData = new FormData();
+  appendImageFiles(formData, files);
+  formData.append("prompt", prompt);
+  formData.append("model", model);
+
+  return httpRequest<ImageSessionResponse>(`/api/image/sessions/${sessionId}/turns`, {
+    method: "POST",
+    body: formData,
+  });
 }
 
 export async function fetchSettingsConfig() {

@@ -7,7 +7,15 @@ import { ImageComposer } from "@/app/image/components/image-composer";
 import { ImageResults, type ImageLightboxItem } from "@/app/image/components/image-results";
 import { ImageSidebar } from "@/app/image/components/image-sidebar";
 import { ImageLightbox } from "@/components/image-lightbox";
-import { editImage, fetchAccounts, generateImage, type Account, type ImageModel } from "@/lib/api";
+import {
+  createImageSession,
+  createImageSessionTurn,
+  editImage,
+  fetchAccounts,
+  generateImage,
+  type Account,
+  type ImageModel,
+} from "@/lib/api";
 import {
   clearImageConversations,
   deleteImageConversation,
@@ -22,6 +30,7 @@ import {
 } from "@/store/image-conversations";
 
 const ACTIVE_CONVERSATION_STORAGE_KEY = "chatgpt2api:image_active_conversation_id";
+const SESSION_EXPIRED_MESSAGE = "连续对话会话已失效，请从当前结果图重新开始编辑";
 const activeConversationQueueIds = new Set<string>();
 
 const imageModelOptions: Array<{ label: string; value: ImageModel }> = [
@@ -92,6 +101,38 @@ function buildReferenceImageFromResult(image: StoredImage, fileName: string): St
     type: "image/png",
     dataUrl: `data:image/png;base64,${image.b64_json}`,
   };
+}
+
+function buildReferenceFiles(referenceImages: StoredReferenceImage[], turnId: string) {
+  return referenceImages.map((image, index) =>
+    dataUrlToFile(image.dataUrl, image.name || `${turnId}-${index + 1}.png`, image.type),
+  );
+}
+
+function isSessionExpiredError(message: string) {
+  return message.includes(SESSION_EXPIRED_MESSAGE);
+}
+
+function getLatestSuccessfulReferenceImage(conversation: ImageConversation | null): StoredReferenceImage | null {
+  if (!conversation) {
+    return null;
+  }
+
+  for (let turnIndex = conversation.turns.length - 1; turnIndex >= 0; turnIndex -= 1) {
+    const turn = conversation.turns[turnIndex];
+    for (let imageIndex = turn.images.length - 1; imageIndex >= 0; imageIndex -= 1) {
+      const image = turn.images[imageIndex];
+      const referenceImage = buildReferenceImageFromResult(
+        image,
+        `conversation-${conversation.id}-turn-${turn.id}-image-${imageIndex + 1}.png`,
+      );
+      if (referenceImage) {
+        return referenceImage;
+      }
+    }
+  }
+
+  return null;
 }
 
 function getConversationStats(conversation: ImageConversation | null) {
@@ -503,12 +544,11 @@ export default function ImagePage() {
       });
 
       try {
-        const referenceFiles = queuedTurn.referenceImages.map((image, index) =>
-          dataUrlToFile(image.dataUrl, image.name || `${queuedTurn.id}-${index + 1}.png`, image.type),
-        );
+        const referenceFiles = buildReferenceFiles(queuedTurn.referenceImages, queuedTurn.id);
         const pendingImages = queuedTurn.images.filter((image) => image.status === "loading");
+        const useSessionHandle = queuedTurn.count === 1;
 
-        if (queuedTurn.mode === "edit" && referenceFiles.length === 0) {
+        if (queuedTurn.mode === "edit" && referenceFiles.length === 0 && !snapshot.sessionId) {
           throw new Error("未找到可用于继续编辑的参考图");
         }
 
@@ -531,6 +571,90 @@ export default function ImagePage() {
               ),
             };
           });
+          return;
+        }
+
+        if (useSessionHandle) {
+          const pendingImage = pendingImages[0];
+          let sessionResponse;
+          let nextSessionId = snapshot.sessionId;
+
+          try {
+            if (snapshot.sessionId) {
+              sessionResponse = await createImageSessionTurn(
+                snapshot.sessionId,
+                referenceFiles.length > 0 ? referenceFiles : null,
+                queuedTurn.prompt,
+                queuedTurn.model,
+              );
+            } else {
+              sessionResponse = await createImageSession(
+                referenceFiles.length > 0 ? referenceFiles : null,
+                queuedTurn.prompt,
+                queuedTurn.model,
+              );
+            }
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "生成图片失败";
+            if (!snapshot.sessionId || !isSessionExpiredError(message)) {
+              throw error;
+            }
+
+            await updateConversation(conversationId, (current) => ({
+              ...(current ?? snapshot),
+              sessionId: undefined,
+              updatedAt: new Date().toISOString(),
+            }));
+
+            const fallbackReferenceImage =
+              referenceFiles.length > 0 ? null : getLatestSuccessfulReferenceImage(snapshot);
+            const fallbackReferenceFiles = fallbackReferenceImage
+              ? [dataUrlToFile(fallbackReferenceImage.dataUrl, fallbackReferenceImage.name, fallbackReferenceImage.type)]
+              : referenceFiles;
+            if (fallbackReferenceFiles.length === 0) {
+              throw error;
+            }
+
+            toast.error(SESSION_EXPIRED_MESSAGE);
+            sessionResponse = await createImageSession(
+              fallbackReferenceFiles,
+              queuedTurn.prompt,
+              queuedTurn.model,
+            );
+          }
+
+          const first = sessionResponse.data?.[0];
+          if (!first?.b64_json) {
+            throw new Error("未返回图片数据");
+          }
+
+          nextSessionId = sessionResponse.session_id;
+          const nextImage: StoredImage = {
+            id: pendingImage.id,
+            status: "success",
+            b64_json: first.b64_json,
+          };
+
+          await updateConversation(conversationId, (current) => {
+            const conversation = current ?? snapshot;
+            return {
+              ...conversation,
+              sessionId: nextSessionId,
+              updatedAt: new Date().toISOString(),
+              turns: conversation.turns.map((turn) =>
+                turn.id === queuedTurn.id
+                  ? {
+                      ...turn,
+                      images: turn.images.map((image) => (image.id === nextImage.id ? nextImage : image)),
+                      status: "success",
+                      error: undefined,
+                    }
+                  : turn,
+              ),
+            };
+          });
+
+          await loadQuota();
           return;
         }
 
@@ -630,6 +754,7 @@ export default function ImagePage() {
           const conversation = current ?? snapshot;
           return {
             ...conversation,
+            sessionId: isSessionExpiredError(message) ? undefined : conversation.sessionId,
             updatedAt: new Date().toISOString(),
             turns: conversation.turns.map((turn) =>
               turn.id === queuedTurn.id
@@ -687,6 +812,10 @@ export default function ImagePage() {
     const targetConversation = selectedConversationId
       ? conversationsRef.current.find((conversation) => conversation.id === selectedConversationId) ?? null
       : null;
+    if (targetConversation?.sessionId && parsedCount > 1) {
+      toast.error("连续对话暂只支持每轮 1 张图片");
+      return;
+    }
     const now = new Date().toISOString();
     const conversationId = targetConversation?.id ?? createId();
     const turnId = createId();

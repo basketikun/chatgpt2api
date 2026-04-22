@@ -39,6 +39,7 @@ export type ImageConversation = {
   title: string;
   createdAt: string;
   updatedAt: string;
+  sessionId?: string;
   turns: ImageTurn[];
 };
 
@@ -157,6 +158,7 @@ function normalizeConversation(conversation: ImageConversation & Record<string, 
     title: String(conversation.title || ""),
     createdAt: String(conversation.createdAt || lastTurn?.createdAt || new Date().toISOString()),
     updatedAt: String(conversation.updatedAt || lastTurn?.createdAt || new Date().toISOString()),
+    sessionId: typeof conversation.sessionId === "string" && conversation.sessionId ? conversation.sessionId : undefined,
     turns,
   };
 }
