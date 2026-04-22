@@ -297,6 +297,7 @@ def _send_edit_conversation(
     device_id: str,
     chat_token: str,
     proof_token: Optional[str],
+    conversation_id: str | None,
     parent_message_id: str,
     prompt: str,
     model: str,
@@ -346,6 +347,7 @@ def _send_edit_conversation(
             headers=headers,
             json={
                 "action": "next",
+                "conversation_id": conversation_id,
                 "messages": [
                     {
                         "id": str(uuid.uuid4()),
@@ -402,6 +404,7 @@ def _send_conversation(
     device_id: str,
     chat_token: str,
     proof_token: Optional[str],
+    conversation_id: str | None,
     parent_message_id: str,
     prompt: str,
     model: str,
@@ -427,6 +430,7 @@ def _send_conversation(
             headers=headers,
             json={
                 "action": "next",
+                "conversation_id": conversation_id,
                 "messages": [
                     {
                         "id": str(uuid.uuid4()),
@@ -557,35 +561,68 @@ def _extract_image_ids(mapping: dict) -> list[str]:
     return file_ids
 
 
-def _poll_image_ids(session: Session, access_token: str, device_id: str, conversation_id: str) -> list[str]:
+def _fetch_conversation_payload(session: Session, access_token: str, device_id: str, conversation_id: str) -> dict | None:
+    response = _retry(
+        lambda: session.get(
+            f"{BASE_URL}/backend-api/conversation/{conversation_id}",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "oai-device-id": device_id,
+                "accept": "*/*",
+            },
+            timeout=30,
+        ),
+        retries=2,
+        retry_on_status=(429, 502, 503, 504),
+    )
+    if response.status_code != 200:
+        return None
+    try:
+        payload = response.json()
+    except Exception:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _resolve_conversation_state(
+    session: Session,
+    access_token: str,
+    device_id: str,
+    conversation_id: str,
+    require_file_ids: bool,
+) -> dict[str, object]:
     started = time.time()
+    last_current_node = ""
+    last_file_ids: list[str] = []
     while time.time() - started < 180:
-        response = _retry(
-            lambda: session.get(
-                f"{BASE_URL}/backend-api/conversation/{conversation_id}",
-                headers={
-                    "Authorization": f"Bearer {access_token}",
-                    "oai-device-id": device_id,
-                    "accept": "*/*",
-                },
-                timeout=30,
-            ),
-            retries=2,
-            retry_on_status=(429, 502, 503, 504),
-        )
-        if response.status_code != 200:
+        payload = _fetch_conversation_payload(session, access_token, device_id, conversation_id)
+        if not payload:
             time.sleep(3)
             continue
-        try:
-            payload = response.json()
-        except Exception:
-            time.sleep(3)
-            continue
+        current_node = str(payload.get("current_node") or "")
+        if current_node:
+            last_current_node = current_node
         file_ids = _extract_image_ids(payload.get("mapping") or {})
         if file_ids:
-            return file_ids
+            last_file_ids = file_ids
+        if last_file_ids:
+            return {"current_node": last_current_node, "file_ids": last_file_ids}
+        if last_current_node and not require_file_ids:
+            return {"current_node": last_current_node, "file_ids": last_file_ids}
         time.sleep(3)
-    return []
+    return {"current_node": last_current_node, "file_ids": last_file_ids}
+
+
+def _poll_image_ids(session: Session, access_token: str, device_id: str, conversation_id: str) -> list[str]:
+    state = _resolve_conversation_state(
+        session,
+        access_token,
+        device_id,
+        conversation_id,
+        require_file_ids=True,
+    )
+    file_ids = state.get("file_ids")
+    return file_ids if isinstance(file_ids, list) else []
 
 
 def _canonicalize_file_id(file_id: str) -> str:
@@ -658,7 +695,15 @@ def _resolve_upstream_model(access_token: str, requested_model: str) -> str:
     return str(requested_model or DEFAULT_MODEL).strip() or DEFAULT_MODEL
 
 
-def generate_image_result(access_token: str, prompt: str, model: str = DEFAULT_MODEL, response_format: str = "b64_json", base_url: str = None) -> dict:
+def generate_image_result(
+    access_token: str,
+    prompt: str,
+    model: str = DEFAULT_MODEL,
+    response_format: str = "b64_json",
+    base_url: str | None = None,
+    conversation_id: str | None = None,
+    parent_message_id: str | None = None,
+) -> dict:
     prompt = str(prompt or "").strip()
     access_token = str(access_token or "").strip()
     if not prompt:
@@ -683,14 +728,16 @@ def generate_image_result(access_token: str, prompt: str, model: str = DEFAULT_M
                 user_agent=USER_AGENT,
                 proof_config=_pow_config(USER_AGENT),
             )
-        parent_message_id = str(uuid.uuid4())
+        request_parent_message_id = str(parent_message_id or "").strip() or str(uuid.uuid4())
+        request_conversation_id = str(conversation_id or "").strip() or None
         response = _send_conversation(
             session,
             access_token,
             device_id,
             chat_token,
             proof_token,
-            parent_message_id,
+            request_conversation_id,
+            request_parent_message_id,
             prompt,
             upstream_model,
         )
@@ -698,8 +745,21 @@ def generate_image_result(access_token: str, prompt: str, model: str = DEFAULT_M
         actual_conversation_id = parsed.get("conversation_id") or ""
         file_ids = parsed.get("file_ids") or []
         response_text = str(parsed.get("text") or "").strip()
-        if actual_conversation_id and not file_ids:
-            file_ids = _poll_image_ids(session, access_token, device_id, actual_conversation_id)
+        next_parent_message_id = request_parent_message_id
+        if actual_conversation_id:
+            state = _resolve_conversation_state(
+                session,
+                access_token,
+                device_id,
+                actual_conversation_id,
+                require_file_ids=not bool(file_ids),
+            )
+            current_node = str(state.get("current_node") or "").strip()
+            if current_node:
+                next_parent_message_id = current_node
+            if not file_ids:
+                state_file_ids = state.get("file_ids")
+                file_ids = state_file_ids if isinstance(state_file_ids, list) else []
         if not file_ids:
             if response_text:
                 raise ImageGenerationError(response_text)
@@ -719,6 +779,8 @@ def generate_image_result(access_token: str, prompt: str, model: str = DEFAULT_M
         return {
             "created": time.time_ns() // 1_000_000_000,
             "data": [result_data],
+            "upstream_conversation_id": actual_conversation_id or None,
+            "upstream_parent_message_id": next_parent_message_id or None,
         }
     except Exception as exc:
         print(f"[image-upstream] fail token={access_token[:12]}... error={exc}")
@@ -768,7 +830,9 @@ def edit_image_result(
     images: list[tuple[bytes, str, str]],
     model: str = DEFAULT_MODEL,
     response_format: str = "b64_json",
-    base_url: str = None,
+    base_url: str | None = None,
+    conversation_id: str | None = None,
+    parent_message_id: str | None = None,
 ) -> dict:
     prompt = str(prompt or "").strip()
     access_token = str(access_token or "").strip()
@@ -816,14 +880,16 @@ def edit_image_result(
                 user_agent=USER_AGENT,
                 proof_config=_pow_config(USER_AGENT),
             )
-        parent_message_id = str(uuid.uuid4())
+        request_parent_message_id = str(parent_message_id or "").strip() or str(uuid.uuid4())
+        request_conversation_id = str(conversation_id or "").strip() or None
         response = _send_edit_conversation(
             session,
             access_token,
             device_id,
             chat_token,
             proof_token,
-            parent_message_id,
+            request_conversation_id,
+            request_parent_message_id,
             prompt,
             upstream_model,
             uploaded_images,
@@ -833,11 +899,24 @@ def edit_image_result(
         input_file_ids = {image.file_id for image in uploaded_images}
         file_ids = _filter_output_file_ids(parsed.get("file_ids") or [], input_file_ids)
         response_text = str(parsed.get("text") or "").strip()
-        if actual_conversation_id and not file_ids:
-            file_ids = _filter_output_file_ids(
-                _poll_image_ids(session, access_token, device_id, actual_conversation_id),
-                input_file_ids,
+        next_parent_message_id = request_parent_message_id
+        if actual_conversation_id:
+            state = _resolve_conversation_state(
+                session,
+                access_token,
+                device_id,
+                actual_conversation_id,
+                require_file_ids=not bool(file_ids),
             )
+            current_node = str(state.get("current_node") or "").strip()
+            if current_node:
+                next_parent_message_id = current_node
+            if not file_ids:
+                state_file_ids = state.get("file_ids")
+                file_ids = _filter_output_file_ids(
+                    state_file_ids if isinstance(state_file_ids, list) else [],
+                    input_file_ids,
+                )
         if not file_ids:
             if response_text:
                 raise ImageGenerationError(response_text)
@@ -857,6 +936,8 @@ def edit_image_result(
         return {
             "created": time.time_ns() // 1_000_000_000,
             "data": [result_data],
+            "upstream_conversation_id": actual_conversation_id or None,
+            "upstream_parent_message_id": next_parent_message_id or None,
         }
     except Exception as exc:
         print(f"[image-edit-upstream] fail token={access_token[:12]}... error={exc}")
