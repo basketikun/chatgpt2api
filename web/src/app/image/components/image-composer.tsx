@@ -23,8 +23,9 @@ type ImageComposerProps = {
   model: ImageModel;
   imageCount: string;
   availableQuota: string;
-  hasAnyGenerating: boolean;
-  generatingCount: number;
+  activeTaskCount: number;
+  selectedConversationTitle: string | null;
+  selectedConversationStats: { queued: number; running: number } | null;
   referenceImages: Array<{ name: string; dataUrl: string }>;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
   fileInputRef: RefObject<HTMLInputElement | null>;
@@ -45,8 +46,9 @@ export function ImageComposer({
   model,
   imageCount,
   availableQuota,
-  hasAnyGenerating,
-  generatingCount,
+  activeTaskCount,
+  selectedConversationTitle,
+  selectedConversationStats,
   referenceImages,
   textareaRef,
   fileInputRef,
@@ -176,10 +178,10 @@ export function ImageComposer({
                     </Button>
                   )}
                   <div className="rounded-full bg-stone-100 px-3 py-2 text-xs font-medium text-stone-600">剩余额度 {availableQuota}</div>
-                  {hasAnyGenerating && (
+                  {activeTaskCount > 0 && (
                     <div className="flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
                       <LoaderCircle className="size-3 animate-spin" />
-                      {generatingCount} 个任务进行中
+                      {activeTaskCount} 个任务处理中或排队中
                     </div>
                   )}
                   <Select value={model} onValueChange={(value) => onModelChange(value as ImageModel)}>
@@ -214,6 +216,17 @@ export function ImageComposer({
                       编辑图
                     </ModeButton>
                   </div>
+                  {selectedConversationTitle ? (
+                    <div className="rounded-full bg-stone-100 px-3 py-2 text-xs font-medium text-stone-600">
+                      当前对话：{selectedConversationTitle}
+                      {selectedConversationStats?.running ? ` · 处理中 ${selectedConversationStats.running}` : ""}
+                      {selectedConversationStats?.queued ? ` · 排队 ${selectedConversationStats.queued}` : ""}
+                    </div>
+                  ) : (
+                    <div className="rounded-full bg-stone-100 px-3 py-2 text-xs font-medium text-stone-600">
+                      当前对话：发送后自动创建
+                    </div>
+                  )}
                 </div>
 
                 <button
