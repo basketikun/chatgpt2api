@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
@@ -18,13 +19,23 @@ class _FakeChatGPTService:
     def __init__(self, _account_service) -> None:
         return None
 
-    def edit_with_pool(self, prompt: str, images, model: str, n: int):
+    def edit_with_pool(
+        self,
+        prompt: str,
+        images,
+        model: str,
+        n: int,
+        response_format: str = "b64_json",
+        base_url: str | None = None,
+    ):
         normalized_images = list(images)
         type(self).last_call = {
             "prompt": prompt,
             "images": normalized_images,
             "model": model,
             "n": n,
+            "response_format": response_format,
+            "base_url": base_url,
         }
         return {
             "created": 123,
@@ -41,7 +52,12 @@ class ImageEditsApiTests(unittest.TestCase):
             mock.patch.object(
                 api_module,
                 "config",
-                SimpleNamespace(auth_key="test-auth", refresh_account_interval_minute=60),
+                SimpleNamespace(
+                    auth_key="test-auth",
+                    refresh_account_interval_minute=60,
+                    images_dir=Path("test-images"),
+                    base_url="http://localhost:8000",
+                ),
             ),
             mock.patch.object(api_module, "start_limited_account_watcher", lambda _stop_event: _FakeThread()),
         ]
