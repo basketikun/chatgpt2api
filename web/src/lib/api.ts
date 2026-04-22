@@ -140,18 +140,21 @@ export async function generateImageWithContext(
   });
 }
 
-export async function editImage(image: File, prompt: string, model: ImageModel = "gpt-image-2") {
-  return editImageWithContext(image, prompt, model);
+export async function editImage(files: File | File[], prompt: string, model: ImageModel = "gpt-image-2") {
+  return editImageWithContext(files, prompt, model);
 }
 
 export async function editImageWithContext(
-  image: File,
+  files: File | File[],
   prompt: string,
   model: ImageModel = "gpt-image-2",
   context?: ImageConversationContext,
 ) {
   const formData = new FormData();
-  formData.append("image", image);
+  const uploadFiles = Array.isArray(files) ? files : [files];
+  uploadFiles.forEach((file) => {
+    formData.append("image", file);
+  });
   formData.append("prompt", prompt);
   formData.append("model", model);
   formData.append("n", "1");

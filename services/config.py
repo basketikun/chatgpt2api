@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,7 +11,6 @@ from typing import cast
 BASE_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = BASE_DIR / "data"
 CONFIG_FILE = BASE_DIR / "config.json"
-CONFIG_EXAMPLE_FILE = BASE_DIR / "config.example.json"
 
 
 @dataclass(frozen=True)
@@ -41,38 +39,27 @@ def _load_json_object(path: Path, *, name: str) -> dict[str, object]:
     text = path.read_text(encoding="utf-8").strip()
     if not text:
         return {}
-
     loaded = json.loads(text)
     if not isinstance(loaded, dict):
         raise ValueError(f"{name} must be a JSON object")
     return loaded
 
 
-def _ensure_config_file() -> None:
-    if CONFIG_FILE.exists():
-        return
-    example_file = _readable_json_file(CONFIG_EXAMPLE_FILE, name="config.example.json")
-    if example_file is None:
-        return
-    shutil.copyfile(example_file, CONFIG_FILE)
-
-
 def _load_settings() -> AppSettings:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    _ensure_config_file()
 
     raw_config: dict[str, object] = {}
-    example_file = _readable_json_file(CONFIG_EXAMPLE_FILE, name="config.example.json")
-    if example_file is not None:
-        raw_config.update(_load_json_object(example_file, name="config.example.json"))
-
     config_file = _readable_json_file(CONFIG_FILE, name="config.json")
     if config_file is not None:
         raw_config.update(_load_json_object(config_file, name="config.json"))
 
     auth_key = str(os.getenv("CHATGPT2API_AUTH_KEY") or raw_config.get("auth-key") or "").strip()
     if not auth_key:
-        raise ValueError("config.example.json must contain a non-empty 'auth-key'")
+        raise ValueError(
+            "auth-key 未设置。\n"
+            "请在环境变量 CHATGPT2API_AUTH_KEY 中设置，或在 config.json 中提供 auth-key。"
+        )
+
     proxy_url = str(os.getenv("CHATGPT2API_PROXY_URL") or raw_config.get("proxy-url") or "").strip() or None
     refresh_account_interval_minute = cast(int, raw_config.get("refresh_account_interval_minute", 5))
 

@@ -25,39 +25,38 @@ class ConfigLoadingTests(unittest.TestCase):
         if cls._created_root_config and ROOT_CONFIG_FILE.exists():
             ROOT_CONFIG_FILE.unlink()
 
-    def test_load_settings_falls_back_to_example_when_config_path_is_directory(self) -> None:
+    def test_load_settings_ignores_directory_config_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             base_dir = Path(tmp_dir)
             data_dir = base_dir / "data"
             config_dir = base_dir / "config.json"
-            example_file = base_dir / "config.example.json"
+            os_auth_key = "env-auth"
 
             config_dir.mkdir()
-            example_file.write_text(
-                json.dumps({"auth-key": "example-auth", "refresh_account_interval_minute": 15}),
-                encoding="utf-8",
-            )
 
             module = self.config_module
             old_base_dir = module.BASE_DIR
             old_data_dir = module.DATA_DIR
             old_config_file = module.CONFIG_FILE
-            old_config_example_file = module.CONFIG_EXAMPLE_FILE
+            old_env_auth_key = module.os.environ.get("CHATGPT2API_AUTH_KEY")
             try:
                 module.BASE_DIR = base_dir
                 module.DATA_DIR = data_dir
                 module.CONFIG_FILE = config_dir
-                module.CONFIG_EXAMPLE_FILE = example_file
+                module.os.environ["CHATGPT2API_AUTH_KEY"] = os_auth_key
 
                 settings = module._load_settings()
 
-                self.assertEqual(settings.auth_key, "example-auth")
-                self.assertEqual(settings.refresh_account_interval_minute, 15)
+                self.assertEqual(settings.auth_key, os_auth_key)
+                self.assertEqual(settings.refresh_account_interval_minute, 5)
             finally:
                 module.BASE_DIR = old_base_dir
                 module.DATA_DIR = old_data_dir
                 module.CONFIG_FILE = old_config_file
-                module.CONFIG_EXAMPLE_FILE = old_config_example_file
+                if old_env_auth_key is None:
+                    module.os.environ.pop("CHATGPT2API_AUTH_KEY", None)
+                else:
+                    module.os.environ["CHATGPT2API_AUTH_KEY"] = old_env_auth_key
 
 
 if __name__ == "__main__":

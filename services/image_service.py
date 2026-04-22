@@ -71,6 +71,7 @@ class UploadedAsset:
     size_bytes: int
     width: int | None = None
     height: int | None = None
+    asset_pointer: str | None = None
 
 
 def _build_fp(access_token: str) -> dict:
@@ -224,180 +225,6 @@ def is_token_invalid_error(message: str) -> bool:
         or "authentication token has been invalidated" in text
         or "invalidated oauth token" in text
     )
-
-
-def _upload_image(session: Session, access_token: str, device_id: str, image_data: bytes, file_name: str, mime_type: str) -> str:
-    response = _retry(
-        lambda: session.post(
-            BASE_URL + "/backend-api/files",
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "oai-device-id": device_id,
-                "content-type": "application/json",
-            },
-            json={
-                "file_name": file_name,
-                "file_size": len(image_data),
-                "use_case": "multimodal",
-                "timezone_offset_min": -480,
-                "reset_rate_limits": False,
-            },
-            timeout=30,
-        ),
-        retries=3,
-    )
-    if not response.ok:
-        raise ImageGenerationError(f"file upload init failed: {response.status_code} {response.text[:200]}")
-    payload = response.json()
-    upload_url = payload.get("upload_url") or ""
-    file_id = payload.get("file_id") or ""
-    if not upload_url or not file_id:
-        raise ImageGenerationError("file upload init returned no upload_url or file_id")
-
-    put_resp = _retry(
-        lambda: session.put(
-            upload_url,
-            headers={
-                "Content-Type": mime_type,
-                "x-ms-blob-type": "BlockBlob",
-                "x-ms-version": "2020-04-08",
-            },
-            data=image_data,
-            timeout=60,
-        ),
-        retries=3,
-    )
-    if not (200 <= put_resp.status_code < 300):
-        raise ImageGenerationError(f"file upload PUT failed: {put_resp.status_code}")
-
-    process_resp = _retry(
-        lambda: session.post(
-            BASE_URL + "/backend-api/files/process_upload_stream",
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "oai-device-id": device_id,
-                "content-type": "application/json",
-            },
-            json={
-                "file_id": file_id,
-                "use_case": "multimodal",
-                "index_for_retrieval": False,
-                "file_name": file_name,
-            },
-            timeout=30,
-        ),
-        retries=3,
-    )
-    if not process_resp.ok:
-        raise ImageGenerationError(f"file process failed: {process_resp.status_code}")
-    return file_id
-
-
-def _send_edit_conversation(
-    session: Session,
-    access_token: str,
-    device_id: str,
-    chat_token: str,
-    proof_token: Optional[str],
-    parent_message_id: str,
-    prompt: str,
-    model: str,
-    file_id: str,
-    image_size: int,
-    image_width: int,
-    image_height: int,
-    file_name: str,
-    mime_type: str,
-):
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "accept": "text/event-stream",
-        "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
-        "content-type": "application/json",
-        "oai-device-id": device_id,
-        "oai-language": "zh-CN",
-        "oai-client-build-number": "5955942",
-        "oai-client-version": "prod-be885abbfcfe7b1f511e88b3003d9ee44757fbad",
-        "origin": BASE_URL,
-        "referer": BASE_URL + "/",
-        "openai-sentinel-chat-requirements-token": chat_token,
-    }
-    if proof_token:
-        headers["openai-sentinel-proof-token"] = proof_token
-    response = _retry(
-        lambda: session.post(
-            BASE_URL + "/backend-api/conversation",
-            headers=headers,
-            json={
-                "action": "next",
-                "messages": [
-                    {
-                        "id": str(uuid.uuid4()),
-                        "author": {"role": "user"},
-                        "content": {
-                            "content_type": "multimodal_text",
-                            "parts": [
-                                {
-                                    "content_type": "image_asset_pointer",
-                                    "asset_pointer": f"sediment://{file_id}",
-                                    "size_bytes": image_size,
-                                    "width": image_width,
-                                    "height": image_height,
-                                },
-                                prompt,
-                            ],
-                        },
-                        "metadata": {
-                            "attachments": [
-                                {
-                                    "id": file_id,
-                                    "size": image_size,
-                                    "name": file_name,
-                                    "mime_type": mime_type,
-                                    "width": image_width,
-                                    "height": image_height,
-                                    "source": "local",
-                                    "is_big_paste": False,
-                                }
-                            ],
-                        },
-                    }
-                ],
-                "parent_message_id": parent_message_id,
-                "model": model,
-                "history_and_training_disabled": False,
-                "timezone_offset_min": -480,
-                "timezone": "America/Los_Angeles",
-                "conversation_mode": {"kind": "primary_assistant"},
-                "force_paragen": False,
-                "force_paragen_model_slug": "",
-                "force_rate_limit": False,
-                "force_use_sse": True,
-                "paragen_cot_summary_display_override": "allow",
-                "reset_rate_limits": False,
-                "suggestions": [],
-                "supported_encodings": [],
-                "system_hints": ["picture_v2"],
-                "variant_purpose": "comparison_implicit",
-                "websocket_request_id": str(uuid.uuid4()),
-                "client_contextual_info": {
-                    "is_dark_mode": False,
-                    "time_since_loaded": random.randint(50, 500),
-                    "page_height": random.randint(500, 1000),
-                    "page_width": random.randint(1000, 2000),
-                    "pixel_ratio": 1.2,
-                    "screen_height": random.randint(800, 1200),
-                    "screen_width": random.randint(1200, 2200),
-                },
-            },
-            stream=True,
-            timeout=180,
-        ),
-        retries=3,
-    )
-    if not response.ok:
-        raise ImageGenerationError(response.text[:400] or f"conversation failed: {response.status_code}")
-    return response
 
 
 def _send_conversation(
@@ -630,28 +457,42 @@ def _upload_input_image(
         size_bytes=len(file_content),
         width=width,
         height=height,
+        asset_pointer=f"file-service://{file_id}",
     )
 
 
-def _build_image_edit_message(prompt: str, uploaded_asset: UploadedAsset) -> tuple[dict[str, object], list[dict[str, object]]]:
-    parts: list[object] = [prompt]
-    image_part: dict[str, object] = {
-        "asset_pointer": f"file-service://{uploaded_asset.file_id}",
-        "size_bytes": uploaded_asset.size_bytes,
-    }
-    attachment: dict[str, object] = {
-        "name": uploaded_asset.file_name,
-        "id": uploaded_asset.file_id,
-        "mimeType": uploaded_asset.mime_type,
-        "size": uploaded_asset.size_bytes,
-    }
-    if uploaded_asset.width is not None and uploaded_asset.height is not None:
-        image_part["width"] = uploaded_asset.width
-        image_part["height"] = uploaded_asset.height
-        attachment["width"] = uploaded_asset.width
-        attachment["height"] = uploaded_asset.height
-    parts.append(image_part)
-    return {"content_type": "multimodal_text", "parts": parts}, [attachment]
+def _build_image_edit_message(
+    prompt: str,
+    uploaded_assets: list[UploadedAsset],
+) -> tuple[dict[str, object], list[dict[str, object]]]:
+    parts: list[object] = []
+    attachments: list[dict[str, object]] = []
+
+    for uploaded_asset in uploaded_assets:
+        image_part: dict[str, object] = {
+            "content_type": "image_asset_pointer",
+            "asset_pointer": uploaded_asset.asset_pointer or f"file-service://{uploaded_asset.file_id}",
+            "size_bytes": uploaded_asset.size_bytes,
+        }
+        attachment: dict[str, object] = {
+            "name": uploaded_asset.file_name,
+            "id": uploaded_asset.file_id,
+            "mime_type": uploaded_asset.mime_type,
+            "mimeType": uploaded_asset.mime_type,
+            "size": uploaded_asset.size_bytes,
+            "source": "local",
+            "is_big_paste": False,
+        }
+        if uploaded_asset.width is not None and uploaded_asset.height is not None:
+            image_part["width"] = uploaded_asset.width
+            image_part["height"] = uploaded_asset.height
+            attachment["width"] = uploaded_asset.width
+            attachment["height"] = uploaded_asset.height
+        parts.append(image_part)
+        attachments.append(attachment)
+
+    parts.append(prompt)
+    return {"content_type": "multimodal_text", "parts": parts}, attachments
 
 
 def _parse_sse(response) -> dict:
@@ -807,6 +648,16 @@ def _poll_image_ids(session: Session, access_token: str, device_id: str, convers
     return file_ids if isinstance(file_ids, list) else []
 
 
+def _canonicalize_file_id(file_id: str) -> str:
+    value = str(file_id or "")
+    return value[4:] if value.startswith("sed:") else value
+
+
+def _filter_output_file_ids(file_ids: list[str], input_file_ids: set[str]) -> list[str]:
+    canonical_input_ids = {_canonicalize_file_id(file_id) for file_id in input_file_ids}
+    return [file_id for file_id in file_ids if _canonicalize_file_id(file_id) not in canonical_input_ids]
+
+
 def _fetch_download_url(session: Session, access_token: str, device_id: str, conversation_id: str, file_id: str) -> str:
     is_sediment = file_id.startswith("sed:")
     raw_id = file_id[4:] if is_sediment else file_id
@@ -941,22 +792,26 @@ def generate_image_result(
 def edit_image_result(
     access_token: str,
     prompt: str,
-    image_bytes: bytes,
-    image_mime_type: str,
-    image_filename: str | None,
+    images: list[tuple[bytes, str, str]],
     model: str = DEFAULT_MODEL,
     conversation_id: str | None = None,
     parent_message_id: str | None = None,
 ) -> dict:
     prompt = str(prompt or "").strip()
     access_token = str(access_token or "").strip()
-    image_mime_type = str(image_mime_type or "").split(";", 1)[0].strip().lower()
     if not prompt:
         raise ImageGenerationError("prompt is required")
     if not access_token:
         raise ImageGenerationError("token is required")
-    if not image_mime_type.startswith("image/"):
-        raise ImageGenerationError("input image must be an image/* file")
+    if not images:
+        raise ImageGenerationError("image is required")
+
+    normalized_images: list[tuple[bytes, str, str]] = []
+    for image_bytes, image_filename, image_mime_type in images:
+        normalized_mime_type = str(image_mime_type or "").split(";", 1)[0].strip().lower()
+        if not normalized_mime_type.startswith("image/"):
+            raise ImageGenerationError("input image must be an image/* file")
+        normalized_images.append((image_bytes, str(image_filename or "image.png"), normalized_mime_type))
 
     session, fp = _new_session(access_token)
     try:
@@ -964,10 +819,13 @@ def edit_image_result(
         token_ref = anonymize_token(access_token)
         print(
             f"[image-edit] start token={token_ref} "
-            f"requested_model={model} upstream_model={upstream_model}"
+            f"requested_model={model} upstream_model={upstream_model} inputs={len(normalized_images)}"
         )
         device_id = _bootstrap(session, fp)
-        uploaded_asset = _upload_input_image(session, access_token, device_id, image_bytes, image_mime_type, image_filename)
+        uploaded_assets = [
+            _upload_input_image(session, access_token, device_id, image_bytes, image_mime_type, image_filename)
+            for image_bytes, image_filename, image_mime_type in normalized_images
+        ]
         chat_token, pow_info = _chat_requirements(session, access_token, device_id)
         proof_token = None
         if pow_info.get("required"):
@@ -977,7 +835,7 @@ def edit_image_result(
                 user_agent=USER_AGENT,
                 proof_config=_pow_config(USER_AGENT),
             )
-        message_content, attachments = _build_image_edit_message(prompt, uploaded_asset)
+        message_content, attachments = _build_image_edit_message(prompt, uploaded_assets)
         request_parent_message_id = str(parent_message_id or "").strip() or str(uuid.uuid4())
         request_conversation_id = str(conversation_id or "").strip() or None
         response = _send_conversation(
@@ -994,7 +852,8 @@ def edit_image_result(
         )
         parsed = _parse_sse(response)
         actual_conversation_id = parsed.get("conversation_id") or ""
-        file_ids = parsed.get("file_ids") or []
+        input_file_ids = {asset.file_id for asset in uploaded_assets}
+        file_ids = _filter_output_file_ids(parsed.get("file_ids") or [], input_file_ids)
         response_text = str(parsed.get("text") or "").strip()
         last_message_id = str(parsed.get("last_message_id") or "").strip()
         next_parent_message_id = last_message_id
@@ -1010,7 +869,8 @@ def edit_image_result(
             if current_node:
                 next_parent_message_id = current_node
             if not file_ids:
-                file_ids = state.get("file_ids") or []
+                state_file_ids = state.get("file_ids") or []
+                file_ids = _filter_output_file_ids(state_file_ids, input_file_ids)
         if not file_ids:
             if response_text:
                 raise ImageGenerationError(response_text)
@@ -1023,7 +883,7 @@ def edit_image_result(
             revised_prompt=prompt,
             url=download_url,
         )
-        print(f"[image-edit] success token={token_ref} images=1")
+        print(f"[image-edit] success token={token_ref} images=1 inputs={len(uploaded_assets)}")
         return {
             "created": time.time_ns() // 1_000_000_000,
             "data": [{"b64_json": result.b64_json, "revised_prompt": result.revised_prompt}],
@@ -1032,129 +892,6 @@ def edit_image_result(
         }
     except Exception as exc:
         print(f"[image-edit] fail token={token_ref} error={exc}")
-        raise
-    finally:
-        session.close()
-
-
-def _get_image_dimensions(image_data: bytes) -> tuple[int, int]:
-    if image_data[:8] == b"\x89PNG\r\n\x1a\n" and len(image_data) >= 24:
-        import struct
-        w, h = struct.unpack(">II", image_data[16:24])
-        return w, h
-    if image_data[:2] in (b"\xff\xd8",):
-        import io
-        data = io.BytesIO(image_data)
-        data.read(2)
-        while True:
-            marker = data.read(2)
-            if len(marker) < 2:
-                break
-            if marker[0] != 0xFF:
-                break
-            if marker[1] in (0xC0, 0xC1, 0xC2):
-                data.read(3)
-                h_bytes = data.read(2)
-                w_bytes = data.read(2)
-                if len(h_bytes) == 2 and len(w_bytes) == 2:
-                    import struct
-                    h = struct.unpack(">H", h_bytes)[0]
-                    w = struct.unpack(">H", w_bytes)[0]
-                    return w, h
-                break
-            else:
-                length_bytes = data.read(2)
-                if len(length_bytes) < 2:
-                    break
-                import struct
-                length = struct.unpack(">H", length_bytes)[0]
-                data.read(length - 2)
-    return 1024, 1024
-
-
-def edit_image_result(
-    access_token: str,
-    prompt: str,
-    image_data: bytes,
-    file_name: str = "image.png",
-    mime_type: str = "image/png",
-    model: str = DEFAULT_MODEL,
-) -> dict:
-    prompt = str(prompt or "").strip()
-    access_token = str(access_token or "").strip()
-    if not prompt:
-        raise ImageGenerationError("prompt is required")
-    if not access_token:
-        raise ImageGenerationError("token is required")
-    if not image_data:
-        raise ImageGenerationError("image is required")
-
-    session, fp = _new_session(access_token)
-    try:
-        upstream_model = _resolve_upstream_model(access_token, model)
-        print(
-            f"[image-edit-upstream] start token={access_token[:12]}... "
-            f"requested_model={model} upstream_model={upstream_model}"
-        )
-        device_id = _bootstrap(session, fp)
-
-        file_id = _upload_image(session, access_token, device_id, image_data, file_name, mime_type)
-        print(f"[image-edit-upstream] uploaded file_id={file_id}")
-
-        image_width, image_height = _get_image_dimensions(image_data)
-
-        chat_token, pow_info = _chat_requirements(session, access_token, device_id)
-        proof_token = None
-        if pow_info.get("required"):
-            proof_token = _generate_proof_token(
-                seed=str(pow_info["seed"]),
-                difficulty=str(pow_info["difficulty"]),
-                user_agent=USER_AGENT,
-                proof_config=_pow_config(USER_AGENT),
-            )
-        parent_message_id = str(uuid.uuid4())
-        response = _send_edit_conversation(
-            session,
-            access_token,
-            device_id,
-            chat_token,
-            proof_token,
-            parent_message_id,
-            prompt,
-            upstream_model,
-            file_id,
-            len(image_data),
-            image_width,
-            image_height,
-            file_name,
-            mime_type,
-        )
-        parsed = _parse_sse(response)
-        actual_conversation_id = parsed.get("conversation_id") or ""
-        file_ids = parsed.get("file_ids") or []
-        response_text = str(parsed.get("text") or "").strip()
-        if actual_conversation_id and not file_ids:
-            file_ids = _poll_image_ids(session, access_token, device_id, actual_conversation_id)
-        if not file_ids:
-            if response_text:
-                raise ImageGenerationError(response_text)
-            raise ImageGenerationError("no image returned from upstream")
-        first_file_id = str(file_ids[0])
-        download_url = _fetch_download_url(session, access_token, device_id, actual_conversation_id, first_file_id)
-        if not download_url:
-            raise ImageGenerationError("failed to get download url")
-        result = GeneratedImage(
-            b64_json=_download_as_base64(session, download_url),
-            revised_prompt=prompt,
-            url=download_url,
-        )
-        print(f"[image-edit-upstream] success token={access_token[:12]}... images=1")
-        return {
-            "created": time.time_ns() // 1_000_000_000,
-            "data": [{"b64_json": result.b64_json, "revised_prompt": result.revised_prompt}],
-        }
-    except Exception as exc:
-        print(f"[image-edit-upstream] fail token={access_token[:12]}... error={exc}")
         raise
     finally:
         session.close()

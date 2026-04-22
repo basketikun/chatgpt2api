@@ -303,15 +303,23 @@ def create_app() -> FastAPI:
         require_auth_key(authorization)
         if mask is not None:
             raise HTTPException(status_code=400, detail={"error": "mask is not supported yet"})
-        if len(image) != 1:
-            raise HTTPException(status_code=400, detail={"error": "exactly one input image is supported"})
-
-        upload = image[0]
-        image_bytes = await upload.read()
-        if not image_bytes:
-            raise HTTPException(status_code=400, detail={"error": "image is required"})
+        if len(image) == 0:
+            raise HTTPException(status_code=400, detail={"error": "at least one input image is required"})
         if response_format != "b64_json":
             raise HTTPException(status_code=400, detail={"error": "only b64_json response_format is supported"})
+
+        images: list[tuple[bytes, str, str]] = []
+        for upload in image:
+            image_bytes = await upload.read()
+            if not image_bytes:
+                raise HTTPException(status_code=400, detail={"error": "image is required"})
+            images.append(
+                (
+                    image_bytes,
+                    str(upload.filename or "image.png"),
+                    str(upload.content_type or "application/octet-stream"),
+                )
+            )
 
         try:
             return await run_in_threadpool(
@@ -319,9 +327,7 @@ def create_app() -> FastAPI:
                 prompt,
                 model,
                 n,
-                image_bytes,
-                str(upload.content_type or "application/octet-stream"),
-                upload.filename,
+                images,
                 account_id,
                 upstream_conversation_id,
                 upstream_parent_message_id,

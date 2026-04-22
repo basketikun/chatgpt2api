@@ -211,9 +211,7 @@ class ChatGPTService:
         prompt: str,
         model: str,
         n: int,
-        image_bytes: bytes,
-        image_mime_type: str,
-        image_filename: str | None,
+        images: list[tuple[bytes, str, str]],
         preferred_account_id: str | None = None,
         upstream_conversation_id: str | None = None,
         upstream_parent_message_id: str | None = None,
@@ -225,9 +223,7 @@ class ChatGPTService:
             lambda request_token, **context: edit_image_result(
                 request_token,
                 prompt,
-                image_bytes=image_bytes,
-                image_mime_type=image_mime_type,
-                image_filename=image_filename,
+                images,
                 model=model,
                 conversation_id=context.get("upstream_conversation_id"),
                 parent_message_id=context.get("upstream_parent_message_id"),
@@ -259,7 +255,7 @@ class ChatGPTService:
         try:
             if image_info:
                 image_data, mime_type = image_info
-                image_result = self.edit_with_pool(prompt, model, n, image_data, mime_type, "image.png")
+                image_result = self.edit_with_pool(prompt, model, n, [(image_data, "image.png", mime_type)])
             else:
                 image_result = self.generate_with_pool(prompt, model, n)
         except ImageGenerationError as exc:
@@ -286,7 +282,7 @@ class ChatGPTService:
         try:
             if image_info:
                 image_data, mime_type = image_info
-                image_result = self.edit_with_pool(prompt, "gpt-image-1", 1, image_data, mime_type, "image.png")
+                image_result = self.edit_with_pool(prompt, "gpt-image-1", 1, [(image_data, "image.png", mime_type)])
             else:
                 image_result = self.generate_with_pool(prompt, "gpt-image-1", 1)
         except ImageGenerationError as exc:

@@ -31,7 +31,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 COPY main.py ./
-COPY config.example.json ./
+COPY config.json ./
 COPY VERSION ./
 COPY services ./services
 COPY --from=web-build /app/web/out ./web_dist

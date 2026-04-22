@@ -8,6 +8,12 @@ export type ConversationMode = "generate" | "edit";
 export type ImageConversationMode = ConversationMode;
 export type SourceStrategy = "none" | "latest" | "explicit";
 
+export type StoredReferenceImage = {
+  name: string;
+  type: string;
+  dataUrl: string;
+};
+
 export type StoredImage = {
   id: string;
   status?: "loading" | "success" | "error";
@@ -74,6 +80,29 @@ function normalizeTurn(turn: ImageTurn): ImageTurn {
   };
 }
 
+function getLegacySourceImage(conversation: Record<string, unknown>): SourceImage | undefined {
+  const legacyReferenceImages = conversation.referenceImages;
+  if (Array.isArray(legacyReferenceImages) && legacyReferenceImages.length > 0) {
+    const firstImage = legacyReferenceImages[0];
+    if (firstImage && typeof firstImage === "object") {
+      const item = firstImage as StoredReferenceImage;
+      if (typeof item.dataUrl === "string" && item.dataUrl) {
+        return { dataUrl: item.dataUrl, fileName: item.name };
+      }
+    }
+  }
+
+  const legacyReferenceImage = conversation.referenceImage;
+  if (legacyReferenceImage && typeof legacyReferenceImage === "object") {
+    const item = legacyReferenceImage as StoredReferenceImage;
+    if (typeof item.dataUrl === "string" && item.dataUrl) {
+      return { dataUrl: item.dataUrl, fileName: item.name };
+    }
+  }
+
+  return undefined;
+}
+
 function normalizeConversation(conversation: ImageConversation & Record<string, unknown>): ImageConversation {
   const turns = Array.isArray(conversation.turns)
     ? conversation.turns.map((turn) => normalizeTurn(turn as ImageTurn))
@@ -83,8 +112,9 @@ function normalizeConversation(conversation: ImageConversation & Record<string, 
           prompt: String(conversation.prompt || ""),
           model: (conversation.model as ImageModel) || "gpt-image-1",
           count: Number(conversation.count || 1),
-          mode: "generate",
-          sourceStrategy: "none",
+          mode: conversation.mode === "edit" ? "edit" : "generate",
+          sourceStrategy: getLegacySourceImage(conversation) ? "explicit" : "none",
+          sourceImage: getLegacySourceImage(conversation),
           images: Array.isArray(conversation.images) ? (conversation.images as StoredImage[]) : [],
           createdAt: String(conversation.createdAt || new Date().toISOString()),
           status: (conversation.status as ImageTurnStatus) || "success",
