@@ -311,7 +311,11 @@ export default function ImagePage() {
   };
 
   const updateConversation = useCallback(
-    async (conversationId: string, updater: (current: ImageConversation | null) => ImageConversation) => {
+    async (
+      conversationId: string,
+      updater: (current: ImageConversation | null) => ImageConversation,
+      options: { persist?: boolean } = {},
+    ) => {
       const current = conversationsRef.current.find((item) => item.id === conversationId) ?? null;
       const nextConversation = updater(current);
       const nextConversations = sortImageConversations([
@@ -320,7 +324,9 @@ export default function ImagePage() {
       ]);
       conversationsRef.current = nextConversations;
       setConversations(nextConversations);
-      await saveImageConversations(nextConversations);
+      if (options.persist !== false) {
+        await saveImageConversations(nextConversations);
+      }
     },
     [],
   );
@@ -540,21 +546,25 @@ export default function ImagePage() {
               b64_json: first.b64_json,
             };
 
-            await updateConversation(conversationId, (current) => {
-              const conversation = current ?? snapshot;
-              return {
-                ...conversation,
-                updatedAt: new Date().toISOString(),
-                turns: conversation.turns.map((turn) =>
-                  turn.id === queuedTurn.id
-                    ? {
-                        ...turn,
-                        images: turn.images.map((image) => (image.id === nextImage.id ? nextImage : image)),
-                      }
-                    : turn,
-                ),
-              };
-            });
+            await updateConversation(
+              conversationId,
+              (current) => {
+                const conversation = current ?? snapshot;
+                return {
+                  ...conversation,
+                  updatedAt: new Date().toISOString(),
+                  turns: conversation.turns.map((turn) =>
+                    turn.id === queuedTurn.id
+                      ? {
+                          ...turn,
+                          images: turn.images.map((image) => (image.id === nextImage.id ? nextImage : image)),
+                        }
+                      : turn,
+                  ),
+                };
+              },
+              { persist: false },
+            );
 
             return nextImage;
           } catch (error) {
@@ -565,21 +575,25 @@ export default function ImagePage() {
               error: message,
             };
 
-            await updateConversation(conversationId, (current) => {
-              const conversation = current ?? snapshot;
-              return {
-                ...conversation,
-                updatedAt: new Date().toISOString(),
-                turns: conversation.turns.map((turn) =>
-                  turn.id === queuedTurn.id
-                    ? {
-                        ...turn,
-                        images: turn.images.map((image) => (image.id === failedImage.id ? failedImage : image)),
-                      }
-                    : turn,
-                ),
-              };
-            });
+            await updateConversation(
+              conversationId,
+              (current) => {
+                const conversation = current ?? snapshot;
+                return {
+                  ...conversation,
+                  updatedAt: new Date().toISOString(),
+                  turns: conversation.turns.map((turn) =>
+                    turn.id === queuedTurn.id
+                      ? {
+                          ...turn,
+                          images: turn.images.map((image) => (image.id === failedImage.id ? failedImage : image)),
+                        }
+                      : turn,
+                  ),
+                };
+              },
+              { persist: false },
+            );
 
             throw error;
           }
