@@ -77,7 +77,7 @@ class ConfigStore:
 
     @property
     def auth_key(self) -> str:
-        return str(os.getenv("CHATGPT2API_AUTH_KEY") or self.data.get("auth-key") or "").strip()
+        return _load_settings().auth_key
 
     @property
     def accounts_file(self) -> Path:
@@ -85,10 +85,7 @@ class ConfigStore:
 
     @property
     def refresh_account_interval_minute(self) -> int:
-        try:
-            return int(self.data.get("refresh_account_interval_minute", 60))
-        except (TypeError, ValueError):
-            return 60
+        return _load_settings().refresh_account_interval_minute
 
     @property
     def images_dir(self) -> Path:

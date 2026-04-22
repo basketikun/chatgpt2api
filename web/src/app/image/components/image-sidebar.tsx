@@ -4,7 +4,7 @@ import { LoaderCircle, MessageSquarePlus, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { ImageConversation } from "@/store/image-conversations";
+import { getImageConversationStats, type ImageConversation } from "@/store/image-conversations";
 
 type ImageSidebarProps = {
   conversations: ImageConversation[];
@@ -56,7 +56,7 @@ export function ImageSidebar({
           ) : (
             conversations.map((conversation) => {
               const active = conversation.id === selectedConversationId;
-              const stats = getConversationStats(conversation);
+              const stats = getImageConversationStats(conversation);
               return (
                 <div
                   key={conversation.id}
@@ -104,19 +104,5 @@ export function ImageSidebar({
         </div>
       </div>
     </aside>
-  );
-}
-
-function getConversationStats(conversation: ImageConversation) {
-  return conversation.turns.reduce(
-    (acc, turn) => {
-      if (turn.status === "queued") {
-        acc.queued += 1;
-      } else if (turn.status === "generating") {
-        acc.running += 1;
-      }
-      return acc;
-    },
-    { queued: 0, running: 0 },
   );
 }
