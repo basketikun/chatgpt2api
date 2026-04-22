@@ -14,7 +14,6 @@ from services.account_service import account_service
 from services.chatgpt_service import ChatGPTService
 from services.config import config
 from services.cpa_service import cpa_config, cpa_import_service, list_remote_files
-
 from services.image_service import ImageGenerationError
 from services.version import get_app_version
 
@@ -24,10 +23,13 @@ WEB_DIST_DIR = BASE_DIR / "web_dist"
 
 class ImageGenerationRequest(BaseModel):
     prompt: str = Field(..., min_length=1)
-    model: str = "gpt-4o"
+    model: str = "gpt-image-2"
     n: int = Field(default=1, ge=1, le=4)
     response_format: str = "b64_json"
     history_disabled: bool = True
+    account_id: str | None = None
+    upstream_conversation_id: str | None = None
+    upstream_parent_message_id: str | None = None
 
 
 class AccountCreateRequest(BaseModel):
@@ -98,11 +100,7 @@ def build_model_item(model_id: str) -> dict[str, object]:
 def sanitize_cpa_pool(pool: dict | None) -> dict | None:
     if not isinstance(pool, dict):
         return None
-    return {
-        key: value
-        for key, value in pool.items()
-        if key != "secret_key"
-    }
+    return {key: value for key, value in pool.items() if key != "secret_key"}
 
 
 def sanitize_cpa_pools(pools: list[dict]) -> list[dict]:
@@ -274,36 +272,59 @@ def create_app() -> FastAPI:
     @router.post("/v1/images/generations")
     async def generate_images(body: ImageGenerationRequest, authorization: str | None = Header(default=None)):
         require_auth_key(authorization)
+        if body.response_format != "b64_json":
+            raise HTTPException(status_code=400, detail={"error": "only b64_json response_format is supported"})
         try:
-            return await run_in_threadpool(chatgpt_service.generate_with_pool, body.prompt, body.model, body.n)
+            return await run_in_threadpool(
+                chatgpt_service.generate_with_pool,
+                body.prompt,
+                body.model,
+                body.n,
+                body.account_id,
+                body.upstream_conversation_id,
+                body.upstream_parent_message_id,
+            )
         except ImageGenerationError as exc:
             raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
 
     @router.post("/v1/images/edits")
     async def edit_images(
-            authorization: str | None = Header(default=None),
-            image: UploadFile | None = File(default=None),
-            prompt: str = Form(...),
-            model: str = Form(default="gpt-image-1"),
-            n: int = Form(default=1),
+        image: list[UploadFile] = File(...),
+        prompt: str = Form(...),
+        model: str = Form("gpt-image-2"),
+        n: int = Form(1, ge=1, le=4),
+        response_format: str = Form("b64_json"),
+        mask: UploadFile | None = File(default=None),
+        account_id: str | None = Form(default=None),
+        upstream_conversation_id: str | None = Form(default=None),
+        upstream_parent_message_id: str | None = Form(default=None),
+        authorization: str | None = Header(default=None),
     ):
         require_auth_key(authorization)
-        if n < 1 or n > 4:
-            raise HTTPException(status_code=400, detail={"error": "n must be between 1 and 4"})
+        if mask is not None:
+            raise HTTPException(status_code=400, detail={"error": "mask is not supported yet"})
+        if len(image) != 1:
+            raise HTTPException(status_code=400, detail={"error": "exactly one input image is supported"})
 
-        if image is None:
-            raise HTTPException(status_code=400, detail={"error": "image file is required"})
-
-        image_data = await image.read()
-        if not image_data:
-            raise HTTPException(status_code=400, detail={"error": "image file is empty"})
-
-        file_name = image.filename or "image.png"
-        mime_type = image.content_type or "image/png"
+        upload = image[0]
+        image_bytes = await upload.read()
+        if not image_bytes:
+            raise HTTPException(status_code=400, detail={"error": "image is required"})
+        if response_format != "b64_json":
+            raise HTTPException(status_code=400, detail={"error": "only b64_json response_format is supported"})
 
         try:
             return await run_in_threadpool(
-                chatgpt_service.edit_with_pool, prompt, image_data, file_name, mime_type, model, n
+                chatgpt_service.edit_with_pool,
+                prompt,
+                model,
+                n,
+                image_bytes,
+                str(upload.content_type or "application/octet-stream"),
+                upload.filename,
+                account_id,
+                upstream_conversation_id,
+                upstream_parent_message_id,
             )
         except ImageGenerationError as exc:
             raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
@@ -318,18 +339,13 @@ def create_app() -> FastAPI:
         require_auth_key(authorization)
         return await run_in_threadpool(chatgpt_service.create_response, body.model_dump(mode="python"))
 
-    # ── CPA multi-pool endpoints ────────────────────────────────────
-
     @router.get("/api/cpa/pools")
     async def list_cpa_pools(authorization: str | None = Header(default=None)):
         require_auth_key(authorization)
         return {"pools": sanitize_cpa_pools(cpa_config.list_pools())}
 
     @router.post("/api/cpa/pools")
-    async def create_cpa_pool(
-            body: CPAPoolCreateRequest,
-            authorization: str | None = Header(default=None),
-    ):
+    async def create_cpa_pool(body: CPAPoolCreateRequest, authorization: str | None = Header(default=None)):
         require_auth_key(authorization)
         if not body.base_url.strip():
             raise HTTPException(status_code=400, detail={"error": "base_url is required"})
@@ -344,9 +360,9 @@ def create_app() -> FastAPI:
 
     @router.post("/api/cpa/pools/{pool_id}")
     async def update_cpa_pool(
-            pool_id: str,
-            body: CPAPoolUpdateRequest,
-            authorization: str | None = Header(default=None),
+        pool_id: str,
+        body: CPAPoolUpdateRequest,
+        authorization: str | None = Header(default=None),
     ):
         require_auth_key(authorization)
         pool = cpa_config.update_pool(pool_id, body.model_dump(exclude_none=True))
@@ -355,20 +371,14 @@ def create_app() -> FastAPI:
         return {"pool": sanitize_cpa_pool(pool), "pools": sanitize_cpa_pools(cpa_config.list_pools())}
 
     @router.delete("/api/cpa/pools/{pool_id}")
-    async def delete_cpa_pool(
-            pool_id: str,
-            authorization: str | None = Header(default=None),
-    ):
+    async def delete_cpa_pool(pool_id: str, authorization: str | None = Header(default=None)):
         require_auth_key(authorization)
         if not cpa_config.delete_pool(pool_id):
             raise HTTPException(status_code=404, detail={"error": "pool not found"})
         return {"pools": sanitize_cpa_pools(cpa_config.list_pools())}
 
     @router.get("/api/cpa/pools/{pool_id}/files")
-    async def cpa_pool_files(
-            pool_id: str,
-            authorization: str | None = Header(default=None),
-    ):
+    async def cpa_pool_files(pool_id: str, authorization: str | None = Header(default=None)):
         require_auth_key(authorization)
         pool = cpa_config.get_pool(pool_id)
         if pool is None:
@@ -378,9 +388,9 @@ def create_app() -> FastAPI:
 
     @router.post("/api/cpa/pools/{pool_id}/import")
     async def cpa_pool_import(
-            pool_id: str,
-            body: CPAImportRequest,
-            authorization: str | None = Header(default=None),
+        pool_id: str,
+        body: CPAImportRequest,
+        authorization: str | None = Header(default=None),
     ):
         require_auth_key(authorization)
         pool = cpa_config.get_pool(pool_id)
@@ -408,7 +418,6 @@ def create_app() -> FastAPI:
         if asset is not None:
             return FileResponse(asset)
 
-        # Static assets (_next/*) must not fallback to HTML — return 404
         if full_path.strip("/").startswith("_next/"):
             raise HTTPException(status_code=404, detail="Not Found")
 

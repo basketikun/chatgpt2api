@@ -57,6 +57,7 @@ const accountTypeOptions: { label: string; value: AccountType | "all" }[] = [
   { label: "全部类型", value: "all" },
   { label: "Free", value: "Free" },
   { label: "Plus", value: "Plus" },
+  { label: "ProLite", value: "ProLite" },
   { label: "Team", value: "Team" },
   { label: "Pro", value: "Pro" },
 ];
@@ -91,6 +92,10 @@ const metricCards = [
   { key: "quota", label: "剩余额度", color: "text-blue-500", icon: RefreshCw },
 ] as const;
 
+function isUnlimitedImageQuotaAccount(account: Account) {
+  return account.type === "Pro" || account.type === "ProLite";
+}
+
 function formatCompact(value: number) {
   if (value >= 1000) {
     return `${(value / 1000).toFixed(1)}k`;
@@ -98,8 +103,14 @@ function formatCompact(value: number) {
   return String(value);
 }
 
-function formatQuota(value: number) {
-  return String(Math.max(0, value));
+function formatQuota(account: Account) {
+  if (isUnlimitedImageQuotaAccount(account)) {
+    return "∞";
+  }
+  if (account.imageQuotaUnknown) {
+    return "未知";
+  }
+  return String(Math.max(0, account.quota));
 }
 
 function formatRestoreAt(value?: string | null) {
@@ -127,6 +138,12 @@ function formatRestoreAt(value?: string | null) {
 }
 
 function formatQuotaSummary(accounts: Account[]) {
+  if (accounts.some((account) => account.status !== "禁用" && isUnlimitedImageQuotaAccount(account))) {
+    return "∞";
+  }
+  if (accounts.some((account) => account.status !== "禁用" && account.imageQuotaUnknown)) {
+    return "未知";
+  }
   return formatCompact(accounts.reduce((sum, account) => sum + Math.max(0, account.quota), 0));
 }
 
@@ -151,7 +168,11 @@ function normalizeAccounts(items: Account[]): Account[] {
   return items.map((item) => ({
     ...item,
     type:
-      item.type === "Plus" || item.type === "Team" || item.type === "Pro" || item.type === "Free"
+      item.type === "Plus" ||
+      item.type === "ProLite" ||
+      item.type === "Team" ||
+      item.type === "Pro" ||
+      item.type === "Free"
         ? item.type
         : "Free",
   }));
@@ -683,7 +704,7 @@ export default function AccountsPage() {
                         </td>
                         <td className="px-4 py-3">
                           <Badge variant="info" className="rounded-md">
-                            {formatQuota(account.quota)}
+                            {formatQuota(account)}
                           </Badge>
                         </td>
                         <td className="px-4 py-3 text-xs leading-5 text-stone-500">

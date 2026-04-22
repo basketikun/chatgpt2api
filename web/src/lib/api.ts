@@ -1,8 +1,14 @@
 import { httpRequest } from "@/lib/request";
 
-export type AccountType = "Free" | "Plus" | "Pro" | "Team";
+export type AccountType = "Free" | "Plus" | "ProLite" | "Pro" | "Team";
 export type AccountStatus = "正常" | "限流" | "异常" | "禁用";
 export type ImageModel = "gpt-image-1" | "gpt-image-2";
+
+export type ImageConversationContext = {
+  accountId?: string | null;
+  upstreamConversationId?: string | null;
+  upstreamParentMessageId?: string | null;
+};
 
 export type Account = {
   id: string;
@@ -10,6 +16,7 @@ export type Account = {
   type: AccountType;
   status: AccountStatus;
   quota: number;
+  imageQuotaUnknown?: boolean;
   email?: string | null;
   user_id?: string | null;
   limits_progress?: Array<{
@@ -46,6 +53,14 @@ type AccountRefreshResponse = {
 type AccountUpdateResponse = {
   item: Account;
   items: Account[];
+};
+
+type ImageGenerationResponse = {
+  created: number;
+  data: Array<{ b64_json: string; revised_prompt?: string }>;
+  account_id?: string | null;
+  upstream_conversation_id?: string | null;
+  upstream_parent_message_id?: string | null;
 };
 
 export async function login(authKey: string) {
@@ -102,38 +117,60 @@ export async function updateAccount(
   });
 }
 
-export async function generateImage(prompt: string, model: ImageModel = "gpt-image-1") {
-  return httpRequest<{ created: number; data: Array<{ b64_json: string; revised_prompt?: string }> }>(
-    "/v1/images/generations",
-    {
-      method: "POST",
-      body: {
-        prompt,
-        model,
-        n: 1,
-        response_format: "b64_json",
-      },
-    },
-  );
+export async function generateImage(prompt: string, model: ImageModel = "gpt-image-2") {
+  return generateImageWithContext(prompt, model);
 }
 
-export async function editImage(file: File, prompt: string, model: ImageModel = "gpt-image-1") {
+export async function generateImageWithContext(
+  prompt: string,
+  model: ImageModel = "gpt-image-2",
+  context?: ImageConversationContext,
+) {
+  return httpRequest<ImageGenerationResponse>("/v1/images/generations", {
+    method: "POST",
+    body: {
+      prompt,
+      model,
+      n: 1,
+      response_format: "b64_json",
+      account_id: context?.accountId || undefined,
+      upstream_conversation_id: context?.upstreamConversationId || undefined,
+      upstream_parent_message_id: context?.upstreamParentMessageId || undefined,
+    },
+  });
+}
+
+export async function editImage(image: File, prompt: string, model: ImageModel = "gpt-image-2") {
+  return editImageWithContext(image, prompt, model);
+}
+
+export async function editImageWithContext(
+  image: File,
+  prompt: string,
+  model: ImageModel = "gpt-image-2",
+  context?: ImageConversationContext,
+) {
   const formData = new FormData();
-  formData.append("image", file);
+  formData.append("image", image);
   formData.append("prompt", prompt);
   formData.append("model", model);
   formData.append("n", "1");
+  formData.append("response_format", "b64_json");
+  if (context?.accountId) {
+    formData.append("account_id", context.accountId);
+  }
+  if (context?.upstreamConversationId) {
+    formData.append("upstream_conversation_id", context.upstreamConversationId);
+  }
+  if (context?.upstreamParentMessageId) {
+    formData.append("upstream_parent_message_id", context.upstreamParentMessageId);
+  }
 
-  return httpRequest<{ created: number; data: Array<{ b64_json: string; revised_prompt?: string }> }>(
-    "/v1/images/edits",
-    {
-      method: "POST",
-      body: formData,
-    },
-  );
+  return httpRequest<ImageGenerationResponse>("/v1/images/edits", {
+    method: "POST",
+    body: formData,
+  });
 }
-
-// ── CPA (CLIProxyAPI) ──────────────────────────────────────────────
 
 export type CPAPool = {
   id: string;
