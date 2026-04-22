@@ -16,6 +16,7 @@ from curl_cffi.requests import Session
 from services.account_service import account_service
 from services.config import config
 from services import proof_of_work
+from services.utils import anonymize_token
 
 
 BASE_URL = "https://chatgpt.com"
@@ -686,8 +687,9 @@ def generate_image_result(
     session, fp = _new_session(access_token)
     try:
         upstream_model = _resolve_upstream_model(access_token, model)
+        token_ref = anonymize_token(access_token)
         print(
-            f"[image-upstream] start token={access_token[:12]}... "
+            f"[image-upstream] start token={token_ref} "
             f"requested_model={model} upstream_model={upstream_model}"
         )
         device_id = _bootstrap(session, fp)
@@ -746,7 +748,7 @@ def generate_image_result(
             revised_prompt=prompt,
             url=download_url,
         )
-        print(f"[image-upstream] success token={access_token[:12]}... images=1")
+        print(f"[image-upstream] success token={token_ref} images=1")
         return {
             "created": time.time_ns() // 1_000_000_000,
             "data": [{"b64_json": result.b64_json, "revised_prompt": result.revised_prompt}],
@@ -754,7 +756,7 @@ def generate_image_result(
             "upstream_parent_message_id": next_parent_message_id or None,
         }
     except Exception as exc:
-        print(f"[image-upstream] fail token={access_token[:12]}... error={exc}")
+        print(f"[image-upstream] fail token={token_ref} error={exc}")
         raise
     finally:
         session.close()
@@ -783,8 +785,9 @@ def edit_image_result(
     session, fp = _new_session(access_token)
     try:
         upstream_model = _resolve_upstream_model(access_token, model)
+        token_ref = anonymize_token(access_token)
         print(
-            f"[image-edit] start token={access_token[:12]}... "
+            f"[image-edit] start token={token_ref} "
             f"requested_model={model} upstream_model={upstream_model}"
         )
         device_id = _bootstrap(session, fp)
@@ -844,7 +847,7 @@ def edit_image_result(
             revised_prompt=prompt,
             url=download_url,
         )
-        print(f"[image-edit] success token={access_token[:12]}... images=1")
+        print(f"[image-edit] success token={token_ref} images=1")
         return {
             "created": time.time_ns() // 1_000_000_000,
             "data": [{"b64_json": result.b64_json, "revised_prompt": result.revised_prompt}],
@@ -852,7 +855,7 @@ def edit_image_result(
             "upstream_parent_message_id": next_parent_message_id or None,
         }
     except Exception as exc:
-        print(f"[image-edit] fail token={access_token[:12]}... error={exc}")
+        print(f"[image-edit] fail token={token_ref} error={exc}")
         raise
     finally:
         session.close()
