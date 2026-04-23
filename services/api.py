@@ -399,9 +399,16 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
 
     @router.post("/v1/chat/completions")
-    async def create_chat_completion(body: ChatCompletionRequest, authorization: str | None = Header(default=None)):
+    async def create_chat_completion(body: ChatCompletionRequest, request: Request, authorization: str | None = Header(default=None)):
         require_auth_key(authorization)
-        return await run_in_threadpool(chatgpt_service.create_image_completion, body.model_dump(mode="python"))
+        base_url = resolve_image_base_url(request)
+        if bool(body.stream):
+            from fastapi.responses import StreamingResponse
+            return StreamingResponse(
+                chatgpt_service.stream_image_completion(body.model_dump(mode="python"), base_url),
+                media_type="text/event-stream"
+            )
+        return await run_in_threadpool(chatgpt_service.create_image_completion, body.model_dump(mode="python"), base_url)
 
     @router.post("/v1/responses")
     async def create_response(body: ResponseCreateRequest, authorization: str | None = Header(default=None)):

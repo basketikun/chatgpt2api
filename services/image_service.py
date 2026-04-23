@@ -557,9 +557,11 @@ def _extract_image_ids(mapping: dict) -> list[str]:
     return file_ids
 
 
-def _poll_image_ids(session: Session, access_token: str, device_id: str, conversation_id: str) -> list[str]:
+def _poll_image_ids(session: Session, access_token: str, device_id: str, conversation_id: str, progress_callback=None) -> list[str]:
     started = time.time()
-    while time.time() - started < 180:
+    while time.time() - started < 300:  # Increased to 300s to wait for queued images
+        if progress_callback:
+            progress_callback("polling")
         response = _retry(
             lambda: session.get(
                 f"{BASE_URL}/backend-api/conversation/{conversation_id}",
@@ -658,7 +660,7 @@ def _resolve_upstream_model(access_token: str, requested_model: str) -> str:
     return str(requested_model or DEFAULT_MODEL).strip() or DEFAULT_MODEL
 
 
-def generate_image_result(access_token: str, prompt: str, model: str = DEFAULT_MODEL, response_format: str = "b64_json", base_url: str = None) -> dict:
+def generate_image_result(access_token: str, prompt: str, model: str = DEFAULT_MODEL, response_format: str = "b64_json", base_url: str = None, progress_callback=None) -> dict:
     prompt = str(prompt or "").strip()
     access_token = str(access_token or "").strip()
     if not prompt:
@@ -698,8 +700,9 @@ def generate_image_result(access_token: str, prompt: str, model: str = DEFAULT_M
         actual_conversation_id = parsed.get("conversation_id") or ""
         file_ids = parsed.get("file_ids") or []
         response_text = str(parsed.get("text") or "").strip()
+
         if actual_conversation_id and not file_ids:
-            file_ids = _poll_image_ids(session, access_token, device_id, actual_conversation_id)
+            file_ids = _poll_image_ids(session, access_token, device_id, actual_conversation_id, progress_callback)
         if not file_ids:
             if response_text:
                 raise ImageGenerationError(response_text)
@@ -769,6 +772,7 @@ def edit_image_result(
     model: str = DEFAULT_MODEL,
     response_format: str = "b64_json",
     base_url: str = None,
+    progress_callback=None,
 ) -> dict:
     prompt = str(prompt or "").strip()
     access_token = str(access_token or "").strip()
@@ -833,9 +837,10 @@ def edit_image_result(
         input_file_ids = {image.file_id for image in uploaded_images}
         file_ids = _filter_output_file_ids(parsed.get("file_ids") or [], input_file_ids)
         response_text = str(parsed.get("text") or "").strip()
+
         if actual_conversation_id and not file_ids:
             file_ids = _filter_output_file_ids(
-                _poll_image_ids(session, access_token, device_id, actual_conversation_id),
+                _poll_image_ids(session, access_token, device_id, actual_conversation_id, progress_callback),
                 input_file_ids,
             )
         if not file_ids:
