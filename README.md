@@ -28,6 +28,25 @@ git clone git@github.com:basketikun/chatgpt2api.git
 docker compose up -d
 ```
 
+## Next.js 迁移并行模式（实验性）
+
+当前仓库已增加 Next.js Server Route 作为迁移入口：
+
+- `web` 负责前端与新后端路由（`/auth/*`、`/api/*`、`/v1/*`）
+- 尚未完成迁移的能力通过 `LEGACY_API_BASE_URL` 转发到旧 Python 服务
+
+本地联调建议：
+
+```bash
+# 终端 1：启动旧 Python 后端
+uv run uvicorn main:app --host 0.0.0.0 --port 8000
+
+# 终端 2：启动 Next.js（默认会把 /api/* 和 /v1/* 转发给 8000）
+cd web
+npm install
+LEGACY_API_BASE_URL=http://127.0.0.1:8000 npm run dev
+```
+
 ## 功能
 
 ### API 兼容能力
