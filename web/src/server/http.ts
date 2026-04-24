@@ -9,5 +9,5 @@ export function readBearerToken(authorization: string | null) {
 }
 
 export function errorResponse(status: number, message: string) {
-    return NextResponse.json({detail: {error: message}}, {status});
+    return NextResponse.json({detail: {error: message}, error: message}, {status});
 }

@@ -1,7 +1,7 @@
 import {NextRequest, NextResponse} from "next/server";
 
 import {isAuthorized} from "@/server/auth";
-import {readRuntimeConfig, updateRuntimeConfig} from "@/server/config";
+import {readRuntimeConfig, sanitizeRuntimeConfigForResponse, updateRuntimeConfig} from "@/server/config";
 import {errorResponse} from "@/server/http";
 
 export async function GET(request: NextRequest) {
@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
     if (!ok) {
         return errorResponse(401, "authorization is invalid");
     }
-    return NextResponse.json({config: await readRuntimeConfig()});
+    return NextResponse.json({config: sanitizeRuntimeConfigForResponse(await readRuntimeConfig())});
 }
 
 export async function POST(request: NextRequest) {
@@ -17,7 +17,12 @@ export async function POST(request: NextRequest) {
     if (!ok) {
         return errorResponse(401, "authorization is invalid");
     }
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    let body: Record<string, unknown>;
+    try {
+        body = (await request.json()) as Record<string, unknown>;
+    } catch {
+        return errorResponse(400, "invalid json body");
+    }
     const config = await updateRuntimeConfig(body);
-    return NextResponse.json({config});
+    return NextResponse.json({config: sanitizeRuntimeConfigForResponse(config)});
 }

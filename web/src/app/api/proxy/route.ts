@@ -4,7 +4,7 @@ import {isAuthorized} from "@/server/auth";
 import {readRuntimeConfig, updateRuntimeConfig} from "@/server/config";
 import {errorResponse} from "@/server/http";
 
-function parseProxyConfig(config: {proxy?: unknown}) {
+function toProxyResponse(config: {proxy?: unknown}) {
     const proxyUrl = String(config.proxy || "").trim();
     return {
         enabled: Boolean(proxyUrl),
@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
     if (!ok) {
         return errorResponse(401, "authorization is invalid");
     }
-    return NextResponse.json({proxy: parseProxyConfig(await readRuntimeConfig())});
+    return NextResponse.json({proxy: toProxyResponse(await readRuntimeConfig())});
 }
 
 export async function POST(request: NextRequest) {
@@ -25,9 +25,17 @@ export async function POST(request: NextRequest) {
     if (!ok) {
         return errorResponse(401, "authorization is invalid");
     }
-    const body = (await request.json().catch(() => ({}))) as {enabled?: unknown; url?: unknown};
-    const enabled = Boolean(body.enabled);
-    const url = String(body.url || "").trim();
+    let proxyBody: {enabled?: unknown; url?: unknown};
+    try {
+        proxyBody = (await request.json()) as {enabled?: unknown; url?: unknown};
+    } catch {
+        return errorResponse(400, "invalid json body");
+    }
+    const enabled = Boolean(proxyBody.enabled);
+    const url = String(proxyBody.url || "").trim();
+    if (enabled && !url) {
+        return errorResponse(400, "proxy url is required when enabled");
+    }
     const config = await updateRuntimeConfig({proxy: enabled ? url : ""});
-    return NextResponse.json({proxy: parseProxyConfig(config)});
+    return NextResponse.json({proxy: toProxyResponse(config)});
 }

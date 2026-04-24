@@ -1,4 +1,7 @@
 import {errorResponse} from "@/server/http";
+import {trimTrailingSlashes} from "@/server/url";
+
+const DEFAULT_LEGACY_API_BASE_URL = "http://127.0.0.1:8000";
 
 const HOP_BY_HOP_HEADERS = new Set([
     "connection",
@@ -14,7 +17,7 @@ const HOP_BY_HOP_HEADERS = new Set([
 ]);
 
 function buildLegacyUrl(pathname: string, search = "") {
-    const baseUrl = String(process.env.LEGACY_API_BASE_URL || "http://127.0.0.1:8000").trim().replace(/\/+$/, "");
+    const baseUrl = trimTrailingSlashes(String(process.env.LEGACY_API_BASE_URL || DEFAULT_LEGACY_API_BASE_URL).trim());
     const normalizedPath = pathname.startsWith("/") ? pathname : `/${pathname}`;
     return `${baseUrl}${normalizedPath}${search}`;
 }
@@ -56,7 +59,9 @@ export async function proxyToLegacy(request: Request, pathname: string) {
         }
         const upstream = await fetch(targetUrl, init);
         return createProxyResponse(upstream);
-    } catch {
+    } catch (error) {
+        const safeError = error instanceof Error ? {name: error.name, message: error.message} : {message: "unknown"};
+        console.error("[legacy-proxy] request failed", {pathname, error: safeError});
         return errorResponse(502, "legacy backend unavailable");
     }
 }
