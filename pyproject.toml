@@ -7,6 +7,7 @@ requires-python = ">=3.13"
 dependencies = [
     "curl-cffi>=0.15.0",
     "fastapi>=0.136.0",
+    "openai>=1.0.0",
     "pillow>=12.2.0",
     "pybase64>=1.4.3",
     "python-multipart>=0.0.26",

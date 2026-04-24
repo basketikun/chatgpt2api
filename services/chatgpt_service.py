@@ -12,6 +12,7 @@ from fastapi import HTTPException
 
 from services.account_service import AccountService
 from services.config import config
+from services.minimax_backend_api import MINIMAX_MODELS, MinimaxBackendAPI, is_minimax_model
 from services.openai_backend_api import CODEX_IMAGE_MODEL, OpenAIBackendAPI
 from utils.helper import (
     IMAGE_MODELS,
@@ -110,6 +111,19 @@ class ChatGPTService:
                 "owned_by": "chatgpt2api",
                 "permission": [],
                 "root": model,
+                "parent": None,
+            })
+        for model_id in MINIMAX_MODELS:
+            if model_id in seen:
+                continue
+            seen.add(model_id)
+            data.append({
+                "id": model_id,
+                "object": "model",
+                "created": 0,
+                "owned_by": "minimax",
+                "permission": [],
+                "root": model_id,
                 "parent": None,
             })
         return result
@@ -1038,6 +1052,11 @@ class ChatGPTService:
     def _create_text_chat_completion(self, body: dict[str, object]) -> dict[str, object]:
         model = str(body.get("model") or "auto").strip() or "auto"
         messages = self._chat_messages_from_body(body)
+        if is_minimax_model(model):
+            try:
+                return MinimaxBackendAPI().chat_completions(messages=messages, model=model, stream=False)
+            except Exception as exc:
+                raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
         try:
             return self._new_backend(self._get_text_access_token()).chat_completions(messages=messages, model=model, stream=False)
         except Exception as exc:
@@ -1055,6 +1074,12 @@ class ChatGPTService:
 
         model = str(body.get("model") or "auto").strip() or "auto"
         messages = self._chat_messages_from_body(body)
+        if is_minimax_model(model):
+            try:
+                yield from MinimaxBackendAPI().chat_completions(messages=messages, model=model, stream=True)
+            except Exception as exc:
+                raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
+            return
         try:
             yield from self._new_backend(self._get_text_access_token()).chat_completions(messages=messages, model=model, stream=True)
         except Exception as exc:
