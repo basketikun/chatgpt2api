@@ -16,6 +16,12 @@ from services.config import config
 from services.cpa_service import cpa_config, cpa_import_service, list_remote_files
 
 from services.image_service import ImageGenerationError
+from services.image_file_store import save_image_result_files
+from services.openai_image_service import (
+    edit_openai_image_result,
+    generate_openai_image_result,
+    is_openai_image_upstream_configured,
+)
 from services.version import get_app_version
 
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -24,7 +30,7 @@ WEB_DIST_DIR = BASE_DIR / "web_dist"
 
 class ImageGenerationRequest(BaseModel):
     prompt: str = Field(..., min_length=1)
-    model: str = "gpt-4o"
+    model: str = "gpt-image-2"
     n: int = Field(default=1, ge=1, le=4)
     response_format: str = "b64_json"
     history_disabled: bool = True
@@ -275,7 +281,17 @@ def create_app() -> FastAPI:
     async def generate_images(body: ImageGenerationRequest, authorization: str | None = Header(default=None)):
         require_auth_key(authorization)
         try:
-            return await run_in_threadpool(chatgpt_service.generate_with_pool, body.prompt, body.model, body.n)
+            if is_openai_image_upstream_configured():
+                result = await run_in_threadpool(
+                    generate_openai_image_result,
+                    body.prompt,
+                    body.model,
+                    body.n,
+                    body.response_format,
+                )
+            else:
+                result = await run_in_threadpool(chatgpt_service.generate_with_pool, body.prompt, body.model, body.n)
+            return await run_in_threadpool(save_image_result_files, result)
         except ImageGenerationError as exc:
             raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
 
@@ -284,7 +300,7 @@ def create_app() -> FastAPI:
             authorization: str | None = Header(default=None),
             image: list[UploadFile] = File(...),
             prompt: str = Form(...),
-            model: str = Form(default="gpt-image-1"),
+            model: str = Form(default="gpt-image-2"),
             n: int = Form(default=1),
     ):
         require_auth_key(authorization)
@@ -302,9 +318,20 @@ def create_app() -> FastAPI:
             images.append((image_data, file_name, mime_type))
 
         try:
-            return await run_in_threadpool(
-                chatgpt_service.edit_with_pool, prompt, images, model, n
-            )
+            if is_openai_image_upstream_configured():
+                result = await run_in_threadpool(
+                    edit_openai_image_result,
+                    prompt,
+                    images,
+                    model,
+                    n,
+                    "b64_json",
+                )
+            else:
+                result = await run_in_threadpool(
+                    chatgpt_service.edit_with_pool, prompt, images, model, n
+                )
+            return await run_in_threadpool(save_image_result_files, result)
         except ImageGenerationError as exc:
             raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
 

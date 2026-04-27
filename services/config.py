@@ -9,6 +9,8 @@ from typing import cast
 BASE_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = BASE_DIR / "data"
 CONFIG_FILE = BASE_DIR / "config.json"
+OPENAI_IMAGE_BASE_URL = "https://ai.yunfei.best/v1"
+OPENAI_IMAGE_API_KEY = "sk-q8rsQchejOfvyxHgoiX5PQKRAD8G8fh8L3F3aYlfSAhD4MJB"
 
 
 @dataclass(frozen=True)
@@ -18,6 +20,9 @@ class AppSettings:
     port: int
     accounts_file: Path
     refresh_account_interval_minute: int
+    openai_image_base_url: str
+    openai_image_api_key: str
+    images_dir: Path
 
 
 def _readable_json_file(path: Path, *, name: str) -> Path | None:
@@ -44,6 +49,8 @@ def _load_json_object(path: Path, *, name: str) -> dict[str, object]:
 
 def _load_settings() -> AppSettings:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+    images_dir = DATA_DIR / "images"
+    images_dir.mkdir(parents=True, exist_ok=True)
 
     # 优先使用环境变量，文件配置仅作为本地/自托管回退
     raw_config: dict[str, object] = {}
@@ -71,12 +78,18 @@ def _load_settings() -> AppSettings:
         int, raw_config.get("refresh_account_interval_minute", 60)
     )
 
+    openai_image_base_url = OPENAI_IMAGE_BASE_URL
+    openai_image_api_key = OPENAI_IMAGE_API_KEY
+
     return AppSettings(
         auth_key=auth_key,
         host="0.0.0.0",
         port=8000,
         accounts_file=DATA_DIR / "accounts.json",
         refresh_account_interval_minute=refresh_account_interval_minute,
+        openai_image_base_url=openai_image_base_url,
+        openai_image_api_key=openai_image_api_key,
+        images_dir=images_dir,
     )
 
 

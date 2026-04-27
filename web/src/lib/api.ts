@@ -102,7 +102,7 @@ export async function updateAccount(
   });
 }
 
-export async function generateImage(prompt: string, model: ImageModel = "gpt-image-1") {
+export async function generateImage(prompt: string, model: ImageModel = "gpt-image-2") {
   return httpRequest<{ created: number; data: Array<{ b64_json: string; revised_prompt?: string }> }>(
     "/v1/images/generations",
     {
@@ -117,7 +117,7 @@ export async function generateImage(prompt: string, model: ImageModel = "gpt-ima
   );
 }
 
-export async function editImage(files: File | File[], prompt: string, model: ImageModel = "gpt-image-1") {
+export async function editImage(files: File | File[], prompt: string, model: ImageModel = "gpt-image-2") {
   const formData = new FormData();
   const uploadFiles = Array.isArray(files) ? files : [files];
 

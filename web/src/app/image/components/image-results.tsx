@@ -1,8 +1,16 @@
 "use client";
-import { LoaderCircle } from "lucide-react";
+import { AlertCircle, LoaderCircle } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { ImageLightbox } from "@/components/image-lightbox";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import type { ImageConversation, StoredImage } from "@/store/image-conversations";
 
 type ImageResultsProps = {
@@ -20,6 +28,7 @@ export function ImageResults({
 }: ImageResultsProps) {
   const [referenceLightboxOpen, setReferenceLightboxOpen] = useState(false);
   const [referenceLightboxIndex, setReferenceLightboxIndex] = useState(0);
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
 
   const referenceLightboxImages = useMemo(
     () =>
@@ -64,6 +73,7 @@ export function ImageResults({
         onOpenChange={setReferenceLightboxOpen}
         onIndexChange={setReferenceLightboxIndex}
       />
+      <ErrorDetailDialog error={errorDetail} onOpenChange={(open) => !open && setErrorDetail(null)} />
 
       <div className="flex justify-end">
         <div className="w-full max-w-[min(820px,92%)] px-1 pt-1">
@@ -117,24 +127,22 @@ export function ImageResults({
           </div>
 
           {selectedConversation.status === "error" && selectedConversation.images.length === 0 ? (
-            <div className="border-l-2 border-rose-300 bg-rose-50/70 px-4 py-4 text-sm leading-6 text-rose-600">
-              {selectedConversation.error || "生成失败"}
-            </div>
+            <ErrorNotice error={selectedConversation.error || "生成失败"} onShowDetail={setErrorDetail} />
           ) : null}
 
           {selectedConversation.images.length > 0 ? (
             <div className="columns-1 gap-4 space-y-4 sm:columns-2 xl:columns-3">
               {selectedConversation.images.map((image, index) => (
                 <div key={image.id} className="break-inside-avoid overflow-hidden rounded-[22px]">
-                  <ImageResultCard image={image} index={index} onOpen={openLightbox} />
+                  <ImageResultCard image={image} index={index} onOpen={openLightbox} onShowError={setErrorDetail} />
                 </div>
               ))}
             </div>
           ) : null}
 
           {selectedConversation.status === "error" && selectedConversation.images.length > 0 ? (
-            <div className="mt-4 border-l-2 border-amber-300 bg-amber-50/70 px-4 py-3 text-sm leading-6 text-amber-700">
-              {selectedConversation.error}
+            <div className="mt-4">
+              <ErrorNotice error={selectedConversation.error || "生成失败"} tone="amber" onShowDetail={setErrorDetail} />
             </div>
           ) : null}
         </div>
@@ -147,10 +155,12 @@ function ImageResultCard({
   image,
   index,
   onOpen,
+  onShowError,
 }: {
   image: StoredImage;
   index: number;
   onOpen: (imageId: string) => void;
+  onShowError: (error: string) => void;
 }) {
   if (image.status === "success" && image.b64_json) {
     return (
@@ -165,9 +175,23 @@ function ImageResultCard({
   }
 
   if (image.status === "error") {
+    const error = image.error || "生成失败";
     return (
-      <div className="flex min-h-[320px] items-center justify-center bg-rose-50 px-6 py-8 text-center text-sm leading-6 text-rose-600">
-        {image.error || "生成失败"}
+      <div className="flex min-h-[320px] flex-col items-center justify-center gap-4 bg-rose-50 px-6 py-8 text-center text-sm leading-6 text-rose-600">
+        <AlertCircle className="size-6" />
+        <div>
+          <p className="font-medium">第 {index + 1} 张生成失败</p>
+          <p className="mt-1 line-clamp-2 text-rose-500">{summarizeError(error)}</p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="rounded-full border-rose-200 bg-white/70 text-rose-700 hover:bg-white"
+          onClick={() => onShowError(error)}
+        >
+          查看完整错误
+        </Button>
       </div>
     );
   }
@@ -179,5 +203,62 @@ function ImageResultCard({
       </div>
       <p className="text-sm">正在生成图片...</p>
     </div>
+  );
+}
+
+function summarizeError(error: string) {
+  const normalized = String(error || "生成失败").replace(/\s+/g, " ").trim();
+  return normalized.length > 96 ? `${normalized.slice(0, 96)}...` : normalized;
+}
+
+function ErrorNotice({
+  error,
+  tone = "rose",
+  onShowDetail,
+}: {
+  error: string;
+  tone?: "rose" | "amber";
+  onShowDetail: (error: string) => void;
+}) {
+  const classes =
+    tone === "amber"
+      ? "border-amber-300 bg-amber-50/70 text-amber-700"
+      : "border-rose-300 bg-rose-50/70 text-rose-600";
+
+  return (
+    <div className={`flex flex-col gap-3 border-l-2 px-4 py-3 text-sm leading-6 sm:flex-row sm:items-center sm:justify-between ${classes}`}>
+      <span className="line-clamp-2">{summarizeError(error)}</span>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="w-fit shrink-0 rounded-full border-white/70 bg-white/70"
+        onClick={() => onShowDetail(error)}
+      >
+        查看完整错误
+      </Button>
+    </div>
+  );
+}
+
+function ErrorDetailDialog({
+  error,
+  onOpenChange,
+}: {
+  error: string | null;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Dialog open={Boolean(error)} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[82vh] w-[min(92vw,820px)] overflow-hidden rounded-3xl bg-white p-0">
+        <DialogHeader className="border-b border-stone-100 px-6 pt-6 pb-4">
+          <DialogTitle>完整错误信息</DialogTitle>
+          <DialogDescription>系统错误不会再挤在图片窗口里，完整内容在这里查看。</DialogDescription>
+        </DialogHeader>
+        <pre className="max-h-[58vh] overflow-auto whitespace-pre-wrap break-words bg-stone-950 px-6 py-5 text-xs leading-5 text-stone-100">
+          {error}
+        </pre>
+      </DialogContent>
+    </Dialog>
   );
 }
