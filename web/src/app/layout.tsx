@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import { Toaster } from "sonner";
-import "./globals.css";
+
 import { TopNav } from "@/components/top-nav";
+import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "ChatGPT 号池管理",
-  description: "ChatGPT account pool management dashboard",
+  title: "漱玉健康生图系统",
+  description: "OpenAI-compatible image workspace",
 };
 
 export default function RootLayout({

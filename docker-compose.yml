@@ -4,9 +4,10 @@ services:
     container_name: chatgpt2api
     restart: unless-stopped
     ports:
-      - "0.0.0.0:3000:80"
+      - "127.0.0.1:3001:80"
     volumes:
       - ./data:/app/data
+      - ./logs:/app/logs
       - ./config.json:/app/config.json:ro
       - ./services:/app/services:ro
       - ./web/out:/app/web_dist:ro

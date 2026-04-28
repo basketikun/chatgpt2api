@@ -23,20 +23,47 @@ def _extract_response_image(input_value: object) -> tuple[bytes, str] | None:
         return extract_image_from_message_content(input_value.get("content"))
     if not isinstance(input_value, list):
         return None
-    for item in reversed(input_value):
-        if isinstance(item, dict):
-            if str(item.get("type") or "").strip() == "input_image":
-                import base64 as b64
-                image_url = str(item.get("image_url") or "")
-                if image_url.startswith("data:"):
-                    header, _, data = image_url.partition(",")
-                    mime = header.split(";")[0].removeprefix("data:")
-                    return b64.b64decode(data), mime or "image/png"
-            content = item.get("content")
-            if content:
-                result = extract_image_from_message_content(content)
-                if result:
-                    return result
+
+    latest_user_index = None
+
+    for index in range(len(input_value) - 1, -1, -1):
+        item = input_value[index]
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("type") or "").strip() == "input_image":
+            import base64 as b64
+
+            image_url = str(item.get("image_url") or "")
+            if image_url.startswith("data:"):
+                header, _, data = image_url.partition(",")
+                mime = header.split(";")[0].removeprefix("data:")
+                return b64.b64decode(data), mime or "image/png"
+
+        role = str(item.get("role") or "").strip().lower()
+        if role == "user":
+            latest_user_index = index
+            result = extract_image_from_message_content(item.get("content"))
+            if result:
+                return result
+            break
+
+        if str(item.get("type") or "").strip() == "input_text":
+            latest_user_index = index
+            break
+
+    if latest_user_index is None:
+        return None
+
+    for index in range(latest_user_index - 1, -1, -1):
+        item = input_value[index]
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or "").strip().lower()
+        if role != "assistant":
+            continue
+        result = extract_image_from_message_content(item.get("content"))
+        if result:
+            return result
     return None
 
 

@@ -1,4 +1,5 @@
 "use client";
+
 import { AlertCircle, LoaderCircle } from "lucide-react";
 import { useMemo, useState } from "react";
 
@@ -11,7 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { ImageConversation, StoredImage } from "@/store/image-conversations";
+import type { ImageConversation, ImageConversationTurn, StoredImage, StoredReferenceImage } from "@/store/image-conversations";
 
 type ImageResultsProps = {
   selectedConversation: ImageConversation | null;
@@ -26,17 +27,14 @@ export function ImageResults({
   openLightbox,
   formatConversationTime,
 }: ImageResultsProps) {
+  const [referenceLightboxImages, setReferenceLightboxImages] = useState<Array<{ id: string; src: string }>>([]);
   const [referenceLightboxOpen, setReferenceLightboxOpen] = useState(false);
   const [referenceLightboxIndex, setReferenceLightboxIndex] = useState(0);
   const [errorDetail, setErrorDetail] = useState<string | null>(null);
 
-  const referenceLightboxImages = useMemo(
-    () =>
-      (selectedConversation?.referenceImages ?? []).map((image, index) => ({
-        id: `${image.name}-${index}`,
-        src: image.dataUrl,
-      })),
-    [selectedConversation?.referenceImages],
+  const latestTurnId = useMemo(
+    () => selectedConversation?.turns[selectedConversation.turns.length - 1]?.id ?? null,
+    [selectedConversation],
   );
 
   if (!selectedConversation) {
@@ -44,20 +42,20 @@ export function ImageResults({
       <div className="flex h-full min-h-[420px] items-center justify-center text-center">
         <div className="w-full max-w-4xl">
           <h1
-            className="text-3xl font-semibold tracking-tight text-stone-950 md:text-5xl"
+            className="text-6xl font-semibold tracking-tight text-stone-950 md:text-8xl"
             style={{
               fontFamily: '"Palatino Linotype","Book Antiqua","URW Palladio L","Times New Roman",serif',
             }}
           >
-            Turn ideas into images
+            将想法变成图像
           </h1>
           <p
-            className="mt-4 text-[15px] italic tracking-[0.01em] text-stone-500"
+            className="mt-4 text-[30px] italic tracking-[0.01em] text-stone-500"
             style={{
               fontFamily: '"Palatino Linotype","Book Antiqua","URW Palladio L","Times New Roman",serif',
             }}
           >
-            Describe a scene, a mood, or a character, and let the next image start here.
+            描述一个场景、一种氛围或一个角色，让下一张图像从这里开始。
           </p>
         </div>
       </div>
@@ -65,7 +63,7 @@ export function ImageResults({
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-[980px] flex-col gap-4">
+    <div className="mx-auto flex w-full max-w-[980px] flex-col gap-6">
       <ImageLightbox
         images={referenceLightboxImages}
         currentIndex={referenceLightboxIndex}
@@ -75,27 +73,73 @@ export function ImageResults({
       />
       <ErrorDetailDialog error={errorDetail} onOpenChange={(open) => !open && setErrorDetail(null)} />
 
+      {selectedConversation.turns.map((turn) => (
+        <ConversationTurnSection
+          key={turn.id}
+          turn={turn}
+          isGenerating={isSelectedGenerating && latestTurnId === turn.id}
+          openLightbox={openLightbox}
+          formatConversationTime={formatConversationTime}
+          onOpenReference={(images, index) => {
+            setReferenceLightboxImages(
+              images.map((image, imageIndex) => ({
+                id: `${image.name}-${imageIndex}`,
+                src: image.dataUrl,
+              })),
+            );
+            setReferenceLightboxIndex(index);
+            setReferenceLightboxOpen(true);
+          }}
+          onShowError={setErrorDetail}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ConversationTurnSection({
+  turn,
+  isGenerating,
+  openLightbox,
+  formatConversationTime,
+  onOpenReference,
+  onShowError,
+}: {
+  turn: ImageConversationTurn;
+  isGenerating: boolean;
+  openLightbox: (imageId: string) => void;
+  formatConversationTime: (value: string) => string;
+  onOpenReference: (images: StoredReferenceImage[], index: number) => void;
+  onShowError: (error: string) => void;
+}) {
+  return (
+    <section className="flex flex-col gap-4">
       <div className="flex justify-end">
         <div className="w-full max-w-[min(820px,92%)] px-1 pt-1">
           <div className="ml-auto flex max-w-full flex-col items-end gap-2.5 text-right">
             <div className="w-fit max-w-[min(32rem,100%)] whitespace-pre-wrap break-words text-[15px] leading-6 text-stone-700 sm:leading-7">
-              {selectedConversation.prompt}
+              {turn.prompt}
             </div>
-            {selectedConversation.referenceImages?.length ? (
+            {turn.optimizedPrompt ? (
+              <div className="w-fit max-w-[min(32rem,100%)] rounded-2xl border border-emerald-100 bg-emerald-50/70 px-4 py-3 text-left text-xs leading-5 text-emerald-800">
+                <div className="mb-1 font-semibold text-emerald-900">
+                  已优化后发送{turn.promptOptimizer ? ` · ${turn.promptOptimizer}` : ""}
+                </div>
+                <div className="whitespace-pre-wrap break-words">{turn.optimizedPrompt}</div>
+              </div>
+            ) : null}
+            {turn.referenceImages?.length ? (
               <div
                 className="grid w-fit auto-rows-fr gap-3"
                 style={{
-                  gridTemplateColumns: `repeat(${Math.min(selectedConversation.referenceImages.length, 3)}, minmax(0, 1fr))`,
+                  gridTemplateColumns: `repeat(${Math.min(turn.referenceImages.length, 3)}, minmax(0, 1fr))`,
                 }}
               >
-                {selectedConversation.referenceImages.map((image, index) => (
+                {turn.referenceImages.map((image, index) => (
                   <button
                     key={`${image.name}-${index}`}
                     type="button"
-                    onClick={() => {
-                      setReferenceLightboxIndex(index);
-                      setReferenceLightboxOpen(true);
-                    }}
+                    onClick={() => onOpenReference(turn.referenceImages || [], index)}
                     className="group relative aspect-square min-h-[112px] overflow-hidden rounded-[18px] border border-stone-200/80 bg-stone-100/60 text-left transition hover:border-stone-300 sm:min-h-[136px]"
                     aria-label={`预览参考图 ${image.name || index + 1}`}
                   >
@@ -115,39 +159,40 @@ export function ImageResults({
       <div className="flex justify-start">
         <div className="w-full p-1">
           <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-stone-500">
-            <span className="rounded-full bg-stone-100 px-3 py-1">{selectedConversation.mode === "edit" ? "编辑图" : "文生图"}</span>
-            <span className="rounded-full bg-stone-100 px-3 py-1">{selectedConversation.model}</span>
-            <span className="rounded-full bg-stone-100 px-3 py-1">{selectedConversation.count} 张</span>
-            <span className="rounded-full bg-stone-100 px-3 py-1">
-              {formatConversationTime(selectedConversation.createdAt)}
-            </span>
-            {isSelectedGenerating && (
+            <span className="rounded-full bg-stone-100 px-3 py-1">{turn.mode === "edit" ? "编辑图" : "文生图"}</span>
+            <span className="rounded-full bg-stone-100 px-3 py-1">{turn.model}</span>
+            <span className="rounded-full bg-stone-100 px-3 py-1">{turn.count} 张</span>
+            {turn.optimizedPrompt ? (
+              <span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-700">提示词已优化</span>
+            ) : null}
+            <span className="rounded-full bg-stone-100 px-3 py-1">{formatConversationTime(turn.createdAt)}</span>
+            {isGenerating ? (
               <span className="rounded-full bg-amber-50 px-3 py-1 text-amber-700">处理中</span>
-            )}
+            ) : null}
           </div>
 
-          {selectedConversation.status === "error" && selectedConversation.images.length === 0 ? (
-            <ErrorNotice error={selectedConversation.error || "生成失败"} onShowDetail={setErrorDetail} />
+          {turn.status === "error" && turn.images.length === 0 ? (
+            <ErrorNotice error={turn.error || "生成失败"} onShowDetail={onShowError} />
           ) : null}
 
-          {selectedConversation.images.length > 0 ? (
+          {turn.images.length > 0 ? (
             <div className="columns-1 gap-4 space-y-4 sm:columns-2 xl:columns-3">
-              {selectedConversation.images.map((image, index) => (
+              {turn.images.map((image, index) => (
                 <div key={image.id} className="break-inside-avoid overflow-hidden rounded-[22px]">
-                  <ImageResultCard image={image} index={index} onOpen={openLightbox} onShowError={setErrorDetail} />
+                  <ImageResultCard image={image} index={index} onOpen={openLightbox} onShowError={onShowError} />
                 </div>
               ))}
             </div>
           ) : null}
 
-          {selectedConversation.status === "error" && selectedConversation.images.length > 0 ? (
+          {turn.status === "error" && turn.images.length > 0 ? (
             <div className="mt-4">
-              <ErrorNotice error={selectedConversation.error || "生成失败"} tone="amber" onShowDetail={setErrorDetail} />
+              <ErrorNotice error={turn.error || "生成失败"} tone="amber" onShowDetail={onShowError} />
             </div>
           ) : null}
         </div>
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -251,7 +296,7 @@ function ErrorDetailDialog({
   return (
     <Dialog open={Boolean(error)} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[82vh] w-[min(92vw,820px)] overflow-hidden rounded-3xl bg-white p-0">
-        <DialogHeader className="border-b border-stone-100 px-6 pt-6 pb-4">
+        <DialogHeader className="border-b border-stone-100 px-6 pb-4 pt-6">
           <DialogTitle>完整错误信息</DialogTitle>
           <DialogDescription>系统错误不会再挤在图片窗口里，完整内容在这里查看。</DialogDescription>
         </DialogHeader>

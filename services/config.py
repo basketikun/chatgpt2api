@@ -11,6 +11,9 @@ DATA_DIR = BASE_DIR / "data"
 CONFIG_FILE = BASE_DIR / "config.json"
 OPENAI_IMAGE_BASE_URL = "https://ai.yunfei.best/v1"
 OPENAI_IMAGE_API_KEY = "sk-q8rsQchejOfvyxHgoiX5PQKRAD8G8fh8L3F3aYlfSAhD4MJB"
+PROMPT_OPTIMIZER_BASE_URL = "https://ai.yunfei.best/v1"
+PROMPT_OPTIMIZER_API_KEY = "sk-m9heEruQxkNjLOWtVjM0wrz7Jk7phQAddA4Sto0DrOpCw807"
+PROMPT_OPTIMIZER_MODEL = "gpt-5.4"
 
 
 @dataclass(frozen=True)
@@ -22,7 +25,12 @@ class AppSettings:
     refresh_account_interval_minute: int
     openai_image_base_url: str
     openai_image_api_key: str
+    openai_image_max_attempts: int
+    prompt_optimizer_base_url: str
+    prompt_optimizer_api_key: str
+    prompt_optimizer_model: str
     images_dir: Path
+    logs_dir: Path
 
 
 def _readable_json_file(path: Path, *, name: str) -> Path | None:
@@ -51,6 +59,8 @@ def _load_settings() -> AppSettings:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     images_dir = DATA_DIR / "images"
     images_dir.mkdir(parents=True, exist_ok=True)
+    logs_dir = BASE_DIR / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
 
     # 优先使用环境变量，文件配置仅作为本地/自托管回退
     raw_config: dict[str, object] = {}
@@ -80,6 +90,25 @@ def _load_settings() -> AppSettings:
 
     openai_image_base_url = OPENAI_IMAGE_BASE_URL
     openai_image_api_key = OPENAI_IMAGE_API_KEY
+    openai_image_max_attempts = max(
+        1,
+        min(20, int(raw_config.get("openai_image_max_attempts") or os.getenv("CHATGPT2API_OPENAI_IMAGE_MAX_ATTEMPTS") or 8)),
+    )
+    prompt_optimizer_base_url = str(
+        os.getenv("CHATGPT2API_PROMPT_OPTIMIZER_BASE_URL")
+        or raw_config.get("prompt_optimizer_base_url")
+        or PROMPT_OPTIMIZER_BASE_URL
+    ).strip()
+    prompt_optimizer_api_key = str(
+        os.getenv("CHATGPT2API_PROMPT_OPTIMIZER_API_KEY")
+        or raw_config.get("prompt_optimizer_api_key")
+        or PROMPT_OPTIMIZER_API_KEY
+    ).strip()
+    prompt_optimizer_model = str(
+        os.getenv("CHATGPT2API_PROMPT_OPTIMIZER_MODEL")
+        or raw_config.get("prompt_optimizer_model")
+        or PROMPT_OPTIMIZER_MODEL
+    ).strip()
 
     return AppSettings(
         auth_key=auth_key,
@@ -89,7 +118,12 @@ def _load_settings() -> AppSettings:
         refresh_account_interval_minute=refresh_account_interval_minute,
         openai_image_base_url=openai_image_base_url,
         openai_image_api_key=openai_image_api_key,
+        openai_image_max_attempts=openai_image_max_attempts,
+        prompt_optimizer_base_url=prompt_optimizer_base_url,
+        prompt_optimizer_api_key=prompt_optimizer_api_key,
+        prompt_optimizer_model=prompt_optimizer_model,
         images_dir=images_dir,
+        logs_dir=logs_dir,
     )
 
 

@@ -1,4 +1,5 @@
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -6,6 +7,9 @@ from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 ROOT_CONFIG_FILE = ROOT_DIR / "config.json"
+
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 
 class ConfigLoadingTests(unittest.TestCase):
@@ -48,7 +52,8 @@ class ConfigLoadingTests(unittest.TestCase):
                 settings = module._load_settings()
 
                 self.assertEqual(settings.auth_key, os_auth_key)
-                self.assertEqual(settings.refresh_account_interval_minute, 5)
+                self.assertEqual(settings.refresh_account_interval_minute, 60)
+                self.assertEqual(settings.logs_dir, base_dir / "logs")
             finally:
                 module.BASE_DIR = old_base_dir
                 module.DATA_DIR = old_data_dir

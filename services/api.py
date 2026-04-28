@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from pathlib import Path
 from threading import Event, Thread
+import time
 
 from fastapi import APIRouter, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
@@ -13,10 +14,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from services.account_service import account_service
 from services.chatgpt_service import ChatGPTService
 from services.config import config
-from services.cpa_service import cpa_config, cpa_import_service, list_remote_files
 
 from services.image_service import ImageGenerationError
 from services.image_file_store import save_image_result_files
+from services.image_prompt_optimizer import optimize_image_prompt
+from services.image_trace_logger import start_image_trace
 from services.openai_image_service import (
     edit_openai_image_result,
     generate_openai_image_result,
@@ -30,29 +32,16 @@ WEB_DIST_DIR = BASE_DIR / "web_dist"
 
 class ImageGenerationRequest(BaseModel):
     prompt: str = Field(..., min_length=1)
+    original_prompt: str | None = None
     model: str = "gpt-image-2"
     n: int = Field(default=1, ge=1, le=4)
     response_format: str = "b64_json"
     history_disabled: bool = True
 
 
-class AccountCreateRequest(BaseModel):
-    tokens: list[str] = Field(default_factory=list)
-
-
-class AccountDeleteRequest(BaseModel):
-    tokens: list[str] = Field(default_factory=list)
-
-
-class AccountRefreshRequest(BaseModel):
-    access_tokens: list[str] = Field(default_factory=list)
-
-
-class AccountUpdateRequest(BaseModel):
-    access_token: str = Field(default="")
-    type: str | None = None
-    status: str | None = None
-    quota: int | None = None
+class ImagePromptOptimizeRequest(BaseModel):
+    prompt: str = Field(..., min_length=1)
+    mode: str = "generate"
 
 
 class ChatCompletionRequest(BaseModel):
@@ -76,22 +65,6 @@ class ResponseCreateRequest(BaseModel):
     stream: bool | None = None
 
 
-class CPAPoolCreateRequest(BaseModel):
-    name: str = ""
-    base_url: str = ""
-    secret_key: str = ""
-
-
-class CPAPoolUpdateRequest(BaseModel):
-    name: str | None = None
-    base_url: str | None = None
-    secret_key: str | None = None
-
-
-class CPAImportRequest(BaseModel):
-    names: list[str] = Field(default_factory=list)
-
-
 def build_model_item(model_id: str) -> dict[str, object]:
     return {
         "id": model_id,
@@ -101,25 +74,44 @@ def build_model_item(model_id: str) -> dict[str, object]:
     }
 
 
-def sanitize_cpa_pool(pool: dict | None) -> dict | None:
-    if not isinstance(pool, dict):
-        return None
-    return {
-        key: value
-        for key, value in pool.items()
-        if key != "secret_key"
-    }
-
-
-def sanitize_cpa_pools(pools: list[dict]) -> list[dict]:
-    return [sanitized for pool in pools if (sanitized := sanitize_cpa_pool(pool)) is not None]
-
-
 def extract_bearer_token(authorization: str | None) -> str:
     scheme, _, value = str(authorization or "").partition(" ")
     if scheme.lower() != "bearer" or not value.strip():
         return ""
     return value.strip()
+
+
+def _saved_image_summary(result: dict[str, object]) -> list[dict[str, object]]:
+    data = result.get("data")
+    if not isinstance(data, list):
+        return []
+    saved: list[dict[str, object]] = []
+    for index, item in enumerate(data, start=1):
+        if not isinstance(item, dict):
+            continue
+        if item.get("file_name") or item.get("file_path"):
+            saved.append(
+                {
+                    "index": index,
+                    "file_name": item.get("file_name"),
+                    "file_path": item.get("file_path"),
+                    "file_size": item.get("file_size"),
+                }
+            )
+    return saved
+
+
+def get_runtime_summary() -> dict[str, object]:
+    accounts = account_service.list_accounts()
+    available_quota = sum(
+        max(0, int(account.get("quota") or 0))
+        for account in accounts
+        if account.get("status") != "禁用"
+    )
+    return {
+        "available_quota": available_quota,
+        "image_upstream": "openai" if is_openai_image_upstream_configured() else "chatgpt_pool",
+    }
 
 
 def require_auth_key(authorization: str | None) -> None:
@@ -215,85 +207,78 @@ def create_app() -> FastAPI:
     async def get_version():
         return {"version": app_version}
 
-    @router.get("/api/accounts")
-    async def get_accounts(authorization: str | None = Header(default=None)):
+    @router.get("/api/runtime")
+    async def get_runtime(authorization: str | None = Header(default=None)):
         require_auth_key(authorization)
-        return {"items": account_service.list_accounts()}
-
-    @router.post("/api/accounts")
-    async def create_accounts(body: AccountCreateRequest, authorization: str | None = Header(default=None)):
-        require_auth_key(authorization)
-        tokens = [str(token or "").strip() for token in body.tokens if str(token or "").strip()]
-        if not tokens:
-            raise HTTPException(status_code=400, detail={"error": "tokens is required"})
-        result = account_service.add_accounts(tokens)
-        refresh_result = account_service.refresh_accounts(tokens)
-        return {
-            **result,
-            "refreshed": refresh_result.get("refreshed", 0),
-            "errors": refresh_result.get("errors", []),
-            "items": refresh_result.get("items", result.get("items", [])),
-        }
-
-    @router.delete("/api/accounts")
-    async def delete_accounts(body: AccountDeleteRequest, authorization: str | None = Header(default=None)):
-        require_auth_key(authorization)
-        tokens = [str(token or "").strip() for token in body.tokens if str(token or "").strip()]
-        if not tokens:
-            raise HTTPException(status_code=400, detail={"error": "tokens is required"})
-        return account_service.delete_accounts(tokens)
-
-    @router.post("/api/accounts/refresh")
-    async def refresh_accounts(body: AccountRefreshRequest, authorization: str | None = Header(default=None)):
-        require_auth_key(authorization)
-        access_tokens = [str(token or "").strip() for token in body.access_tokens if str(token or "").strip()]
-        if not access_tokens:
-            access_tokens = account_service.list_tokens()
-        if not access_tokens:
-            raise HTTPException(status_code=400, detail={"error": "access_tokens is required"})
-        return account_service.refresh_accounts(access_tokens)
-
-    @router.post("/api/accounts/update")
-    async def update_account(body: AccountUpdateRequest, authorization: str | None = Header(default=None)):
-        require_auth_key(authorization)
-        access_token = str(body.access_token or "").strip()
-        if not access_token:
-            raise HTTPException(status_code=400, detail={"error": "access_token is required"})
-
-        updates = {
-            key: value
-            for key, value in {
-                "type": body.type,
-                "status": body.status,
-                "quota": body.quota,
-            }.items()
-            if value is not None
-        }
-        if not updates:
-            raise HTTPException(status_code=400, detail={"error": "no updates provided"})
-
-        account = account_service.update_account(access_token, updates)
-        if account is None:
-            raise HTTPException(status_code=404, detail={"error": "account not found"})
-        return {"item": account, "items": account_service.list_accounts()}
+        return get_runtime_summary()
 
     @router.post("/v1/images/generations")
     async def generate_images(body: ImageGenerationRequest, authorization: str | None = Header(default=None)):
         require_auth_key(authorization)
+        upstream = "openai" if is_openai_image_upstream_configured() else "chatgpt_pool"
+        trace = start_image_trace(
+            "generation",
+            body.prompt,
+            model=body.model,
+            n=body.n,
+            response_format=body.response_format,
+            upstream=upstream,
+            route="/v1/images/generations",
+            original_prompt=body.original_prompt or "",
+            optimized=bool(body.original_prompt and body.original_prompt.strip() and body.original_prompt.strip() != body.prompt.strip()),
+        )
+        started = time.time()
         try:
-            if is_openai_image_upstream_configured():
+            if upstream == "openai":
                 result = await run_in_threadpool(
                     generate_openai_image_result,
                     body.prompt,
                     body.model,
                     body.n,
                     body.response_format,
+                    trace,
                 )
             else:
+                trace.event("chatgpt_pool.generate.start", model=body.model, n=body.n)
                 result = await run_in_threadpool(chatgpt_service.generate_with_pool, body.prompt, body.model, body.n)
-            return await run_in_threadpool(save_image_result_files, result)
+                trace.event("chatgpt_pool.generate.success")
+            saved_result = await run_in_threadpool(save_image_result_files, result, trace)
+            trace.event(
+                "request.success",
+                duration_ms=int((time.time() - started) * 1000),
+                saved_images=_saved_image_summary(saved_result),
+                item_count=len(saved_result.get("data", [])) if isinstance(saved_result.get("data"), list) else 0,
+            )
+            return saved_result
         except ImageGenerationError as exc:
+            trace.event(
+                "request.error",
+                duration_ms=int((time.time() - started) * 1000),
+                error_type=type(exc).__name__,
+                error=str(exc),
+            )
             raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
+
+    @router.post("/api/image-prompts/optimize")
+    async def optimize_prompt(body: ImagePromptOptimizeRequest, authorization: str | None = Header(default=None)):
+        require_auth_key(authorization)
+        trace = start_image_trace(
+            "prompt_optimize",
+            body.prompt,
+            route="/api/image-prompts/optimize",
+            mode=body.mode,
+        )
+        started = time.time()
+        result = await run_in_threadpool(optimize_image_prompt, body.prompt, body.mode, trace=trace)
+        trace.event(
+            "request.success",
+            duration_ms=int((time.time() - started) * 1000),
+            optimizer=result.get("optimizer"),
+            original_length=result.get("original_length"),
+            optimized_length=result.get("optimized_length"),
+            changed=result.get("changed"),
+        )
+        return result
 
     @router.post("/v1/images/edits")
     async def edit_images(
@@ -304,18 +289,37 @@ def create_app() -> FastAPI:
             n: int = Form(default=1),
     ):
         require_auth_key(authorization)
+        trace = start_image_trace(
+            "edit",
+            prompt,
+            model=model,
+            n=n,
+            response_format="b64_json",
+            route="/v1/images/edits",
+        )
+        started = time.time()
         if n < 1 or n > 4:
+            trace.event("request.validation_error", field="n", error="n must be between 1 and 4")
             raise HTTPException(status_code=400, detail={"error": "n must be between 1 and 4"})
 
         images: list[tuple[bytes, str, str]] = []
         for upload in image:
             image_data = await upload.read()
             if not image_data:
+                trace.event("request.validation_error", field="image", file_name=upload.filename, error="image file is empty")
                 raise HTTPException(status_code=400, detail={"error": "image file is empty"})
 
             file_name = upload.filename or "image.png"
             mime_type = upload.content_type or "image/png"
             images.append((image_data, file_name, mime_type))
+
+        trace.event(
+            "request.uploads.read",
+            input_images=[
+                {"file_name": file_name, "mime_type": mime_type, "size": len(image_data)}
+                for image_data, file_name, mime_type in images
+            ],
+        )
 
         try:
             if is_openai_image_upstream_configured():
@@ -326,13 +330,29 @@ def create_app() -> FastAPI:
                     model,
                     n,
                     "b64_json",
+                    trace,
                 )
             else:
+                trace.event("chatgpt_pool.edit.start", model=model, n=n)
                 result = await run_in_threadpool(
                     chatgpt_service.edit_with_pool, prompt, images, model, n
                 )
-            return await run_in_threadpool(save_image_result_files, result)
+                trace.event("chatgpt_pool.edit.success")
+            saved_result = await run_in_threadpool(save_image_result_files, result, trace)
+            trace.event(
+                "request.success",
+                duration_ms=int((time.time() - started) * 1000),
+                saved_images=_saved_image_summary(saved_result),
+                item_count=len(saved_result.get("data", [])) if isinstance(saved_result.get("data"), list) else 0,
+            )
+            return saved_result
         except ImageGenerationError as exc:
+            trace.event(
+                "request.error",
+                duration_ms=int((time.time() - started) * 1000),
+                error_type=type(exc).__name__,
+                error=str(exc),
+            )
             raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
 
     @router.post("/v1/chat/completions")
@@ -345,87 +365,6 @@ def create_app() -> FastAPI:
         require_auth_key(authorization)
         return await run_in_threadpool(chatgpt_service.create_response, body.model_dump(mode="python"))
 
-    # ── CPA multi-pool endpoints ────────────────────────────────────
-
-    @router.get("/api/cpa/pools")
-    async def list_cpa_pools(authorization: str | None = Header(default=None)):
-        require_auth_key(authorization)
-        return {"pools": sanitize_cpa_pools(cpa_config.list_pools())}
-
-    @router.post("/api/cpa/pools")
-    async def create_cpa_pool(
-            body: CPAPoolCreateRequest,
-            authorization: str | None = Header(default=None),
-    ):
-        require_auth_key(authorization)
-        if not body.base_url.strip():
-            raise HTTPException(status_code=400, detail={"error": "base_url is required"})
-        if not body.secret_key.strip():
-            raise HTTPException(status_code=400, detail={"error": "secret_key is required"})
-        pool = cpa_config.add_pool(
-            name=body.name,
-            base_url=body.base_url,
-            secret_key=body.secret_key,
-        )
-        return {"pool": sanitize_cpa_pool(pool), "pools": sanitize_cpa_pools(cpa_config.list_pools())}
-
-    @router.post("/api/cpa/pools/{pool_id}")
-    async def update_cpa_pool(
-            pool_id: str,
-            body: CPAPoolUpdateRequest,
-            authorization: str | None = Header(default=None),
-    ):
-        require_auth_key(authorization)
-        pool = cpa_config.update_pool(pool_id, body.model_dump(exclude_none=True))
-        if pool is None:
-            raise HTTPException(status_code=404, detail={"error": "pool not found"})
-        return {"pool": sanitize_cpa_pool(pool), "pools": sanitize_cpa_pools(cpa_config.list_pools())}
-
-    @router.delete("/api/cpa/pools/{pool_id}")
-    async def delete_cpa_pool(
-            pool_id: str,
-            authorization: str | None = Header(default=None),
-    ):
-        require_auth_key(authorization)
-        if not cpa_config.delete_pool(pool_id):
-            raise HTTPException(status_code=404, detail={"error": "pool not found"})
-        return {"pools": sanitize_cpa_pools(cpa_config.list_pools())}
-
-    @router.get("/api/cpa/pools/{pool_id}/files")
-    async def cpa_pool_files(
-            pool_id: str,
-            authorization: str | None = Header(default=None),
-    ):
-        require_auth_key(authorization)
-        pool = cpa_config.get_pool(pool_id)
-        if pool is None:
-            raise HTTPException(status_code=404, detail={"error": "pool not found"})
-        files = await run_in_threadpool(list_remote_files, pool)
-        return {"pool_id": pool_id, "files": files}
-
-    @router.post("/api/cpa/pools/{pool_id}/import")
-    async def cpa_pool_import(
-            pool_id: str,
-            body: CPAImportRequest,
-            authorization: str | None = Header(default=None),
-    ):
-        require_auth_key(authorization)
-        pool = cpa_config.get_pool(pool_id)
-        if pool is None:
-            raise HTTPException(status_code=404, detail={"error": "pool not found"})
-        try:
-            job = cpa_import_service.start_import(pool, body.names)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
-        return {"import_job": job}
-
-    @router.get("/api/cpa/pools/{pool_id}/import")
-    async def cpa_pool_import_progress(pool_id: str, authorization: str | None = Header(default=None)):
-        require_auth_key(authorization)
-        pool = cpa_config.get_pool(pool_id)
-        if pool is None:
-            raise HTTPException(status_code=404, detail={"error": "pool not found"})
-        return {"import_job": pool.get("import_job")}
 
     app.include_router(router)
 

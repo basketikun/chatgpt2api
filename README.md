@@ -1,7 +1,7 @@
 <h1 align="center">ChatGPT2API</h1>
 
 
-<p align="center">ChatGPT2API 主要是对 ChatGPT 官网相关能力进行逆向整理与封装，提供面向 ChatGPT 图片生成、图片编辑、多图组图编辑场景的 OpenAI 兼容图片 API / 代理，并集成在线画图、号池管理、多种账号导入方式与 Docker 自托管部署能力。</p>
+<p align="center">ChatGPT2API 主要是对 ChatGPT 官网相关能力进行逆向整理与封装，提供面向 ChatGPT 图片生成、图片编辑、多图组图编辑场景的 OpenAI 兼容图片 API / 代理，并集成在线画图、提示词素材库、Docker 自托管部署能力。</p>
 
 > [!WARNING]
 > 免责声明：
@@ -28,6 +28,25 @@ git clone git@github.com:basketikun/chatgpt2api.git
 docker compose up -d
 ```
 
+启动后访问：
+
+- Web 控制台：`http://localhost:3000`
+- 在线画图：`http://localhost:3000/image`
+- 提示词库：`http://localhost:3000/prompts`
+- OpenAI 兼容 API Base URL：`http://localhost:3000`
+
+如果你修改了前端源码并使用当前 `docker-compose.yml` 挂载本地静态产物，需要重新导出前端：
+
+```bash
+cd web
+npm install
+npm run build
+cd ..
+docker compose restart
+```
+
+本地直接运行 Python 入口时，服务默认监听 `http://localhost:8000`。
+
 ## 功能
 
 ### API 兼容能力
@@ -38,6 +57,9 @@ docker compose up -d
 - 兼容面向图片场景的 `POST /v1/responses`
 - `GET /v1/models` 返回 `gpt-image-1` 与 `gpt-image-2`
 - 支持通过 `n` 返回多张生成结果
+- 支持将返回的 `b64_json` 图片落盘到 `data/images`，响应中会附带 `file_name` 与 `file_path`
+- 支持 OpenAI 兼容图片上游，优先走上游 `/images/generations` 与 `/images/edits`，未启用时回退 ChatGPT 号池
+- 图片链路日志会同时写入 `logs/ops` 中文运维摘要和 `logs/ai` 结构化 JSONL 排障日志，详见 [日志说明](./docs/logging.zh-CN.md)
 
 ### 在线画图功能
 
@@ -47,14 +69,20 @@ docker compose up -d
 - 前端支持多图生成交互
 - 本地保存图片会话历史，支持回看、删除和清空
 
-### 号池管理功能
+### 提示词功能
+
+- 顶部导航新增“提示词”入口，对应 `/prompts`
+- 内置 [EvoLinkAI/awesome-gpt-image-2-prompts](https://github.com/EvoLinkAI/awesome-gpt-image-2-prompts/blob/main/README_zh-CN.md) 的 README 提示词索引
+- 展示全部分类提示词，并默认优先展示“海报与插画案例”
+- 非简体中文标题与提示词已整理为简体中文，保留原始提示词用于展开查看
+- 支持按分类筛选、关键词搜索、仅看已翻译条目和一键复制提示词
+
+### ChatGPT 号池运行机制
 
 - 自动刷新账号邮箱、类型、额度和恢复时间
 - 轮询可用账号执行图片生成与图片编辑
 - 遇到 Token 失效类错误时自动剔除无效 Token
 - 定时检查限流账号并自动刷新
-- 支持搜索、筛选、批量刷新、导出、手动编辑和清理账号
-- 支持三种导入方式：本地 CPA JSON 文件导入、远程 CPA 服务器导入、`access_token` 导入
 
 ### 实验性 / 规划中
 
@@ -75,9 +103,6 @@ Cherry Studio 中使用：
 
 ![image](assets/chery_studio.png)
 
-号池管理：
-
-![image](assets/account_pool.png)
 
 ## API
 
@@ -87,6 +112,8 @@ Cherry Studio 中使用：
 Authorization: Bearer <auth-key>
 ```
 
+以下示例以 Docker 默认端口 `3000` 为准；如果你用 `python main.py` 本地启动，请将地址替换为 `http://localhost:8000`。
+
 <details>
 <summary><code>GET /v1/models</code></summary>
 <br>
@@ -94,7 +121,7 @@ Authorization: Bearer <auth-key>
 返回当前暴露的图片模型列表。
 
 ```bash
-curl http://localhost:8000/v1/models \
+curl http://localhost:3000/v1/models \
   -H "Authorization: Bearer <auth-key>"
 ```
 
@@ -118,7 +145,7 @@ curl http://localhost:8000/v1/models \
 OpenAI 兼容图片生成接口，用于文生图。
 
 ```bash
-curl http://localhost:8000/v1/images/generations \
+curl http://localhost:3000/v1/images/generations \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <auth-key>" \
   -d '{
@@ -151,7 +178,7 @@ curl http://localhost:8000/v1/images/generations \
 OpenAI 兼容图片编辑接口，用于上传图片并生成编辑结果。
 
 ```bash
-curl http://localhost:8000/v1/images/edits \
+curl http://localhost:3000/v1/images/edits \
   -H "Authorization: Bearer <auth-key>" \
   -F "model=gpt-image-1" \
   -F "prompt=把这张图改成赛博朋克夜景风格" \
@@ -181,7 +208,7 @@ curl http://localhost:8000/v1/images/edits \
 面向图片场景的 Chat Completions 兼容接口，不是完整通用聊天代理。
 
 ```bash
-curl http://localhost:8000/v1/chat/completions \
+curl http://localhost:3000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <auth-key>" \
   -d '{
@@ -218,7 +245,7 @@ curl http://localhost:8000/v1/chat/completions \
 面向图片生成工具调用的 Responses API 兼容接口，不是完整通用 Responses API 代理。
 
 ```bash
-curl http://localhost:8000/v1/responses \
+curl http://localhost:3000/v1/responses \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <auth-key>" \
   -d '{
@@ -262,3 +289,4 @@ curl http://localhost:8000/v1/responses \
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/chart?repos=basketikun/chatgpt2api&type=date&legend=top-left)](https://www.star-history.com/?repos=basketikun%2Fchatgpt2api&type=date&legend=top-left)
+

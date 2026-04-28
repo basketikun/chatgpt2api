@@ -79,7 +79,7 @@ export function ImageSidebar({
                       <span className="truncate">{conversation.title}</span>
                     </div>
                     <div className={cn("mt-1 text-xs", active ? "text-stone-500" : "text-stone-400")}>
-                      {formatConversationTime(conversation.createdAt)}
+                      {formatConversationTime(conversation.updatedAt || conversation.createdAt)}
                     </div>
                   </button>
                   <button

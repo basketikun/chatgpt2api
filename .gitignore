@@ -10,6 +10,7 @@ web_dist
 .venv
 .idea
 data
+logs/
 !web/src/data/
 !web/src/data/awesome-prompts.ts
 config.json

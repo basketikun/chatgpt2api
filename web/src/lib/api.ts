@@ -1,51 +1,21 @@
 import { httpRequest } from "@/lib/request";
 
-export type AccountType = "Free" | "Plus" | "Pro" | "Team";
-export type AccountStatus = "正常" | "限流" | "异常" | "禁用";
 export type ImageModel = "gpt-image-1" | "gpt-image-2";
 
-export type Account = {
-  id: string;
-  access_token: string;
-  type: AccountType;
-  status: AccountStatus;
-  quota: number;
-  email?: string | null;
-  user_id?: string | null;
-  limits_progress?: Array<{
-    feature_name?: string;
-    remaining?: number;
-    reset_after?: string;
-  }>;
-  default_model_slug?: string | null;
-  restoreAt?: string | null;
-  success: number;
-  fail: number;
-  lastUsedAt: string | null;
+export type RuntimeStatus = {
+  available_quota: number;
+  image_upstream: "openai" | "chatgpt_pool";
 };
 
-type AccountListResponse = {
-  items: Account[];
-};
-
-type AccountMutationResponse = {
-  items: Account[];
-  added?: number;
-  skipped?: number;
-  removed?: number;
-  refreshed?: number;
-  errors?: Array<{ access_token: string; error: string }>;
-};
-
-type AccountRefreshResponse = {
-  items: Account[];
-  refreshed: number;
-  errors: Array<{ access_token: string; error: string }>;
-};
-
-type AccountUpdateResponse = {
-  item: Account;
-  items: Account[];
+export type ImagePromptOptimization = {
+  prompt: string;
+  optimized_prompt: string;
+  changed: boolean;
+  optimizer: "model" | "fallback" | "none";
+  model?: string;
+  reason?: string;
+  original_length?: number;
+  optimized_length?: number;
 };
 
 export async function login(authKey: string) {
@@ -60,55 +30,25 @@ export async function login(authKey: string) {
   });
 }
 
-export async function fetchAccounts() {
-  return httpRequest<AccountListResponse>("/api/accounts");
+export async function fetchRuntimeStatus() {
+  return httpRequest<RuntimeStatus>("/api/runtime");
 }
 
-export async function createAccounts(tokens: string[]) {
-  return httpRequest<AccountMutationResponse>("/api/accounts", {
+export async function optimizeImagePrompt(prompt: string, mode: "generate" | "edit" = "generate") {
+  return httpRequest<ImagePromptOptimization>("/api/image-prompts/optimize", {
     method: "POST",
-    body: { tokens },
+    body: { prompt, mode },
   });
 }
 
-export async function deleteAccounts(tokens: string[]) {
-  return httpRequest<AccountMutationResponse>("/api/accounts", {
-    method: "DELETE",
-    body: { tokens },
-  });
-}
-
-export async function refreshAccounts(accessTokens: string[]) {
-  return httpRequest<AccountRefreshResponse>("/api/accounts/refresh", {
-    method: "POST",
-    body: { access_tokens: accessTokens },
-  });
-}
-
-export async function updateAccount(
-  accessToken: string,
-  updates: {
-    type?: AccountType;
-    status?: AccountStatus;
-    quota?: number;
-  },
-) {
-  return httpRequest<AccountUpdateResponse>("/api/accounts/update", {
-    method: "POST",
-    body: {
-      access_token: accessToken,
-      ...updates,
-    },
-  });
-}
-
-export async function generateImage(prompt: string, model: ImageModel = "gpt-image-2") {
+export async function generateImage(prompt: string, model: ImageModel = "gpt-image-2", originalPrompt?: string) {
   return httpRequest<{ created: number; data: Array<{ b64_json: string; revised_prompt?: string }> }>(
     "/v1/images/generations",
     {
       method: "POST",
       body: {
         prompt,
+        original_prompt: originalPrompt,
         model,
         n: 1,
         response_format: "b64_json",
@@ -135,74 +75,4 @@ export async function editImage(files: File | File[], prompt: string, model: Ima
       body: formData,
     },
   );
-}
-
-// ── CPA (CLIProxyAPI) ──────────────────────────────────────────────
-
-export type CPAPool = {
-  id: string;
-  name: string;
-  base_url: string;
-  import_job?: CPAImportJob | null;
-};
-
-export type CPARemoteFile = {
-  name: string;
-  email: string;
-};
-
-export type CPAImportJob = {
-  job_id: string;
-  status: "pending" | "running" | "completed" | "failed";
-  created_at: string;
-  updated_at: string;
-  total: number;
-  completed: number;
-  added: number;
-  skipped: number;
-  refreshed: number;
-  failed: number;
-  errors: Array<{ name: string; error: string }>;
-};
-
-export async function fetchCPAPools() {
-  return httpRequest<{ pools: CPAPool[] }>("/api/cpa/pools");
-}
-
-export async function createCPAPool(pool: { name: string; base_url: string; secret_key: string }) {
-  return httpRequest<{ pool: CPAPool; pools: CPAPool[] }>("/api/cpa/pools", {
-    method: "POST",
-    body: pool,
-  });
-}
-
-export async function updateCPAPool(
-  poolId: string,
-  updates: { name?: string; base_url?: string; secret_key?: string },
-) {
-  return httpRequest<{ pool: CPAPool; pools: CPAPool[] }>(`/api/cpa/pools/${poolId}`, {
-    method: "POST",
-    body: updates,
-  });
-}
-
-export async function deleteCPAPool(poolId: string) {
-  return httpRequest<{ pools: CPAPool[] }>(`/api/cpa/pools/${poolId}`, {
-    method: "DELETE",
-  });
-}
-
-export async function fetchCPAPoolFiles(poolId: string) {
-  return httpRequest<{ pool_id: string; files: CPARemoteFile[] }>(`/api/cpa/pools/${poolId}/files`);
-}
-
-export async function startCPAImport(poolId: string, names: string[]) {
-  return httpRequest<{ import_job: CPAImportJob | null }>(`/api/cpa/pools/${poolId}/import`, {
-    method: "POST",
-    body: { names },
-  });
-}
-
-export async function fetchCPAPoolImportJob(poolId: string) {
-  return httpRequest<{ import_job: CPAImportJob | null }>(`/api/cpa/pools/${poolId}/import`);
 }

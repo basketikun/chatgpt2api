@@ -26,6 +26,7 @@ type ImageComposerProps = {
   hasAnyGenerating: boolean;
   generatingCount: number;
   referenceImages: Array<{ name: string; dataUrl: string }>;
+  implicitReferenceCount: number;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
   fileInputRef: RefObject<HTMLInputElement | null>;
   imageModelOptions: Array<{ label: string; value: ImageModel }>;
@@ -48,6 +49,7 @@ export function ImageComposer({
   hasAnyGenerating,
   generatingCount,
   referenceImages,
+  implicitReferenceCount,
   textareaRef,
   fileInputRef,
   imageModelOptions,
@@ -129,6 +131,12 @@ export function ImageComposer({
                 </button>
               </div>
             ))}
+          </div>
+        ) : null}
+
+        {mode === "edit" && referenceImages.length === 0 && implicitReferenceCount > 0 ? (
+          <div className="mb-3 rounded-2xl border border-stone-200/80 bg-stone-50 px-4 py-3 text-sm text-stone-600">
+            未上传参考图时，将默认使用当前会话最近一轮的 {implicitReferenceCount} 张生成图继续编辑。
           </div>
         ) : null}
 

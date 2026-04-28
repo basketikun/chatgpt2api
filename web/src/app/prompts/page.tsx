@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { awesomePromptSections, awesomePromptSummary, type AwesomePromptSection } from "@/data/awesome-prompts";
+import { copyTextToClipboard } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
 
 const featuredSectionTitle = "海报与插画案例";
@@ -69,7 +70,7 @@ export default function PromptsPage() {
 
   const copyPrompt = async (value: string) => {
     try {
-      await navigator.clipboard.writeText(value);
+      await copyTextToClipboard(value);
       toast.success("提示词已复制");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "复制失败");

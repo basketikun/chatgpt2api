@@ -5,14 +5,12 @@ import { Github } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 
 import webConfig from "@/constants/common-env";
-import { clearStoredAuthKey } from "@/store/auth";
 import { cn } from "@/lib/utils";
+import { clearStoredAuthKey } from "@/store/auth";
 
 const navItems = [
   { href: "/image", label: "画图" },
   { href: "/prompts", label: "提示词" },
-  { href: "/accounts", label: "号池管理" },
-  { href: "/settings", label: "设置" },
 ];
 
 export function TopNav() {
@@ -36,7 +34,7 @@ export function TopNav() {
             href="/image"
             className="py-2 text-[15px] font-semibold tracking-tight text-stone-950 transition hover:text-stone-700"
           >
-            chatgpt2api
+            漱玉健康生图系统
           </Link>
           <a
             href="https://github.com/basketikun/chatgpt2api"
@@ -76,7 +74,7 @@ export function TopNav() {
             className="py-2 text-sm text-stone-400 transition hover:text-stone-700"
             onClick={() => void handleLogout()}
           >
-            退出
+            Logout
           </button>
         </div>
       </div>

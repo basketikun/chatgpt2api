@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 import uuid
 
@@ -7,6 +8,7 @@ from fastapi import HTTPException
 
 
 IMAGE_MODELS = {"gpt-image-1", "gpt-image-2"}
+INLINE_IMAGE_PATTERN = re.compile(r"data:(image/[a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=]+)")
 
 
 def is_image_chat_request(body: dict[str, object]) -> bool:
@@ -33,22 +35,31 @@ def extract_response_prompt(input_value: object) -> str:
     if not isinstance(input_value, list):
         return ""
 
-    prompt_parts: list[str] = []
-    for item in input_value:
-        if isinstance(item, dict) and str(item.get("type") or "").strip() == "input_text":
-            text = str(item.get("text") or "").strip()
-            if text:
-                prompt_parts.append(text)
-            continue
+    trailing_input_parts: list[str] = []
+    collecting_trailing_input = False
+
+    for item in reversed(input_value):
         if not isinstance(item, dict):
             continue
-        role = str(item.get("role") or "").strip().lower()
-        if role and role != "user":
+
+        item_type = str(item.get("type") or "").strip()
+        if item_type == "input_text":
+            text = str(item.get("text") or "").strip()
+            if text:
+                trailing_input_parts.append(text)
+                collecting_trailing_input = True
             continue
-        prompt = extract_prompt_from_message_content(item.get("content"))
-        if prompt:
-            prompt_parts.append(prompt)
-    return "\n".join(prompt_parts).strip()
+
+        if collecting_trailing_input:
+            break
+
+        role = str(item.get("role") or "").strip().lower()
+        if role == "user":
+            return extract_prompt_from_message_content(item.get("content"))
+        if role:
+            break
+
+    return "\n".join(reversed(trailing_input_parts)).strip()
 
 
 def has_response_image_generation_tool(body: dict[str, object]) -> bool:
@@ -87,8 +98,26 @@ def extract_prompt_from_message_content(content: object) -> str:
     return "\n".join(parts).strip()
 
 
+def extract_inline_image_from_text(text: object) -> tuple[bytes, str] | None:
+    import base64 as b64
+
+    if not isinstance(text, str):
+        return None
+    match = INLINE_IMAGE_PATTERN.search(text)
+    if not match:
+        return None
+    mime_type, data = match.groups()
+    try:
+        return b64.b64decode(data), mime_type or "image/png"
+    except Exception:
+        return None
+
+
 def extract_image_from_message_content(content: object) -> tuple[bytes, str] | None:
     import base64 as b64
+
+    if isinstance(content, str):
+        return extract_inline_image_from_text(content)
 
     if not isinstance(content, list):
         return None
@@ -110,6 +139,10 @@ def extract_image_from_message_content(content: object) -> tuple[bytes, str] | N
                 header, _, data = image_url.partition(",")
                 mime = header.split(";")[0].removeprefix("data:")
                 return b64.b64decode(data), mime or "image/png"
+        if item_type in {"text", "input_text"}:
+            result = extract_inline_image_from_text(str(item.get("text") or item.get("input_text") or ""))
+            if result:
+                return result
     return None
 
 
@@ -118,11 +151,30 @@ def extract_chat_image(body: dict[str, object]) -> tuple[bytes, str] | None:
     if not isinstance(messages, list):
         return None
 
-    for message in reversed(messages):
+    latest_user_index = None
+
+    for index in range(len(messages) - 1, -1, -1):
+        message = messages[index]
         if not isinstance(message, dict):
             continue
         role = str(message.get("role") or "").strip().lower()
         if role != "user":
+            continue
+        latest_user_index = index
+        result = extract_image_from_message_content(message.get("content"))
+        if result:
+            return result
+        break
+
+    if latest_user_index is None:
+        return None
+
+    for index in range(latest_user_index - 1, -1, -1):
+        message = messages[index]
+        if not isinstance(message, dict):
+            continue
+        role = str(message.get("role") or "").strip().lower()
+        if role != "assistant":
             continue
         result = extract_image_from_message_content(message.get("content"))
         if result:
@@ -139,8 +191,7 @@ def extract_chat_prompt(body: dict[str, object]) -> str:
     if not isinstance(messages, list):
         return ""
 
-    prompt_parts: list[str] = []
-    for message in messages:
+    for message in reversed(messages):
         if not isinstance(message, dict):
             continue
         role = str(message.get("role") or "").strip().lower()
@@ -148,9 +199,9 @@ def extract_chat_prompt(body: dict[str, object]) -> str:
             continue
         prompt = extract_prompt_from_message_content(message.get("content"))
         if prompt:
-            prompt_parts.append(prompt)
+            return prompt
 
-    return "\n".join(prompt_parts).strip()
+    return ""
 
 
 def parse_image_count(raw_value: object) -> int:

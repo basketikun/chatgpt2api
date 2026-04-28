@@ -7,7 +7,7 @@ export default function HomePage() {
   const router = useRouter();
 
   useEffect(() => {
-    router.replace("/accounts");
+    router.replace("/image");
   }, [router]);
 
   return null;
