@@ -52,7 +52,10 @@ request.interceptors.response.use(
         const shouldRedirect = (error.config as RequestConfig | undefined)?.redirectOnUnauthorized !== false;
         if (status === 401 && shouldRedirect && typeof window !== "undefined") {
             // Avoid redirect loop — only redirect if not already on /login
-            if (!window.location.pathname.startsWith("/login")) {
+            const publicPath = ["/login", "/register", "/setup"].some((path) =>
+                window.location.pathname.startsWith(path),
+            );
+            if (!publicPath) {
                 await clearStoredAuthSession();
                 window.location.replace("/login");
                 // Return a never-resolving promise to prevent further error handling

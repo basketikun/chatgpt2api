@@ -122,20 +122,28 @@ class LoggedCall:
 
     async def run(self, handler, *args, sse: str = "openai"):
         from services.protocol.conversation import ImageGenerationError
+        from services.quota_service import count_images, settle_image_quota
 
+        quota_reservation = None
+        if args and hasattr(args[-1], "requested_count") and hasattr(args[-1], "bypass"):
+            *args, quota_reservation = args
         try:
             result = await run_in_threadpool(handler, *args)
         except ImageGenerationError as exc:
+            settle_image_quota(quota_reservation, success=False, error=str(exc))
             self.log("调用失败", status="failed", error=str(exc))
             return _image_error_response(exc)
         except HTTPException as exc:
+            settle_image_quota(quota_reservation, success=False, error=str(exc.detail))
             self.log("调用失败", status="failed", error=str(exc.detail))
             raise
         except Exception as exc:
+            settle_image_quota(quota_reservation, success=False, error=str(exc))
             self.log("调用失败", status="failed", error=str(exc))
             raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
 
         if isinstance(result, dict):
+            settle_image_quota(quota_reservation, success=True, actual_count=count_images(result))
             self.log("调用完成", result)
             return result
 
@@ -143,32 +151,45 @@ class LoggedCall:
         try:
             has_first, first = await run_in_threadpool(_next_item, result)
         except ImageGenerationError as exc:
+            settle_image_quota(quota_reservation, success=False, error=str(exc))
             self.log("调用失败", status="failed", error=str(exc))
             return _image_error_response(exc)
         except HTTPException as exc:
+            settle_image_quota(quota_reservation, success=False, error=str(exc.detail))
             self.log("调用失败", status="failed", error=str(exc.detail))
             raise
         except Exception as exc:
+            settle_image_quota(quota_reservation, success=False, error=str(exc))
             self.log("调用失败", status="failed", error=str(exc))
             raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
         if not has_first:
+            settle_image_quota(quota_reservation, success=True, actual_count=0)
             self.log("流式调用结束")
             return StreamingResponse(sender(()), media_type="text/event-stream")
-        return StreamingResponse(sender(self.stream(itertools.chain([first], result))), media_type="text/event-stream")
+        return StreamingResponse(
+            sender(self.stream(itertools.chain([first], result), quota_reservation=quota_reservation)),
+            media_type="text/event-stream",
+        )
 
-    def stream(self, items):
+    def stream(self, items, quota_reservation=None):
+        from services.quota_service import count_images, settle_image_quota
+
         urls: list[str] = []
+        actual_count = 0
         failed = False
         try:
             for item in items:
                 urls.extend(_collect_urls(item))
+                actual_count += count_images(item)
                 yield item
         except Exception as exc:
             failed = True
+            settle_image_quota(quota_reservation, success=False, error=str(exc))
             self.log("流式调用失败", status="failed", error=str(exc), urls=urls)
             raise
         finally:
             if not failed:
+                settle_image_quota(quota_reservation, success=True, actual_count=actual_count)
                 self.log("流式调用结束", urls=urls)
 
     def log(self, suffix: str, result: object = None, status: str = "success", error: str = "",

@@ -17,7 +17,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { editImage, fetchAccounts, generateImage, type Account } from "@/lib/api";
+import { editImage, fetchAccounts, fetchMe, generateImage, type Account } from "@/lib/api";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import {
   clearImageConversations,
@@ -263,7 +263,12 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
 
   const loadQuota = useCallback(async () => {
     if (!isAdmin) {
-      setAvailableQuota("--");
+      try {
+        const data = await fetchMe();
+        setAvailableQuota(String(data.user.image_quota ?? 0));
+      } catch {
+        setAvailableQuota((prev) => (prev === "加载中..." ? "--" : prev));
+      }
       return;
     }
     try {

@@ -11,14 +11,20 @@ import { cn } from "@/lib/utils";
 
 const adminNavItems = [
   { href: "/image", label: "画图" },
+  { href: "/redeem", label: "兑换" },
+  { href: "/admin/users", label: "用户" },
+  { href: "/admin/redeem-codes", label: "兑换码" },
+  { href: "/admin/promo-codes", label: "优惠码" },
   { href: "/accounts", label: "号池管理" },
-  { href: "/register", label: "注册机" },
   { href: "/image-manager", label: "图片管理" },
   { href: "/logs", label: "日志管理" },
   { href: "/settings", label: "设置" },
 ];
 
-const userNavItems = [{ href: "/image", label: "画图" }];
+const userNavItems = [
+  { href: "/image", label: "画图" },
+  { href: "/redeem", label: "兑换" },
+];
 
 export function TopNav() {
   const pathname = usePathname();
@@ -55,7 +61,7 @@ export function TopNav() {
     router.replace("/login");
   };
 
-  if (pathname === "/login" || session === undefined || !session) {
+  if (["/login", "/register", "/setup"].some((path) => pathname.startsWith(path)) || session === undefined || !session) {
     return null;
   }
 

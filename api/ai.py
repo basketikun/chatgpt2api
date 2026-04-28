@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from api.support import require_identity, resolve_image_base_url
 from services.log_service import LoggedCall
+from services.quota_service import openai_quota_error, reserve_image_quota
+from services.user_service import UserServiceError
 from services.protocol import (
     anthropic_v1_messages,
     openai_v1_chat_complete,
@@ -53,6 +56,32 @@ class AnthropicMessageRequest(BaseModel):
     stream: bool | None = None
 
 
+def _requested_image_count(value: object) -> int:
+    try:
+        return max(1, int(value or 1))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _reserve_or_error(identity: dict[str, object], count: int, endpoint: str):
+    try:
+        return reserve_image_quota(identity, count, endpoint)
+    except UserServiceError as exc:
+        if exc.status_code == 429:
+            return JSONResponse(status_code=429, content=openai_quota_error(exc))
+        raise HTTPException(status_code=exc.status_code, detail={"error": exc.message}) from exc
+
+
+def _is_image_chat_request(payload: dict[str, object]) -> bool:
+    model = str(payload.get("model") or "").lower()
+    if "image" in model:
+        return True
+    modalities = payload.get("modalities")
+    if isinstance(modalities, list) and any(str(item).lower() == "image" for item in modalities):
+        return True
+    return False
+
+
 def create_router() -> APIRouter:
     router = APIRouter()
 
@@ -73,8 +102,11 @@ def create_router() -> APIRouter:
         identity = require_identity(authorization)
         payload = body.model_dump(mode="python")
         payload["base_url"] = resolve_image_base_url(request)
+        quota_reservation = _reserve_or_error(identity, body.n, "/v1/images/generations")
+        if isinstance(quota_reservation, JSONResponse):
+            return quota_reservation
         call = LoggedCall(identity, "/v1/images/generations", body.model, "文生图")
-        return await call.run(openai_v1_image_generations.handle, payload)
+        return await call.run(openai_v1_image_generations.handle, payload, quota_reservation)
 
     @router.post("/v1/images/edits")
     async def edit_images(
@@ -111,16 +143,29 @@ def create_router() -> APIRouter:
             "stream": stream,
             "base_url": resolve_image_base_url(request),
         }
+        quota_reservation = _reserve_or_error(identity, n, "/v1/images/edits")
+        if isinstance(quota_reservation, JSONResponse):
+            return quota_reservation
         call = LoggedCall(identity, "/v1/images/edits", model, "图生图")
-        return await call.run(openai_v1_image_edit.handle, payload)
+        return await call.run(openai_v1_image_edit.handle, payload, quota_reservation)
 
     @router.post("/v1/chat/completions")
     async def create_chat_completion(body: ChatCompletionRequest, authorization: str | None = Header(default=None)):
         identity = require_identity(authorization)
         payload = body.model_dump(mode="python")
         model = str(payload.get("model") or "auto")
+        quota_reservation = None
+        summary = "文本生成"
+        if _is_image_chat_request(payload):
+            quota_reservation = _reserve_or_error(identity, _requested_image_count(payload.get("n")), "/v1/chat/completions")
+            if isinstance(quota_reservation, JSONResponse):
+                return quota_reservation
+            summary = "图片生成"
         call = LoggedCall(identity, "/v1/chat/completions", model, "文本生成")
-        return await call.run(openai_v1_chat_complete.handle, payload)
+        call.summary = summary
+        if quota_reservation is None:
+            return await call.run(openai_v1_chat_complete.handle, payload)
+        return await call.run(openai_v1_chat_complete.handle, payload, quota_reservation)
 
     @router.post("/v1/responses")
     async def create_response(body: ResponseCreateRequest, authorization: str | None = Header(default=None)):

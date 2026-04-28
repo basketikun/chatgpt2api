@@ -88,15 +88,84 @@ export type LoginResponse = {
   role: AuthRole;
   subject_id: string;
   name: string;
+  token: string;
+  user: ManagedUser;
 };
 
-export type UserKey = {
+export type SetupStatus = {
+  has_admin: boolean;
+  requires_setup: boolean;
+};
+
+export type PublicSettings = {
+  site_name: string;
+  registration_enabled: boolean;
+  email_verification_enabled: boolean;
+  invitation_required: boolean;
+  promo_codes_enabled: boolean;
+  email_domain_whitelist: string[];
+};
+
+export type ManagedUser = {
   id: string;
+  email: string;
   name: string;
-  role: "user";
+  role: AuthRole;
   enabled: boolean;
-  created_at: string | null;
-  last_used_at: string | null;
+  image_quota: number;
+  image_concurrency: number;
+  active_image_requests: number;
+  created_at: string;
+  updated_at: string;
+  last_login_at: string | null;
+};
+
+export type AuthSettings = {
+  site_name: string;
+  registration_enabled: boolean;
+  email_verification_enabled: boolean;
+  invitation_required: boolean;
+  promo_codes_enabled: boolean;
+  email_domain_whitelist: string[];
+  default_image_quota: number;
+  default_image_concurrency: number;
+  verify_code_ttl_seconds: number;
+  verify_send_cooldown_seconds: number;
+  verify_max_attempts: number;
+  smtp_host: string;
+  smtp_port: number;
+  smtp_username: string;
+  smtp_password: string;
+  smtp_from: string;
+  smtp_tls: boolean;
+  has_smtp_password: boolean;
+};
+
+export type RedeemCodeType = "image_quota" | "concurrency" | "invitation";
+
+export type RedeemCode = {
+  id: string;
+  code_preview: string;
+  type: RedeemCodeType;
+  value: number;
+  enabled: boolean;
+  used: boolean;
+  used_by_user_id: string | null;
+  used_at: string | null;
+  expires_at: string | null;
+  created_at: string;
+  code?: string;
+};
+
+export type PromoCode = {
+  id: string;
+  code_preview: string;
+  image_quota: number;
+  max_uses: number;
+  used_count: number;
+  enabled: boolean;
+  expires_at: string | null;
+  created_at: string;
 };
 
 export type RegisterConfig = {
@@ -137,16 +206,54 @@ export type RegisterConfig = {
   }>;
 };
 
-export async function login(authKey: string) {
-  const normalizedAuthKey = String(authKey || "").trim();
-  return httpRequest<LoginResponse>("/auth/login", {
+export async function fetchSetupStatus() {
+  return httpRequest<SetupStatus>("/api/setup/status", { redirectOnUnauthorized: false });
+}
+
+export async function setupAdmin(payload: { email: string; password: string }) {
+  return httpRequest<LoginResponse>("/api/setup/admin", {
     method: "POST",
-    body: {},
-    headers: {
-      Authorization: `Bearer ${normalizedAuthKey}`,
-    },
+    body: payload,
     redirectOnUnauthorized: false,
   });
+}
+
+export async function fetchPublicSettings() {
+  return httpRequest<{ settings: PublicSettings }>("/api/public/settings", { redirectOnUnauthorized: false });
+}
+
+export async function login(email: string, password: string) {
+  return httpRequest<LoginResponse>("/api/auth/login", {
+    method: "POST",
+    body: { email, password },
+    redirectOnUnauthorized: false,
+  });
+}
+
+export async function registerUser(payload: {
+  email: string;
+  password: string;
+  verification_code?: string;
+  invitation_code?: string;
+  promo_code?: string;
+}) {
+  return httpRequest<LoginResponse>("/api/auth/register", {
+    method: "POST",
+    body: payload,
+    redirectOnUnauthorized: false,
+  });
+}
+
+export async function sendVerifyCode(email: string) {
+  return httpRequest<{ ok: boolean }>("/api/auth/send-verify-code", {
+    method: "POST",
+    body: { email, purpose: "register" },
+    redirectOnUnauthorized: false,
+  });
+}
+
+export async function fetchMe() {
+  return httpRequest<{ user: ManagedUser }>("/api/auth/me");
 }
 
 export async function fetchAccounts() {
@@ -260,28 +367,108 @@ export async function fetchSystemLogs(filters: { type?: string; start_date?: str
   return httpRequest<{ items: SystemLog[] }>(`/api/logs${params.toString() ? `?${params.toString()}` : ""}`);
 }
 
-export async function fetchUserKeys() {
-  return httpRequest<{ items: UserKey[] }>("/api/auth/users");
+export async function fetchAuthSettings() {
+  return httpRequest<{ settings: AuthSettings }>("/api/admin/auth-settings");
 }
 
-export async function createUserKey(name: string) {
-  return httpRequest<{ item: UserKey; key: string; items: UserKey[] }>("/api/auth/users", {
+export async function updateAuthSettings(updates: Partial<AuthSettings>) {
+  return httpRequest<{ settings: AuthSettings }>("/api/admin/auth-settings", { method: "PATCH", body: updates });
+}
+
+export async function fetchManagedUsers(query = "") {
+  const params = new URLSearchParams();
+  if (query.trim()) params.set("query", query.trim());
+  return httpRequest<{ items: ManagedUser[] }>(`/api/admin/users${params.toString() ? `?${params.toString()}` : ""}`);
+}
+
+export async function createManagedUser(payload: {
+  email: string;
+  password: string;
+  role: AuthRole;
+  enabled: boolean;
+  image_quota: number;
+  image_concurrency: number;
+}) {
+  return httpRequest<{ item: ManagedUser; items: ManagedUser[] }>("/api/admin/users", {
     method: "POST",
-    body: { name },
+    body: payload,
   });
 }
 
-export async function updateUserKey(keyId: string, updates: { enabled?: boolean; name?: string }) {
-  return httpRequest<{ item: UserKey; items: UserKey[] }>(`/api/auth/users/${keyId}`, {
-    method: "POST",
+export async function updateManagedUser(userId: string, updates: Partial<ManagedUser> & { password?: string }) {
+  return httpRequest<{ item: ManagedUser; items: ManagedUser[] }>(`/api/admin/users/${userId}`, {
+    method: "PATCH",
     body: updates,
   });
 }
 
-export async function deleteUserKey(keyId: string) {
-  return httpRequest<{ items: UserKey[] }>(`/api/auth/users/${keyId}`, {
+export async function deleteManagedUser(userId: string) {
+  return httpRequest<{ items: ManagedUser[] }>(`/api/admin/users/${userId}`, {
     method: "DELETE",
   });
+}
+
+export async function generateRedeemCodes(payload: {
+  type: RedeemCodeType;
+  value: number;
+  count: number;
+  expires_at?: string;
+}) {
+  return httpRequest<{ codes: RedeemCode[]; items: RedeemCode[] }>("/api/admin/redeem-codes/generate", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function fetchRedeemCodes() {
+  return httpRequest<{ items: RedeemCode[] }>("/api/admin/redeem-codes");
+}
+
+export async function updateRedeemCode(codeId: string, updates: { enabled?: boolean; expires_at?: string }) {
+  return httpRequest<{ item: RedeemCode; items: RedeemCode[] }>(`/api/admin/redeem-codes/${codeId}`, {
+    method: "PATCH",
+    body: updates,
+  });
+}
+
+export async function deleteRedeemCode(codeId: string) {
+  return httpRequest<{ items: RedeemCode[] }>(`/api/admin/redeem-codes/${codeId}`, { method: "DELETE" });
+}
+
+export async function redeemCode(code: string) {
+  return httpRequest<{ redeem: RedeemCode; user: ManagedUser }>("/api/redeem", { method: "POST", body: { code } });
+}
+
+export async function fetchRedeemHistory() {
+  return httpRequest<{ items: RedeemCode[] }>("/api/redeem/history");
+}
+
+export async function fetchPromoCodes() {
+  return httpRequest<{ items: PromoCode[] }>("/api/admin/promo-codes");
+}
+
+export async function createPromoCode(payload: {
+  code: string;
+  image_quota: number;
+  max_uses: number;
+  enabled: boolean;
+  expires_at?: string;
+}) {
+  return httpRequest<{ item: PromoCode; items: PromoCode[] }>("/api/admin/promo-codes", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function updatePromoCode(codeId: string, updates: Partial<PromoCode>) {
+  return httpRequest<{ item: PromoCode; items: PromoCode[] }>(`/api/admin/promo-codes/${codeId}`, {
+    method: "PATCH",
+    body: updates,
+  });
+}
+
+export async function deletePromoCode(codeId: string) {
+  return httpRequest<{ items: PromoCode[] }>(`/api/admin/promo-codes/${codeId}`, { method: "DELETE" });
 }
 
 export async function fetchRegisterConfig() {

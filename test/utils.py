@@ -10,6 +10,12 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 OUTPUT_DIR = ROOT_DIR / "data" / "output"
 BASE_URL = "http://127.0.0.1:8000"
 
+# `python -m unittest discover -s test` puts the test directory before the
+# repository root on sys.path. If this helper is imported as top-level `utils`,
+# expose the real project utils package path so `utils.helper` still resolves.
+if __name__ == "utils":
+    __path__ = [str(ROOT_DIR / "utils")]
+
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 

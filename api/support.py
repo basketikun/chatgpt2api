@@ -6,8 +6,8 @@ from threading import Event, Thread
 from fastapi import HTTPException, Request
 
 from services.account_service import account_service
-from services.auth_service import auth_service
 from services.config import config
+from services.user_service import user_service
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 WEB_DIST_DIR = BASE_DIR / "web_dist"
@@ -20,16 +20,9 @@ def extract_bearer_token(authorization: str | None) -> str:
     return value.strip()
 
 
-def _legacy_admin_identity(token: str) -> dict[str, object] | None:
-    auth_key = str(config.auth_key or "").strip()
-    if auth_key and token == auth_key:
-        return {"id": "admin", "name": "管理员", "role": "admin"}
-    return None
-
-
 def require_identity(authorization: str | None) -> dict[str, object]:
     token = extract_bearer_token(authorization)
-    identity = _legacy_admin_identity(token) or auth_service.authenticate(token)
+    identity = user_service.authenticate_token(token)
     if identity is None:
         raise HTTPException(status_code=401, detail={"error": "authorization is invalid"})
     return identity

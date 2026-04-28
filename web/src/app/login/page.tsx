@@ -1,8 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { LoaderCircle, LockKeyhole } from "lucide-react";
+import { LoaderCircle, LockKeyhole, Mail } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -14,22 +15,23 @@ import { getDefaultRouteForRole, setStoredAuthSession } from "@/store/auth";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [authKey, setAuthKey] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { isCheckingAuth } = useRedirectIfAuthenticated();
 
   const handleLogin = async () => {
-    const normalizedAuthKey = authKey.trim();
-    if (!normalizedAuthKey) {
-      toast.error("请输入 密钥");
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail || !password) {
+      toast.error("请输入邮箱和密码");
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const data = await login(normalizedAuthKey);
+      const data = await login(normalizedEmail, password);
       await setStoredAuthSession({
-        key: normalizedAuthKey,
+        key: data.token,
         role: data.role,
         subjectId: data.subject_id,
         name: data.name,
@@ -61,25 +63,39 @@ export default function LoginPage() {
             </div>
             <div className="space-y-2">
               <h1 className="text-3xl font-semibold tracking-tight text-stone-950">欢迎回来</h1>
-              <p className="text-sm leading-6 text-stone-500">输入密钥后继续使用账号管理和图片生成功能。</p>
+              <p className="text-sm leading-6 text-stone-500">使用邮箱和密码登录，JWT 会用于后台和 OpenAI 兼容接口。</p>
             </div>
           </div>
 
           <div className="space-y-3">
-            <label htmlFor="auth-key" className="block text-sm font-medium text-stone-700">
-              密钥
+            <label htmlFor="email" className="block text-sm font-medium text-stone-700">
+              邮箱
             </label>
             <Input
-              id="auth-key"
+              id="email"
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="name@example.com"
+              className="h-13 rounded-2xl border-stone-200 bg-white px-4"
+            />
+          </div>
+
+          <div className="space-y-3">
+            <label htmlFor="password" className="block text-sm font-medium text-stone-700">
+              密码
+            </label>
+            <Input
+              id="password"
               type="password"
-              value={authKey}
-              onChange={(event) => setAuthKey(event.target.value)}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
                   void handleLogin();
                 }
               }}
-              placeholder="请输入密钥"
+              placeholder="请输入密码"
               className="h-13 rounded-2xl border-stone-200 bg-white px-4"
             />
           </div>
@@ -92,6 +108,16 @@ export default function LoginPage() {
             {isSubmitting ? <LoaderCircle className="size-4 animate-spin" /> : null}
             登录
           </Button>
+
+          <div className="flex items-center justify-between text-sm text-stone-500">
+            <Link href="/register" className="inline-flex items-center gap-1.5 transition hover:text-stone-950">
+              <Mail className="size-4" />
+              注册账号
+            </Link>
+            <Link href="/setup" className="transition hover:text-stone-950">
+              首次安装
+            </Link>
+          </div>
         </CardContent>
       </Card>
     </div>
