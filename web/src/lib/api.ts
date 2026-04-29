@@ -57,6 +57,8 @@ export type SettingsConfig = {
   image_retention_days?: number | string;
   auto_remove_invalid_accounts?: boolean;
   auto_remove_rate_limited_accounts?: boolean;
+  auto_sync_cpa?: boolean;
+  auto_sync_sub2api?: boolean;
   log_levels?: string[];
   [key: string]: unknown;
 };

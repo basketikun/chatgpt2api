@@ -34,6 +34,8 @@ function normalizeConfig(config: SettingsConfig): SettingsConfig {
     image_retention_days: Number(config.image_retention_days || 30),
     auto_remove_invalid_accounts: Boolean(config.auto_remove_invalid_accounts),
     auto_remove_rate_limited_accounts: Boolean(config.auto_remove_rate_limited_accounts),
+    auto_sync_cpa: config.auto_sync_cpa !== false,
+    auto_sync_sub2api: config.auto_sync_sub2api !== false,
     log_levels: Array.isArray(config.log_levels) ? config.log_levels : [],
     proxy: typeof config.proxy === "string" ? config.proxy : "",
     base_url: typeof config.base_url === "string" ? config.base_url : "",
@@ -95,6 +97,8 @@ type SettingsStore = {
   setImageRetentionDays: (value: string) => void;
   setAutoRemoveInvalidAccounts: (value: boolean) => void;
   setAutoRemoveRateLimitedAccounts: (value: boolean) => void;
+  setAutoSyncCPA: (value: boolean) => void;
+  setAutoSyncSub2API: (value: boolean) => void;
   setLogLevel: (level: string, enabled: boolean) => void;
   setProxy: (value: string) => void;
   setBaseUrl: (value: string) => void;
@@ -200,6 +204,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         image_retention_days: Math.max(1, Number(config.image_retention_days) || 30),
         auto_remove_invalid_accounts: Boolean(config.auto_remove_invalid_accounts),
         auto_remove_rate_limited_accounts: Boolean(config.auto_remove_rate_limited_accounts),
+        auto_sync_cpa: Boolean(config.auto_sync_cpa),
+        auto_sync_sub2api: Boolean(config.auto_sync_sub2api),
         proxy: config.proxy.trim(),
         base_url: String(config.base_url || "").trim(),
       });
@@ -238,6 +244,14 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
 
   setAutoRemoveRateLimitedAccounts: (value) => {
     set((state) => state.config ? { config: { ...state.config, auto_remove_rate_limited_accounts: value } } : {});
+  },
+
+  setAutoSyncCPA: (value) => {
+    set((state) => state.config ? { config: { ...state.config, auto_sync_cpa: value } } : {});
+  },
+
+  setAutoSyncSub2API: (value) => {
+    set((state) => state.config ? { config: { ...state.config, auto_sync_sub2api: value } } : {});
   },
 
   setLogLevel: (level, enabled) => {

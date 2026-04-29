@@ -434,6 +434,33 @@ class AccountService:
             return dict(account)
         return None
 
+    @staticmethod
+    def _extract_chatgpt_account_info(payload: dict[str, Any]) -> dict[str, Any]:
+        accounts = payload.get("accounts") if isinstance(payload, dict) else None
+        default_entry = payload.get("default") if isinstance(payload, dict) else None
+        account_id = ""
+        account_user_id = ""
+        plan_type = ""
+        if isinstance(default_entry, dict):
+            account = default_entry.get("account") if isinstance(default_entry.get("account"), dict) else {}
+            account_id = str(account.get("account_id") or "").strip()
+            account_user_id = str(account.get("account_user_id") or "").strip()
+            plan_type = str(account.get("plan_type") or "").strip()
+        if not account_id and isinstance(accounts, dict):
+            for key, entry in accounts.items():
+                if isinstance(entry, dict):
+                    account = entry.get("account") if isinstance(entry.get("account"), dict) else {}
+                    account_id = str(account.get("account_id") or key or "").strip()
+                    account_user_id = str(account.get("account_user_id") or "").strip()
+                    plan_type = str(account.get("plan_type") or "").strip()
+                    if account_id:
+                        break
+        return {
+            "chatgpt_account_id": account_id,
+            "chatgpt_account_user_id": account_user_id,
+            "chatgpt_plan_type": plan_type,
+        }
+
     def fetch_remote_info(self, access_token: str) -> dict[str, Any]:
         access_token = self._clean_token(access_token)
         if not access_token:
@@ -445,7 +472,7 @@ class AccountService:
         session = Session(**proxy_settings.build_session_kwargs(impersonate=impersonate, verify=True))
         session.headers.update(headers)
         try:
-            with ThreadPoolExecutor(max_workers=2) as executor:
+            with ThreadPoolExecutor(max_workers=3) as executor:
                 me_future = executor.submit(
                     session.get,
                     "https://chatgpt.com/backend-api/me",
@@ -466,9 +493,19 @@ class AccountService:
                     },
                     timeout=20,
                 )
+                account_future = executor.submit(
+                    session.get,
+                    "https://chatgpt.com/backend-api/accounts/check/v4-2023-04-27",
+                    headers={
+                        "x-openai-target-path": "/backend-api/accounts/check/v4-2023-04-27",
+                        "x-openai-target-route": "/backend-api/accounts/check/v4-2023-04-27",
+                    },
+                    timeout=20,
+                )
 
                 me_response = me_future.result()
                 init_response = init_future.result()
+                account_response = account_future.result()
 
             if me_response.status_code != 200:
                 raise RuntimeError(f"/backend-api/me failed: HTTP {me_response.status_code}")
@@ -478,6 +515,15 @@ class AccountService:
                 raise RuntimeError(f"/backend-api/conversation/init failed: HTTP {init_response.status_code}")
             init_payload = init_response.json()
 
+            account_payload: dict[str, Any] = {}
+            if account_response.status_code == 200:
+                try:
+                    raw_account_payload = account_response.json()
+                    if isinstance(raw_account_payload, dict):
+                        account_payload = raw_account_payload
+                except Exception:
+                    account_payload = {}
+
             limits_progress = init_payload.get("limits_progress")
             if not isinstance(limits_progress, list):
                 limits_progress = []
@@ -486,9 +532,13 @@ class AccountService:
             quota, restore_at, image_quota_unknown = self._extract_quota_and_restore_at(limits_progress)
             status = "正常" if image_quota_unknown and account_type != "Free" else ("限流" if quota == 0 else "正常")
 
+            account_info = self._extract_chatgpt_account_info(account_payload)
             result = {
                 "email": me_payload.get("email"),
                 "user_id": me_payload.get("id"),
+                "chatgpt_account_id": account_info.get("chatgpt_account_id"),
+                "chatgpt_account_user_id": account_info.get("chatgpt_account_user_id"),
+                "chatgpt_plan_type": account_info.get("chatgpt_plan_type"),
                 "type": account_type,
                 "quota": quota,
                 "image_quota_unknown": image_quota_unknown,

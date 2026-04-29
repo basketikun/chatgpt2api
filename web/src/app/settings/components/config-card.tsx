@@ -23,6 +23,8 @@ export function ConfigCard() {
   const setImageRetentionDays = useSettingsStore((state) => state.setImageRetentionDays);
   const setAutoRemoveInvalidAccounts = useSettingsStore((state) => state.setAutoRemoveInvalidAccounts);
   const setAutoRemoveRateLimitedAccounts = useSettingsStore((state) => state.setAutoRemoveRateLimitedAccounts);
+  const setAutoSyncCPA = useSettingsStore((state) => state.setAutoSyncCPA);
+  const setAutoSyncSub2API = useSettingsStore((state) => state.setAutoSyncSub2API);
   const setLogLevel = useSettingsStore((state) => state.setLogLevel);
   const setProxy = useSettingsStore((state) => state.setProxy);
   const setBaseUrl = useSettingsStore((state) => state.setBaseUrl);
@@ -149,6 +151,20 @@ export function ConfigCard() {
               onCheckedChange={(checked) => setAutoRemoveRateLimitedAccounts(Boolean(checked))}
             />
             自动移除限流账号
+          </label>
+          <label className="flex items-center gap-3 rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700">
+            <Checkbox
+              checked={config?.auto_sync_cpa !== false}
+              onCheckedChange={(checked) => setAutoSyncCPA(Boolean(checked))}
+            />
+            注册成功后自动上传 CPA
+          </label>
+          <label className="flex items-center gap-3 rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700">
+            <Checkbox
+              checked={config?.auto_sync_sub2api !== false}
+              onCheckedChange={(checked) => setAutoSyncSub2API(Boolean(checked))}
+            />
+            注册成功后自动上传 Sub2API
           </label>
           <div className="space-y-3 rounded-xl border border-stone-200 bg-white px-4 py-3">
             <div>

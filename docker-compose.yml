@@ -1,10 +1,12 @@
 services:
   app:
-    image: ghcr.io/basketikun/chatgpt2api:latest
+    build:
+      context: .
+    image: chatgpt2api-local:auto-sync
     container_name: chatgpt2api
     restart: unless-stopped
     ports:
-      - "3000:80"
+      - "3080:80"
     volumes:
       - ./data:/app/data
       - ./config.json:/app/config.json

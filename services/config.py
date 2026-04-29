@@ -29,6 +29,13 @@ def _is_invalid_auth_key(value: object) -> bool:
     return _normalize_auth_key(value) == ""
 
 
+def _bool_from_config(data: dict[str, object], key: str, default: bool = False) -> bool:
+    value = data.get(key, default)
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
 def _read_json_object(path: Path, *, name: str) -> dict[str, object]:
     if not path.exists():
         return {}
@@ -112,17 +119,19 @@ class ConfigStore:
 
     @property
     def auto_remove_invalid_accounts(self) -> bool:
-        value = self.data.get("auto_remove_invalid_accounts", False)
-        if isinstance(value, str):
-            return value.strip().lower() in {"1", "true", "yes", "on"}
-        return bool(value)
+        return _bool_from_config(self.data, "auto_remove_invalid_accounts", False)
 
     @property
     def auto_remove_rate_limited_accounts(self) -> bool:
-        value = self.data.get("auto_remove_rate_limited_accounts", False)
-        if isinstance(value, str):
-            return value.strip().lower() in {"1", "true", "yes", "on"}
-        return bool(value)
+        return _bool_from_config(self.data, "auto_remove_rate_limited_accounts", False)
+
+    @property
+    def auto_sync_cpa(self) -> bool:
+        return _bool_from_config(self.data, "auto_sync_cpa", True)
+
+    @property
+    def auto_sync_sub2api(self) -> bool:
+        return _bool_from_config(self.data, "auto_sync_sub2api", True)
 
     @property
     def log_levels(self) -> list[str]:
@@ -174,6 +183,8 @@ class ConfigStore:
         data["image_retention_days"] = self.image_retention_days
         data["auto_remove_invalid_accounts"] = self.auto_remove_invalid_accounts
         data["auto_remove_rate_limited_accounts"] = self.auto_remove_rate_limited_accounts
+        data["auto_sync_cpa"] = self.auto_sync_cpa
+        data["auto_sync_sub2api"] = self.auto_sync_sub2api
         data["log_levels"] = self.log_levels
         data.pop("auth-key", None)
         return data

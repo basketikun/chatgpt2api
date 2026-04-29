@@ -24,6 +24,21 @@ def _default_config() -> dict:
     return {**openai_register.config, "mode": "total", "target_quota": 100, "target_available": 10, "check_interval": 5, "enabled": False, "stats": {"success": 0, "fail": 0, "done": 0, "running": 0, "threads": openai_register.config["threads"], "elapsed_seconds": 0, "avg_seconds": 0, "success_rate": 0, "current_quota": 0, "current_available": 0}}
 
 
+def _normalize_logs(raw: object) -> list[dict]:
+    if not isinstance(raw, list):
+        return []
+    logs: list[dict] = []
+    for item in raw[-300:]:
+        if not isinstance(item, dict):
+            continue
+        logs.append({
+            "time": str(item.get("time") or _now()),
+            "text": str(item.get("text") or ""),
+            "level": str(item.get("level") or "info"),
+        })
+    return logs
+
+
 def _normalize(raw: dict) -> dict:
     cfg = _default_config()
     cfg.update({k: v for k, v in raw.items() if k not in {"stats", "logs"}})
@@ -54,13 +69,16 @@ class RegisterService:
 
     def _load(self) -> dict:
         try:
-            return _normalize(json.loads(self._store_file.read_text(encoding="utf-8")))
+            raw = json.loads(self._store_file.read_text(encoding="utf-8"))
         except Exception:
-            return _normalize({})
+            raw = {}
+        self._logs = _normalize_logs(raw.get("logs") if isinstance(raw, dict) else None)
+        return _normalize(raw if isinstance(raw, dict) else {})
 
     def _save(self) -> None:
         self._store_file.parent.mkdir(parents=True, exist_ok=True)
-        self._store_file.write_text(json.dumps(self._config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        payload = {**self._config, "logs": self._logs[-300:]}
+        self._store_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     def get(self) -> dict:
         with self._lock:
@@ -113,6 +131,7 @@ class RegisterService:
         with self._lock:
             self._logs.append({"time": _now(), "text": str(text), "level": str(color or "info")})
             self._logs = self._logs[-300:]
+            self._save()
 
     def _pool_metrics(self) -> dict:
         items = account_service.list_accounts()

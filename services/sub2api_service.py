@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import base64
 import json
+import re
 import threading
 import time
 import uuid
@@ -10,14 +12,18 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
+from typing import Any
 
 from curl_cffi.requests import Session
 
 from services.account_service import account_service
 from services.config import DATA_DIR
+from services.log_service import LOG_TYPE_ACCOUNT, log_service
 
 
 SUB2API_CONFIG_FILE = DATA_DIR / "sub2api_config.json"
+CODEX_OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
+
 
 # Cached JWT per server to avoid re-login on every list/import call.
 # Token lifetime on sub2api defaults to 24h; we refresh 5 min before expiry.
@@ -416,6 +422,288 @@ def _fetch_access_token_for_account(server: dict, account_id: str) -> tuple[str,
         "email": _clean(credentials.get("email")),
         "plan_type": _clean(credentials.get("plan_type")),
     }
+
+
+def _decode_jwt_payload(token: str) -> dict[str, Any]:
+    token = _clean(token)
+    if not token:
+        return {}
+    parts = token.split(".")
+    if len(parts) < 2:
+        return {}
+    payload = parts[1] + "=" * (-len(parts[1]) % 4)
+    try:
+        data = json.loads(base64.urlsafe_b64decode(payload.encode("utf-8")).decode("utf-8"))
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _first_text(*values: object) -> str:
+    for value in values:
+        text = _clean(value)
+        if text:
+            return text
+    return ""
+
+
+def _b64url_json(payload: dict) -> str:
+    return base64.urlsafe_b64encode(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")).rstrip(b"=").decode("ascii")
+
+
+def _inject_codex_identity_into_id_token(id_token: str, *, email: str, chatgpt_account_id: str, chatgpt_user_id: str, plan_type: str = "") -> str:
+    id_token = str(id_token or "").strip()
+    chatgpt_account_id = str(chatgpt_account_id or "").strip()
+    if not id_token or not chatgpt_account_id:
+        return id_token
+    try:
+        parts = id_token.split(".")
+        if len(parts) != 3:
+            return id_token
+        header_segment, payload_segment, signature_segment = parts
+        payload_segment += "=" * (-len(payload_segment) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(payload_segment.encode("utf-8")).decode("utf-8"))
+        if not isinstance(payload, dict):
+            return id_token
+        payload["aud"] = [CODEX_OAUTH_CLIENT_ID]
+        payload["azp"] = CODEX_OAUTH_CLIENT_ID
+        if email:
+            payload["email"] = email
+        auth_payload = payload.get("https://api.openai.com/auth")
+        if not isinstance(auth_payload, dict):
+            auth_payload = {}
+        auth_payload["chatgpt_account_id"] = chatgpt_account_id
+        if chatgpt_user_id:
+            auth_payload["chatgpt_user_id"] = chatgpt_user_id
+            auth_payload["user_id"] = chatgpt_user_id
+        if plan_type:
+            auth_payload["chatgpt_plan_type"] = str(plan_type).lower()
+        payload["https://api.openai.com/auth"] = auth_payload
+        return f"{header_segment}.{_b64url_json(payload)}.{signature_segment or 'sig'}"
+    except Exception:
+        return id_token
+
+def _claim_from_payload(payload: dict[str, Any], *names: str) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    auth = payload.get("https://api.openai.com/auth")
+    profile = payload.get("https://api.openai.com/profile")
+    for scope in (auth, profile):
+        if isinstance(scope, dict):
+            for name in names:
+                value = _first_text(scope.get(name))
+                if value:
+                    return value
+    for name in names:
+        for key in (name, f"https://api.openai.com/auth.{name}", f"https://api.openai.com/profile.{name}"):
+            value = _first_text(payload.get(key))
+            if value:
+                return value
+    return ""
+
+
+def _token_exp_epoch(*tokens: str) -> int | None:
+    for token in tokens:
+        payload = _decode_jwt_payload(token)
+        try:
+            exp = int(payload.get("exp") or 0)
+        except Exception:
+            exp = 0
+        if exp > 0:
+            return exp
+    return None
+
+
+def _is_chatgpt_account_id(value: str) -> bool:
+    return bool(re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", _clean(value)))
+
+
+def _is_chatgpt_user_id(value: str) -> bool:
+    return _clean(value).startswith("user-")
+
+
+def _extract_registered_identity(register_result: dict, local_account: dict | None = None) -> dict[str, str | int | None]:
+    local_account = local_account or {}
+    access_token = _clean(register_result.get("codex_access_token") or register_result.get("access_token"))
+    id_token = _clean(register_result.get("codex_id_token") or register_result.get("id_token"))
+    access_payload = _decode_jwt_payload(access_token)
+    id_payload = _decode_jwt_payload(id_token)
+    email = _first_text(register_result.get("email"), local_account.get("email"), _claim_from_payload(id_payload, "email"), _claim_from_payload(access_payload, "email"))
+    chatgpt_account_id = _first_text(
+        register_result.get("codex_chatgpt_account_id"),
+        register_result.get("chatgpt_account_id"),
+        local_account.get("chatgpt_account_id"),
+        _claim_from_payload(id_payload, "chatgpt_account_id"),
+        _claim_from_payload(access_payload, "chatgpt_account_id"),
+    )
+    existing_account_id = _first_text(register_result.get("account_id"), local_account.get("account_id"))
+    if not chatgpt_account_id and _is_chatgpt_account_id(existing_account_id):
+        chatgpt_account_id = existing_account_id
+    chatgpt_user_id = _first_text(
+        register_result.get("codex_chatgpt_user_id"),
+        register_result.get("chatgpt_user_id"),
+        local_account.get("chatgpt_user_id"),
+        local_account.get("user_id"),
+        _claim_from_payload(id_payload, "chatgpt_user_id", "user_id", "chatgpt_account_user_id"),
+        _claim_from_payload(access_payload, "chatgpt_user_id", "user_id", "chatgpt_account_user_id"),
+    )
+    if not chatgpt_user_id and _is_chatgpt_user_id(existing_account_id):
+        chatgpt_user_id = existing_account_id
+    client_id = _first_text(register_result.get("codex_client_id"), register_result.get("client_id"), _claim_from_payload(access_payload, "client_id"), _claim_from_payload(id_payload, "azp", "client_id"), CODEX_OAUTH_CLIENT_ID)
+    return {
+        "email": email,
+        "chatgpt_account_id": chatgpt_account_id,
+        "chatgpt_user_id": chatgpt_user_id,
+        "client_id": client_id,
+        "expires_at": _token_exp_epoch(access_token, id_token),
+    }
+
+
+def _group_ids(server: dict) -> list[int]:
+    raw = _clean(server.get("group_id"))
+    if not raw:
+        return []
+    try:
+        group_id = int(raw)
+    except (TypeError, ValueError):
+        return []
+    return [group_id] if group_id > 0 else []
+
+
+def _build_registered_account_payload(register_result: dict, local_account: dict | None = None) -> tuple[dict, str]:
+    access_token = _clean(register_result.get("codex_access_token") or register_result.get("access_token"))
+    refresh_token = _clean(register_result.get("codex_refresh_token") or register_result.get("refresh_token"))
+    id_token = _clean(register_result.get("codex_id_token") or register_result.get("id_token"))
+    if not access_token:
+        raise ValueError("missing access_token")
+    identity = _extract_registered_identity(register_result, local_account=local_account)
+    email = _clean(identity.get("email"))
+    chatgpt_account_id = _clean(identity.get("chatgpt_account_id"))
+    chatgpt_user_id = _clean(identity.get("chatgpt_user_id"))
+    client_id = CODEX_OAUTH_CLIENT_ID
+    id_token = _inject_codex_identity_into_id_token(
+        id_token,
+        email=email,
+        chatgpt_account_id=chatgpt_account_id,
+        chatgpt_user_id=chatgpt_user_id,
+        plan_type=_clean(local_account.get("chatgpt_plan_type") or local_account.get("type")),
+    )
+    id_payload = _decode_jwt_payload(id_token)
+    id_claim_account_id = _claim_from_payload(id_payload, "chatgpt_account_id")
+    if not _is_chatgpt_account_id(id_claim_account_id):
+        raise ValueError("codex_id_token_missing_chatgpt_account_id")
+    if not _is_chatgpt_account_id(chatgpt_account_id):
+        chatgpt_account_id = id_claim_account_id
+    credentials: dict[str, object] = {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "id_token": id_token,
+        "email": email,
+        "chatgpt_account_id": chatgpt_account_id,
+        "chatgpt_user_id": chatgpt_user_id,
+        "client_id": client_id,
+        "session_token": _clean(register_result.get("session_token")),
+    }
+    expires_at = identity.get("expires_at")
+    if isinstance(expires_at, int) and expires_at > 0:
+        credentials["expires_at"] = expires_at
+    credentials = {key: value for key, value in credentials.items() if value not in (None, "") or key == "session_token"}
+    extra: dict[str, object] = {}
+    if client_id == CODEX_OAUTH_CLIENT_ID:
+        extra["codex_cli_only"] = True
+    payload: dict[str, object] = {
+        "name": email or chatgpt_account_id,
+        "platform": "openai",
+        "type": "oauth",
+        "credentials": credentials,
+        "concurrency": 10,
+        "priority": 1,
+        "group_ids": [],
+        "auto_pause_on_expired": True,
+    }
+    if extra:
+        payload["extra"] = extra
+    if isinstance(expires_at, int) and expires_at > 0:
+        payload["expires_at"] = expires_at
+    return payload, email
+
+
+def _list_sync_servers() -> list[dict]:
+    seen: set[tuple[str, str, str]] = set()
+    servers: list[dict] = []
+    for server in sub2api_config.list_servers():
+        base_url = _clean(server.get("base_url")).rstrip("/")
+        auth_key = _clean(server.get("api_key")) or f"{_clean(server.get('email'))}:{_clean(server.get('password'))}"
+        group_id = _clean(server.get("group_id"))
+        if not base_url or not auth_key:
+            continue
+        key = (base_url, auth_key, group_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        servers.append(server)
+    return servers
+
+
+def create_remote_account(server: dict, payload: dict) -> None:
+    base_url = _clean(server.get("base_url"))
+    if not base_url:
+        raise ValueError("invalid sub2api server config")
+    body = dict(payload)
+    body["group_ids"] = _group_ids(server)
+    headers = {**_auth_headers(server), "Content-Type": "application/json"}
+    session = Session(verify=True)
+    try:
+        response = session.post(
+            f"{base_url.rstrip('/')}/api/v1/admin/accounts",
+            headers=headers,
+            json=body,
+            timeout=60,
+        )
+        if response.status_code == 409:
+            try:
+                conflict = response.json()
+            except Exception:
+                conflict = {}
+            if isinstance(conflict, dict) and conflict.get("error") == "mixed_channel_warning":
+                body["confirm_mixed_channel_risk"] = True
+                response = session.post(
+                    f"{base_url.rstrip('/')}/api/v1/admin/accounts",
+                    headers=headers,
+                    json=body,
+                    timeout=60,
+                )
+        if not response.ok:
+            raise RuntimeError(f"sub2api create failed: HTTP {response.status_code} {response.text[:200]}")
+    finally:
+        session.close()
+
+
+def sync_registered_account_to_sub2api(register_result: dict, local_account: dict | None = None) -> dict[str, Any]:
+    servers = _list_sync_servers()
+    summary: dict[str, Any] = {
+        "attempted": len(servers),
+        "succeeded": 0,
+        "failed": 0,
+        "email": "",
+        "errors": [],
+    }
+    if not servers:
+        return summary
+    payload, email = _build_registered_account_payload(register_result, local_account=local_account)
+    summary["email"] = email
+    for server in servers:
+        server_name = _clean(server.get("name")) or _clean(server.get("base_url")) or _clean(server.get("id"))
+        try:
+            create_remote_account(server, payload)
+            summary["succeeded"] += 1
+            log_service.add(LOG_TYPE_ACCOUNT, "Sub2API自动同步成功", {"server": server_name, "email": email})
+        except Exception as exc:
+            summary["failed"] += 1
+            error_text = str(exc)
+            summary["errors"].append({"server": server_name, "error": error_text})
+            log_service.add(LOG_TYPE_ACCOUNT, "Sub2API自动同步失败", {"server": server_name, "email": email, "error": error_text})
+    return summary
 
 
 class Sub2APIImportService:

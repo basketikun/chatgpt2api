@@ -131,3 +131,143 @@
     display: none;
   }
 }
+
+
+@layer utilities {
+  .app-shell {
+    background:
+      radial-gradient(circle at top left, rgba(255, 255, 255, 0.92), rgba(245, 239, 231, 0.96) 42%, rgba(240, 235, 227, 0.99) 100%);
+  }
+
+  .dark {
+    color-scheme: dark;
+    --background: oklch(0.125 0.018 260);
+    --foreground: oklch(0.965 0.018 86);
+    --card: oklch(0.185 0.026 260 / 0.86);
+    --card-foreground: oklch(0.955 0.014 86);
+    --popover: oklch(0.18 0.026 260 / 0.96);
+    --popover-foreground: oklch(0.955 0.014 86);
+    --primary: oklch(0.86 0.13 82);
+    --primary-foreground: oklch(0.16 0.02 260);
+    --secondary: oklch(0.24 0.035 260 / 0.92);
+    --secondary-foreground: oklch(0.9 0.018 86);
+    --muted: oklch(0.24 0.03 260 / 0.72);
+    --muted-foreground: oklch(0.74 0.028 250);
+    --accent: oklch(0.74 0.12 210);
+    --accent-foreground: oklch(0.13 0.018 260);
+    --border: oklch(0.76 0.032 255 / 0.18);
+    --input: oklch(0.76 0.032 255 / 0.16);
+    --ring: oklch(0.79 0.11 210 / 0.55);
+  }
+
+  .dark .app-shell {
+    background:
+      radial-gradient(circle at 9% -8%, rgba(251, 191, 36, 0.16), transparent 31%),
+      radial-gradient(circle at 87% 1%, rgba(34, 211, 238, 0.14), transparent 30%),
+      radial-gradient(circle at 58% 116%, rgba(167, 139, 250, 0.13), transparent 36%),
+      linear-gradient(135deg, #070a12 0%, #0d111c 38%, #13110e 73%, #09080b 100%);
+  }
+
+  .dark body {
+    background: #070a12;
+  }
+
+  .dark header {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      0 24px 80px -48px rgba(56, 189, 248, 0.42),
+      0 28px 80px -54px rgba(251, 191, 36, 0.24);
+  }
+
+  .dark [data-slot="card"] {
+    background:
+      linear-gradient(145deg, rgba(24, 31, 44, 0.88), rgba(13, 17, 28, 0.82)) !important;
+    border-color: rgba(226, 232, 240, 0.13) !important;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.07),
+      0 28px 90px -55px rgba(2, 6, 23, 0.95),
+      0 18px 70px -58px rgba(34, 211, 238, 0.38) !important;
+    backdrop-filter: blur(22px);
+  }
+
+  .dark [class*="bg-white"] {
+    background-color: rgba(18, 24, 36, 0.72) !important;
+  }
+
+  .dark [class*="bg-stone-50"],
+  .dark [class*="bg-stone-100"] {
+    background-color: rgba(21, 28, 42, 0.66) !important;
+  }
+
+  .dark [class*="border-stone-"],
+  .dark [class*="border-white"] {
+    border-color: rgba(226, 232, 240, 0.14) !important;
+  }
+
+  .dark [class*="text-stone-950"],
+  .dark [class*="text-stone-900"],
+  .dark [class*="text-stone-800"],
+  .dark [class*="text-stone-700"],
+  .dark [class*="text-stone-600"] {
+    color: rgb(236, 242, 248) !important;
+  }
+
+  .dark [class*="text-stone-500"],
+  .dark [class*="text-stone-400"] {
+    color: rgb(152, 166, 185) !important;
+  }
+
+  .dark [data-slot="input"],
+  .dark [data-slot="select-trigger"],
+  .dark input,
+  .dark textarea,
+  .dark select {
+    background:
+      linear-gradient(180deg, rgba(15, 23, 42, 0.86), rgba(10, 14, 24, 0.82)) !important;
+    border-color: rgba(148, 163, 184, 0.22) !important;
+    color: rgb(235, 242, 250) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045), 0 12px 36px -28px rgba(34, 211, 238, 0.34) !important;
+  }
+
+  .dark input:focus,
+  .dark textarea:focus,
+  .dark [data-slot="select-trigger"]:focus-visible {
+    border-color: rgba(125, 211, 252, 0.46) !important;
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+  }
+
+  .dark input::placeholder,
+  .dark textarea::placeholder {
+    color: rgba(148, 163, 184, 0.68) !important;
+  }
+
+  .dark [data-slot="button"]:not([class*="bg-stone-950"]):not([class*="bg-primary"]),
+  .dark button[class*="border-stone"] {
+    border-color: rgba(226, 232, 240, 0.14) !important;
+    background-color: rgba(15, 23, 42, 0.58) !important;
+    color: rgb(219, 229, 240) !important;
+  }
+
+  .dark [data-slot="dialog-content"],
+  .dark [data-slot="select-content"],
+  .dark [data-radix-popper-content-wrapper] [role="dialog"] {
+    background:
+      linear-gradient(145deg, rgba(20, 27, 40, 0.98), rgba(9, 13, 22, 0.98)) !important;
+    border-color: rgba(226, 232, 240, 0.14) !important;
+    box-shadow: 0 34px 120px -56px rgba(2, 6, 23, 1), 0 20px 90px -72px rgba(167, 139, 250, 0.55) !important;
+  }
+
+  .dark table,
+  .dark pre {
+    color: rgb(226, 232, 240);
+  }
+
+  .dark tr:hover {
+    background-color: rgba(51, 65, 85, 0.26) !important;
+  }
+
+  .dark ::selection {
+    background: rgba(34, 211, 238, 0.28);
+    color: rgb(248, 250, 252);
+  }
+}
