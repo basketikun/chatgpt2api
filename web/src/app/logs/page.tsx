@@ -20,6 +20,8 @@ const LogType = {
   Account: "account",
 } as const;
 
+type LogTypeValue = (typeof LogType)[keyof typeof LogType];
+
 const typeLabels: Record<string, string> = {
   [LogType.Call]: "调用日志",
   [LogType.Account]: "账号管理日志",
@@ -49,7 +51,7 @@ function getStatus(item: SystemLog) {
 
 function LogsContent() {
   const [items, setItems] = useState<SystemLog[]>([]);
-  const [type, setType] = useState(LogType.Call);
+  const [type, setType] = useState<LogTypeValue>(LogType.Call);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [detailLog, setDetailLog] = useState<SystemLog | null>(null);
@@ -101,7 +103,7 @@ function LogsContent() {
           <h1 className="text-2xl font-semibold tracking-tight">日志管理</h1>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Select value={type} onValueChange={setType}>
+          <Select value={type} onValueChange={(value) => setType(value as LogTypeValue)}>
             <SelectTrigger className="h-10 w-[150px] rounded-xl border-stone-200 bg-white"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value={LogType.Call}>调用日志</SelectItem>

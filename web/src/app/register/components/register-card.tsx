@@ -52,6 +52,7 @@ export function RegisterCard() {
       ...(type === "moemail" ? { api_base: "", api_key: "", domain: [] } : {}),
       ...(type === "duckmail" ? { api_key: "", default_domain: "duckmail.sbs" } : {}),
       ...(type === "gptmail" ? { api_key: "", default_domain: "" } : {}),
+      ...(type === "yyds_mail" ? { api_base: "https://maliapi.215.im/v1", api_key: "", domain: [] } : {}),
     });
   };
 
@@ -169,14 +170,15 @@ export function RegisterCard() {
                             <SelectItem value="moemail">moemail</SelectItem>
                             <SelectItem value="duckmail">duckmail</SelectItem>
                             <SelectItem value="gptmail">gptmail(未测试)</SelectItem>
+                            <SelectItem value="yyds_mail">yyds_mail</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
-                      {type === "cloudflare_temp_email" || type === "moemail" ? (
+                      {type === "cloudflare_temp_email" || type === "moemail" || type === "yyds_mail" ? (
                         <>
                           <div className="space-y-2">
                             <label className="text-sm text-stone-700">API Base</label>
-                            <Input value={String(provider.api_base || "")} onChange={(event) => updateProvider(index, { api_base: event.target.value })} className="h-10 rounded-xl border-stone-200 bg-white" disabled={config.enabled} />
+                            <Input value={String(provider.api_base || "")} onChange={(event) => updateProvider(index, { api_base: event.target.value })} placeholder={type === "yyds_mail" ? "https://maliapi.215.im/v1" : ""} className="h-10 rounded-xl border-stone-200 bg-white" disabled={config.enabled} />
                           </div>
                           {type === "cloudflare_temp_email" ? (
                             <div className="space-y-2">
@@ -186,7 +188,7 @@ export function RegisterCard() {
                           ) : null}
                         </>
                       ) : null}
-                      {type === "tempmail_lol" || type === "moemail" || type === "duckmail" || type === "gptmail" ? (
+                      {type === "tempmail_lol" || type === "moemail" || type === "duckmail" || type === "gptmail" || type === "yyds_mail" ? (
                         <div className="space-y-2">
                           <label className="text-sm text-stone-700">API Key</label>
                           <Input value={String(provider.api_key || "")} onChange={(event) => updateProvider(index, { api_key: event.target.value })} className="h-10 rounded-xl border-stone-200 bg-white" disabled={config.enabled} />
@@ -200,10 +202,14 @@ export function RegisterCard() {
                       ) : null}
                     </div>
 
-                    {type === "tempmail_lol" || type === "cloudflare_temp_email" || type === "moemail" ? (
+                    {type === "tempmail_lol" || type === "cloudflare_temp_email" || type === "moemail" || type === "yyds_mail" ? (
                       <div className="space-y-2">
                         <label className="text-sm text-stone-700">Domain</label>
-                        <Textarea value={domains} onChange={(event) => updateProvider(index, { domain: event.target.value.split(/[\n,]/).map((item) => item.trim()).filter(Boolean) })} placeholder={type === "moemail" ? "每行一个域名" : "每行一个域名，留空则使用服务默认域名"} className="min-h-20 rounded-xl border-stone-200 bg-white font-mono text-xs" disabled={config.enabled} />
+                        <Textarea value={domains} onChange={(event) => updateProvider(index, { domain: event.target.value.split(/[\n,]/).map((item) => item.trim()).filter(Boolean) })} placeholder={type === "moemail" ? "每行一个域名" : type === "yyds_mail" ? "每行一个域名；*.example.com 表示使用 YYDS 泛子域接口" : "每行一个域名，留空则使用服务默认域名"} className="min-h-20 rounded-xl border-stone-200 bg-white font-mono text-xs" disabled={config.enabled} />
+                        <p className="text-xs leading-5 text-stone-500">
+                          域名必须先在对应邮箱服务商后台/API Key 权限里可用，不能随便填未配置的自有域名。
+                          {type === "yyds_mail" ? " YYDS Mail 支持填写共享域名；以 *. 开头时会调用 /v1/accounts/wildcard。" : null}
+                        </p>
                       </div>
                     ) : null}
                   </div>

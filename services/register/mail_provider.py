@@ -391,6 +391,177 @@ class GptMailProvider(BaseMailProvider):
         self.session.close()
 
 
+class YydsMailProvider(BaseMailProvider):
+    name = "yyds_mail"
+
+    def __init__(self, entry: dict, conf: dict):
+        super().__init__(conf, str(entry.get("provider_ref") or ""))
+        self.api_base = str(entry.get("api_base") or "https://maliapi.215.im/v1").rstrip("/")
+        self.api_key = str(entry.get("api_key") or "").strip()
+        raw_domains = entry.get("domain") or []
+        if isinstance(raw_domains, list):
+            self.domain = [str(item).strip() for item in raw_domains if str(item).strip()]
+        else:
+            self.domain = [str(raw_domains).strip()] if str(raw_domains).strip() else []
+        self.session = curl_requests.Session(impersonate="chrome")
+
+    @staticmethod
+    def _unwrap(data: Any) -> Any:
+        if isinstance(data, dict) and "data" in data:
+            return data["data"]
+        return data
+
+    @staticmethod
+    def _first_text(data: dict[str, Any], *keys: str) -> str:
+        for key in keys:
+            value = data.get(key)
+            if isinstance(value, dict):
+                nested = YydsMailProvider._first_text(value, "address", "email", "name", "value", "token", "jwt")
+                if nested:
+                    return nested
+            text = str(value or "").strip()
+            if text:
+                return text
+        return ""
+
+    def _headers(self, token: str = "") -> dict[str, str]:
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "User-Agent": self.conf["user_agent"],
+            "X-API-Key": self.api_key,
+        }
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        return headers
+
+    def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        token: str = "",
+        params: dict | None = None,
+        payload: dict | None = None,
+        expected: tuple[int, ...] = (200, 201, 204),
+    ):
+        resp = self.session.request(
+            method.upper(),
+            f"{self.api_base}{path}",
+            headers=self._headers(token),
+            params=params,
+            json=payload,
+            timeout=self.conf["request_timeout"],
+            verify=False,
+        )
+        if resp.status_code not in expected:
+            raise RuntimeError(f"YYDS Mail 请求失败: {method} {path}, HTTP {resp.status_code}, body={resp.text[:300]}")
+        if resp.status_code == 204 or not resp.text.strip():
+            return {}
+        data = resp.json()
+        if isinstance(data, dict) and data.get("success") is False:
+            raise RuntimeError(f"YYDS Mail 请求失败: {data.get('errorCode') or data.get('error') or data}")
+        return self._unwrap(data)
+
+    @staticmethod
+    def _resolve_domain(domain: str) -> tuple[str, bool]:
+        text = str(domain or "").strip().lower()
+        if text.startswith("*.") and len(text) > 2:
+            return text[2:], True
+        return text, False
+
+    @staticmethod
+    def _items(data: Any) -> list[dict[str, Any]]:
+        data = YydsMailProvider._unwrap(data)
+        if isinstance(data, list):
+            return [item for item in data if isinstance(item, dict)]
+        if isinstance(data, dict):
+            for key in ("messages", "items", "emails", "results", "data"):
+                value = data.get(key)
+                if isinstance(value, list):
+                    return [item for item in value if isinstance(item, dict)]
+        return []
+
+    def create_mailbox(self, username: str | None = None) -> dict[str, Any]:
+        if not self.api_key:
+            raise RuntimeError("YYDS Mail 需要 api_key")
+        payload: dict[str, Any] = {"localPart": username or _random_mailbox_name()}
+        endpoint = "/accounts"
+        if self.domain:
+            domain, use_wildcard = self._resolve_domain(_next_domain(self.domain))
+            payload["domain"] = domain
+            if use_wildcard:
+                endpoint = "/accounts/wildcard"
+        data = self._request("POST", endpoint, payload=payload)
+        if not isinstance(data, dict):
+            raise RuntimeError("YYDS Mail 创建邮箱返回结构不是对象")
+        address = self._first_text(data, "address", "email")
+        token = self._first_text(data, "temp_token", "tempToken", "token", "access_token", "jwt")
+        account_id = self._first_text(data, "id", "account_id", "accountId")
+        if not address:
+            raise RuntimeError("YYDS Mail 缺少 address")
+        return {
+            "provider": self.name,
+            "provider_ref": self.provider_ref,
+            "address": address,
+            "token": token,
+            "account_id": account_id,
+        }
+
+    def fetch_latest_message(self, mailbox: dict[str, Any]) -> dict[str, Any] | None:
+        address = str(mailbox.get("address") or "").strip()
+        token = str(mailbox.get("token") or "").strip()
+        data = self._request("GET", "/messages", token=token, params={"address": address})
+        messages = [item for item in self._items(data) if _message_matches_email(item, address)]
+        if not messages:
+            return None
+        item = max(
+            messages,
+            key=lambda value: (
+                (
+                    _parse_received_at(
+                        value.get("createdAt")
+                        or value.get("created_at")
+                        or value.get("receivedAt")
+                        or value.get("date")
+                        or value.get("timestamp")
+                    )
+                    or datetime.fromtimestamp(0, tz=timezone.utc)
+                ).timestamp(),
+                str(value.get("id") or ""),
+            ),
+        )
+        message_id = str(item.get("id") or item.get("_id") or item.get("message_id") or "").strip()
+        if message_id:
+            detail = self._request("GET", f"/messages/{message_id}", token=token, params={"address": address})
+            if isinstance(detail, dict):
+                item = detail.get("message") if isinstance(detail.get("message"), dict) else detail
+        text_content, html_content = _extract_content(item)
+        sender = item.get("from") or item.get("sender") or item.get("from_address") or ""
+        if isinstance(sender, dict):
+            sender = sender.get("address") or sender.get("email") or sender.get("name") or ""
+        return {
+            "provider": self.name,
+            "mailbox": address,
+            "message_id": message_id,
+            "subject": str(item.get("subject") or ""),
+            "sender": str(sender),
+            "text_content": text_content,
+            "html_content": html_content,
+            "received_at": _parse_received_at(
+                item.get("createdAt")
+                or item.get("created_at")
+                or item.get("receivedAt")
+                or item.get("date")
+                or item.get("timestamp")
+            ),
+            "raw": item,
+        }
+
+    def close(self) -> None:
+        self.session.close()
+
+
 class MoEmailProvider(BaseMailProvider):
     name = "moemail"
 
@@ -480,6 +651,8 @@ def _create_provider(mail_config: dict, provider: str = "", provider_ref: str = 
         return DuckMailProvider(entry, conf)
     if entry["type"] == "gptmail":
         return GptMailProvider(entry, conf)
+    if entry["type"] == "yyds_mail":
+        return YydsMailProvider(entry, conf)
     if entry["type"] == "moemail":
         return MoEmailProvider(entry, conf)
     raise RuntimeError(f"不支持的 mail.provider: {entry['type']}")

@@ -195,10 +195,14 @@ export function ImageComposer({
                       type="number"
                       inputMode="numeric"
                       min="1"
-                      max="10"
                       step="1"
                       value={imageCount}
                       onChange={(event) => onImageCountChange(event.target.value)}
+                      onBlur={() => {
+                        if (!imageCount.trim() || Number(imageCount) < 1) {
+                          onImageCountChange("1");
+                        }
+                      }}
                       className="h-7 w-[40px] border-0 bg-transparent px-0 text-center text-xs font-medium text-stone-700 shadow-none focus-visible:ring-0 sm:h-8 sm:w-[64px] sm:text-sm"
                     />
                   </div>
@@ -260,4 +264,3 @@ export function ImageComposer({
     </div>
   );
 }
-
