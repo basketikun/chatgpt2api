@@ -156,12 +156,12 @@ class RegisterService:
             self._save()
 
     def _run(self) -> None:
-        cfg = self.get()
-        threads = int(cfg["threads"])
+        threads = int(self.get()["threads"])
         submitted, done, success, fail = 0, 0, 0, 0
         with ThreadPoolExecutor(max_workers=threads) as executor:
             futures = set()
             while True:
+                cfg = self.get()
                 while self.get()["enabled"] and not self._target_reached(cfg, submitted) and len(futures) < threads:
                     submitted += 1
                     futures.add(executor.submit(openai_register.worker, submitted))
