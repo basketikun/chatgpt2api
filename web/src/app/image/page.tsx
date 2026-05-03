@@ -224,6 +224,18 @@ function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
+async function withRetry<T>(fn: () => Promise<T>, retries = 3, baseDelay = 1000): Promise<T> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (attempt === retries) throw error;
+      await sleep(baseDelay * Math.pow(2, attempt));
+    }
+  }
+  throw new Error("unreachable");
+}
+
 function pickFallbackConversationId(conversations: ImageConversation[]) {
   const activeConversation = conversations.find((conversation) =>
     conversation.turns.some((turn) => turn.status === "queued" || turn.status === "generating"),
@@ -886,7 +898,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
           }
 
           await sleep(2000);
-          const taskList = await fetchImageTasks(loadingTaskIds);
+          const taskList = await withRetry(() => fetchImageTasks(loadingTaskIds));
           if (taskList.items.length > 0) {
             await applyTasks(taskList.items);
           }

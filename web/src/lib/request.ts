@@ -66,6 +66,7 @@ request.interceptors.response.use(
             errorMessageFromValue(payload?.detail) ||
             errorMessageFromValue(payload?.error) ||
             payload?.message ||
+            (error.code === "ERR_NETWORK" ? "网络连接失败，请检查网络或服务器状态" : null) ||
             error.message ||
             `请求失败 (${status || 500})`;
         return Promise.reject(new Error(message));

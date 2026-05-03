@@ -57,7 +57,7 @@ export function RegisterCard() {
   };
 
   return (
-    <div className="grid h-[calc(100vh-132px)] min-h-[640px] items-stretch gap-0 overflow-hidden rounded-xl border border-stone-200 bg-white/70 xl:grid-cols-2">
+    <div className="grid items-stretch gap-0 overflow-hidden rounded-xl border border-stone-200 bg-white/70 xl:h-[calc(100vh-132px)] xl:min-h-[640px] xl:grid-cols-2">
       <section className="space-y-4 overflow-y-auto border-b border-stone-200 p-4 xl:border-r xl:border-b-0">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-3">
@@ -286,7 +286,7 @@ export function RegisterCard() {
                 {logs.length}
               </Badge>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto border border-stone-200 bg-white/70 p-3 font-mono text-xs leading-6">
+            <div className="h-[60vh] min-h-[200px] overflow-y-auto border border-stone-200 bg-white/70 p-3 font-mono text-xs leading-6 xl:h-auto xl:min-h-0 xl:flex-1">
               {logs.length === 0 ? (
                 <div className="text-stone-500">暂无日志</div>
               ) : (
