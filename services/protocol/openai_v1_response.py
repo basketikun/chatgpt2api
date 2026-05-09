@@ -199,6 +199,7 @@ def response_events(body: dict[str, Any]) -> Iterator[dict[str, Any]]:
     if not prompt:
         raise HTTPException(status_code=400, detail={"error": "input text is required"})
     model = str(body.get("model") or "gpt-image-2").strip() or "gpt-image-2"
+    size = body.get("size")
     image_info = extract_response_image(body.get("input"))
     if image_info:
         image_data, mime_type = image_info
@@ -208,7 +209,7 @@ def response_events(body: dict[str, Any]) -> Iterator[dict[str, Any]]:
     image_outputs = stream_image_outputs_with_pool(ConversationRequest(
         prompt=prompt,
         model=model,
-        size=None if images else "1:1",
+        size=size,
         response_format="b64_json",
         images=images,
     ))

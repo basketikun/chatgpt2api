@@ -344,7 +344,7 @@ def assistant_history_messages(messages: list[dict[str, Any]]) -> list[str]:
 
 def build_image_prompt(prompt: str, size: str | None) -> str:
     if not size:
-        return prompt
+        size = "16:9"
     if size not in {"1:1", "16:9", "9:16", "4:3", "3:4"}:
         return f"{prompt.strip()}\n\n输出图片，宽高比为 {size}。"
     hint = {
