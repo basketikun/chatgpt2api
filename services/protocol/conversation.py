@@ -342,18 +342,28 @@ def assistant_history_messages(messages: list[dict[str, Any]]) -> list[str]:
     return [str(item.get("content") or "") for item in messages if item.get("role") == "assistant" and item.get("content")]
 
 
+# Map of common OpenAI pixel sizes to aspect ratio strings
+_PIXEL_SIZE_TO_RATIO: dict[str, str] = {
+    "1024x1024": "1:1",
+    "1792x1024": "16:9",
+    "1024x1792": "9:16",
+}
+
+
 def build_image_prompt(prompt: str, size: str | None) -> str:
     if not size:
         size = "16:9"
-    if size not in {"1:1", "16:9", "9:16", "4:3", "3:4"}:
-        return f"{prompt.strip()}\n\n输出图片，宽高比为 {size}。"
+    # Normalize pixel format (e.g. "1792x1024") to aspect ratio
+    normalized = _PIXEL_SIZE_TO_RATIO.get(size, size)
+    if normalized not in {"1:1", "16:9", "9:16", "4:3", "3:4"}:
+        return f"{prompt.strip()}\n\n输出图片，宽高比为 {normalized}。"
     hint = {
         "1:1": "输出为 1:1 正方形构图，主体居中，适合正方形画幅。",
         "16:9": "输出为 16:9 横屏构图，适合宽画幅展示。",
         "9:16": "输出为 9:16 竖屏构图，适合竖版画幅展示。",
         "4:3": "输出为 4:3 比例，兼顾宽度与高度，适合展示画面细节。",
         "3:4": "输出为 3:4 比例，纵向构图，适合人物肖像或竖向场景。",
-    }[size]
+    }[normalized]
     return f"{prompt.strip()}\n\n{hint}"
 
 
