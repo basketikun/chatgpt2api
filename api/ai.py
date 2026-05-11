@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from api.support import require_identity, resolve_image_base_url
+from utils.helper import normalize_json_edit_images, parse_image_count
 from services.content_filter import check_request, request_text
 from services.log_service import LoggedCall
 from services.protocol import (
@@ -25,6 +26,18 @@ class ImageGenerationRequest(BaseModel):
     response_format: str = "b64_json"
     history_disabled: bool = True
     stream: bool | None = None
+
+
+class ImageEditJsonRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    prompt: str = Field(..., min_length=1)
+    model: str = "gpt-image-2"
+    n: object = 1
+    size: str | None = None
+    response_format: str = "b64_json"
+    stream: bool | None = None
+    image: object | None = None
+    images: object | None = None
 
 
 class ChatCompletionRequest(BaseModel):
@@ -92,7 +105,7 @@ def create_router() -> APIRouter:
             authorization: str | None = Header(default=None),
             image: list[UploadFile] | None = File(default=None),
             image_list: list[UploadFile] | None = File(default=None, alias="image[]"),
-            prompt: str = Form(...),
+            prompt: str | None = Form(default=None),
             model: str = Form(default="gpt-image-2"),
             n: int = Form(default=1),
             size: str | None = Form(default=None),
@@ -100,19 +113,38 @@ def create_router() -> APIRouter:
             stream: bool | None = Form(default=None),
     ):
         identity = require_identity(authorization)
+        if "application/json" in request.headers.get("content-type", "").lower():
+            try:
+                json_body = ImageEditJsonRequest.model_validate(await request.json())
+            except HTTPException:
+                raise
+            except ValidationError as exc:
+                raise HTTPException(status_code=422, detail=exc.errors()) from exc
+            except Exception as exc:
+                raise HTTPException(status_code=400, detail={"error": "request body must be a JSON object"}) from exc
+            prompt = json_body.prompt
+            model = json_body.model
+            n = json_body.n
+            size = json_body.size
+            response_format = json_body.response_format
+            stream = json_body.stream
+            images = normalize_json_edit_images(image=json_body.image, images=json_body.images)
+        else:
+            if not prompt:
+                raise HTTPException(status_code=422, detail={"error": "prompt is required"})
+            uploads = [*(image or []), *(image_list or [])]
+            if not uploads:
+                raise HTTPException(status_code=400, detail={"error": "image file is required"})
+            images: list[tuple[bytes, str, str]] = []
+            for upload in uploads:
+                image_data = await upload.read()
+                if not image_data:
+                    raise HTTPException(status_code=400, detail={"error": "image file is empty"})
+                images.append((image_data, upload.filename or "image.png", upload.content_type or "image/png"))
+
         call = LoggedCall(identity, "/v1/images/edits", model, "图生图", request_text=prompt)
-        if n < 1 or n > 4:
-            raise HTTPException(status_code=400, detail={"error": "n must be between 1 and 4"})
+        n = parse_image_count(n)
         await filter_or_log(call, prompt)
-        uploads = [*(image or []), *(image_list or [])]
-        if not uploads:
-            raise HTTPException(status_code=400, detail={"error": "image file is required"})
-        images: list[tuple[bytes, str, str]] = []
-        for upload in uploads:
-            image_data = await upload.read()
-            if not image_data:
-                raise HTTPException(status_code=400, detail={"error": "image file is empty"})
-            images.append((image_data, upload.filename or "image.png", upload.content_type or "image/png"))
         payload = {
             "prompt": prompt,
             "images": images,
