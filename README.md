@@ -215,6 +215,26 @@ curl http://localhost:8000/v1/images/edits \
   -F "image=@./input.png"
 ```
 
+也支持 JSON 请求体传入 base64/data URL 图片，便于兼容部分 OpenAI-compatible / LiteLLM 客户端：
+
+```bash
+IMAGE_B64=$(base64 -w 0 ./input.png)
+
+curl http://localhost:8000/v1/images/edits \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <auth-key>" \
+  -d @- <<JSON
+{
+  "model": "gpt-image-2",
+  "prompt": "把这张图改成赛博朋克夜景风格",
+  "n": 1,
+  "images": [
+    {"image_url": "data:image/png;base64,${IMAGE_B64}"}
+  ]
+}
+JSON
+```
+
 <details>
 <summary>字段说明</summary>
 <br>

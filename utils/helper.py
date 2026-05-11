@@ -14,6 +14,81 @@ from utils.log import logger
 IMAGE_MODELS = {"gpt-image-2", "codex-gpt-image-2"}
 OUTPUT_DIR = Path(__file__).resolve().parent / "output"
 
+SUPPORTED_JSON_IMAGE_MIME_TYPES = {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"}
+MAX_JSON_IMAGE_BYTES = 10 * 1024 * 1024
+MAX_JSON_EDIT_IMAGES = 10
+DATA_URL_IMAGE_RE = re.compile(r"^data:(?P<mime>[-+./\w]+);base64,(?P<data>.*)$", re.DOTALL)
+
+
+def _image_extension(mime_type: str) -> str:
+    image_type = mime_type.split("/", 1)[1].split(";", 1)[0].lower() if "/" in mime_type else "png"
+    return "jpg" if image_type == "jpeg" else image_type or "png"
+
+
+def _decode_json_image_string(value: str, index: int, filename: str | None = None, mime_type: str | None = None) -> tuple[bytes, str, str]:
+    text = value.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail={"error": "image file is empty"})
+    match = DATA_URL_IMAGE_RE.match(text)
+    if match:
+        resolved_mime = (match.group("mime") or "image/png").lower()
+        encoded = match.group("data")
+    else:
+        if text.startswith(("http://", "https://")):
+            raise HTTPException(status_code=400, detail={"error": "remote image URLs are not supported"})
+        resolved_mime = (mime_type or "image/png").lower()
+        encoded = text
+    if resolved_mime == "image/jpg":
+        resolved_mime = "image/jpeg"
+    if resolved_mime not in SUPPORTED_JSON_IMAGE_MIME_TYPES:
+        raise HTTPException(status_code=400, detail={"error": "unsupported image mime type"})
+    try:
+        image_data = base64.b64decode(encoded, validate=True)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail={"error": "invalid base64 image data"}) from exc
+    if not image_data:
+        raise HTTPException(status_code=400, detail={"error": "image file is empty"})
+    if len(image_data) > MAX_JSON_IMAGE_BYTES:
+        raise HTTPException(status_code=400, detail={"error": "image file is too large"})
+    return image_data, filename or f"image_{index}.{_image_extension(resolved_mime)}", resolved_mime
+
+
+def _extract_json_image_value(item: object) -> tuple[str, str | None, str | None]:
+    if isinstance(item, str):
+        return item, None, None
+    if not isinstance(item, dict):
+        raise HTTPException(status_code=400, detail={"error": "image entry must be a base64 string or object"})
+    filename = str(item.get("filename") or item.get("file_name") or "").strip() or None
+    mime_type = str(item.get("mime_type") or item.get("mimeType") or "").strip() or None
+    value = item.get("b64_json") or item.get("base64")
+    if not value:
+        image_url = item.get("image_url") or item.get("url")
+        if isinstance(image_url, dict):
+            filename = filename or str(image_url.get("filename") or image_url.get("file_name") or "").strip() or None
+            mime_type = mime_type or str(image_url.get("mime_type") or image_url.get("mimeType") or "").strip() or None
+            value = image_url.get("url") or image_url.get("image_url")
+        else:
+            value = image_url
+    if not isinstance(value, str) or not value.strip():
+        raise HTTPException(status_code=400, detail={"error": "image entry must include image data"})
+    return value, filename, mime_type
+
+
+def normalize_json_edit_images(image: object = None, images: object = None) -> list[tuple[bytes, str, str]]:
+    raw_images = images if images is not None else image
+    if raw_images is None:
+        raise HTTPException(status_code=400, detail={"error": "image file is required"})
+    entries = raw_images if isinstance(raw_images, list) else [raw_images]
+    if not entries:
+        raise HTTPException(status_code=400, detail={"error": "image file is required"})
+    if len(entries) > MAX_JSON_EDIT_IMAGES:
+        raise HTTPException(status_code=400, detail={"error": f"images supports up to {MAX_JSON_EDIT_IMAGES} items"})
+    normalized = []
+    for index, item in enumerate(entries, start=1):
+        value, filename, mime_type = _extract_json_image_value(item)
+        normalized.append(_decode_json_image_string(value, index, filename, mime_type))
+    return normalized
+
 
 def new_uuid() -> str:
     return str(uuid.uuid4())
