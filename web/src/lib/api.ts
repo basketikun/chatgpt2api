@@ -566,6 +566,42 @@ export async function deleteImageTag(tag: string) {
   });
 }
 
+export type ChatMessage = {
+  role: "system" | "user" | "assistant";
+  content: string;
+};
+
+export type ChatCompletionResponse = {
+  id: string;
+  object: string;
+  created: number;
+  model: string;
+  choices: Array<{
+    index: number;
+    message: ChatMessage;
+    finish_reason: string;
+  }>;
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+};
+
+export async function createChatCompletion(messages: ChatMessage[], model?: string, stream?: boolean) {
+  return httpRequest<ChatCompletionResponse>(
+    "/v1/chat/completions",
+    {
+      method: "POST",
+      body: {
+        messages,
+        ...(model ? { model } : {}),
+        ...(stream !== undefined ? { stream } : {}),
+      },
+    },
+  );
+}
+
 export async function fetchSystemLogs(filters: { type?: string; start_date?: string; end_date?: string }) {
   const params = new URLSearchParams();
   if (filters.type) params.set("type", filters.type);
