@@ -32,7 +32,8 @@ def wiki_search(query: str, lang: str = "vi", limit: int = 5) -> list[dict[str, 
     """Direct Wikipedia search — reusable by hybrid RAG without MCP protocol.
 
     Returns list of {title, snippet, url} dicts, empty list on failure.
-    Uses IP + Host header to bypass Docker thread DNS issues.
+    Uses IP from dns_cache + Host header to bypass Docker thread DNS issues.
+    Exponential backoff on 429 rate limits.
     """
     limit = max(1, min(30, limit))
     params = {
@@ -43,28 +44,38 @@ def wiki_search(query: str, lang: str = "vi", limit: int = 5) -> list[dict[str, 
         "format": "json",
     }
     hostname = f"{lang}.wikipedia.org"
-    # Resolve IP in this thread (works around Docker+AdGuard DNS failures in ThreadPoolExecutor)
+    # Always try IP from cache first (pre-resolved in main thread)
+    ip = hostname
     try:
         from src.dns_cache import get_ip
-        ip = get_ip(hostname)
+        cached = get_ip(hostname)
+        if cached != hostname:
+            ip = cached
     except Exception:
-        ip = hostname
+        pass
 
-    for attempt in range(2):
+    headers = dict(HEADERS)
+    api_url = WIKI_API.format(lang=lang)
+    verify_ssl = True
+    if ip != hostname:
+        headers["Host"] = hostname
+        api_url = f"https://{ip}/w/api.php"
+        verify_ssl = False  # SSL cert doesn't match IP
+
+    for attempt in range(3):
         try:
-            headers = dict(HEADERS)
-            if ip != hostname:
-                headers["Host"] = hostname
-                api_url = f"https://{ip}/w/api.php"
-            else:
-                api_url = WIKI_API.format(lang=lang)
-            with httpx.Client(timeout=10.0, headers=headers, verify=(ip == hostname)) as client:
+            with httpx.Client(timeout=12.0, headers=headers, verify=verify_ssl) as client:
                 r = client.get(api_url, params=params)
                 r.raise_for_status()
             data = r.json()
             break
         except Exception as exc:
-            if attempt == 0:
+            err = str(exc)
+            if "429" in err and attempt < 2:
+                wait = 2 ** (attempt + 1)  # 2s, 4s
+                import time; time.sleep(wait)
+                continue
+            if attempt < 2 and ("Name or service not known" in err or "ConnectError" in err):
                 import time; time.sleep(1)
                 continue
             logger.warning("Wiki search failed for '%s': %s", query, exc)

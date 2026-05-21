@@ -62,6 +62,7 @@ def federated_search(query: str, limit_per_source: int = 3) -> list[dict[str, An
     try:
         import src.dns_cache
         src.dns_cache.pre_resolve()
+        import time; time.sleep(0.3)  # Let DNS resolutions settle
     except Exception:
         pass
 
