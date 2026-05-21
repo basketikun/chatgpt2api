@@ -71,6 +71,12 @@ FALLBACK_MODELS = {
         "nv-image/stabilityai/stable-diffusion-xl",
     ],
     "chatgpt2api": [],
+    "antigravity": [
+        "ag/auto",
+        "ag/gemini-3.1-pro-high",
+        "ag/gemini-3.1-pro-high-thinking",
+        "ag/gemini-3.1-flash-high",
+    ],
 }
 
 GEMINI_MODELS_URL = "https://generativelanguage.googleapis.com/v1beta/models"
@@ -502,7 +508,7 @@ def list_models(force_refresh: bool = False, apply_filter: bool = False) -> dict
                 })
 
     # Apply fallbacks for providers that returned nothing
-    for provider_name in ["opencode", "gemini_free", "chatgpt", "openai_oauth", "nvidia_nim", "chatgpt2api"]:
+    for provider_name in ["opencode", "gemini_free", "chatgpt", "openai_oauth", "nvidia_nim", "chatgpt2api", "antigravity"]:
         if provider_name not in all_models:
             for model_id in sorted(_apply_fallback(provider_name)):
                 if model_id not in seen:
@@ -572,7 +578,7 @@ def list_models(force_refresh: bool = False, apply_filter: bool = False) -> dict
 
                 # Also always allow special models: combos, image models, auto variants
                 always_allow = {
-                    "cx/auto", "oc/auto", "chatgpt/auto", "gemini_free/auto",
+                    "cx/auto", "oc/auto", "chatgpt/auto", "gemini_free/auto", "ag/auto",
                 }
                 all_enabled |= always_allow
 

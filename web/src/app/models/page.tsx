@@ -16,10 +16,11 @@ const PROVIDER_LABELS: Record<string, { label: string; color: string; tint: stri
   gemini_free: { label: "Gemini", color: "#8E6CEE", tint: "violet" },
   openrouter: { label: "OpenRouter", color: "#6366F1", tint: "indigo" },
   openai_oauth: { label: "Codex OAuth", color: "#00A67E", tint: "emerald" },
+  antigravity: { label: "Antigravity", color: "#1A73E8", tint: "indigo" },
   chatgpt2api: { label: "Hệ thống (combo)", color: "#F59E0B", tint: "amber" },
 };
 
-const CORE_MODELS = ["ha-agent", "chatgpt/auto", "oc/auto", "gemini_free/auto", "cx/auto"];
+const CORE_MODELS = ["ha-agent", "chatgpt/auto", "oc/auto", "gemini_free/auto", "cx/auto", "ag/auto"];
 
 export default function ModelsPage() {
   const [available, setAvailable] = useState<Record<string, string[]>>({});
@@ -210,7 +211,7 @@ export default function ModelsPage() {
         <p className="text-xs text-stone-500">
           <Sparkles className="inline size-3 mr-1" />
           Model <strong>auto</strong> tự động chọn model tốt nhất dựa trên cài đặt mặc định bên dưới.
-          Các model chính (<code>ha-agent</code>, <code>chatgpt/auto</code>, <code>oc/auto</code>, <code>cx/auto</code>) luôn được hiển thị.
+          Các model chính (<code>ha-agent</code>, <code>chatgpt/auto</code>, <code>oc/auto</code>, <code>cx/auto</code>, <code>ag/auto</code>) luôn được hiển thị.
         </p>
       </div>
 

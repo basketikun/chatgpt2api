@@ -41,6 +41,7 @@ _IMAGE_GEN_PROVIDER_PREFIXES = {
 _VISION_PROVIDER_PREFIXES: set[str] = {
     "cx/",            # Codex supports image input natively
     "gemini_free/",   # Gemini API supports image input
+    "ag/",            # Antigravity supports multimodal vision
 }
 # Custom providers that support image generation
 _IMAGE_GEN_CUSTOM_PROVIDERS = {
@@ -66,6 +67,7 @@ _VISION_KEYWORDS = {
 _VIDEO_PROVIDER_PREFIXES: set[str] = {
     "cx/",            # Codex supports video via multimodal
     "gemini_free/",   # Gemini API supports video input
+    "ag/",            # Antigravity supports video input
 }
 # Custom providers where ALL models support video
 _VIDEO_CUSTOM_PROVIDERS: set[str] = {
