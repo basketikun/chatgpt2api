@@ -46,7 +46,7 @@ def wiki_search(query: str, lang: str = "vi", limit: int = 5) -> list[dict[str, 
 
     for attempt in range(3):
         try:
-            with httpx.Client(timeout=12.0, headers=HEADERS) as client:
+            with httpx.Client(timeout=httpx.Timeout(5.0, read=10.0), headers=HEADERS) as client:
                 r = client.get(api_url, params=params)
                 r.raise_for_status()
             data = r.json()
