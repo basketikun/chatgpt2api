@@ -480,6 +480,8 @@ def _execute_mcp_tools_in_response(
         })
 
         # Execute ALL server-side tool calls and collect results
+        is_action_only = len(mcp_calls) > 0 and all(tc.get("function", {}).get("name") == "ha_call_service" for tc in mcp_calls) and not native_calls
+
         for tc in mcp_calls:
             args_str = tc.get("function", {}).get("arguments", "{}")
             try:
@@ -506,6 +508,24 @@ def _execute_mcp_tools_in_response(
                 "name": tool_name,
                 "content": mcp_result[:3000],
             })
+
+        if is_action_only:
+            logger.info({"event": "ha_fast_short_circuit"})
+            final_text = msg.get("content") or "Đã thực hiện xong lệnh điều khiển thiết bị."
+            return {
+                "id": f"chatcmpl-{uuid.uuid4().hex}",
+                "object": "chat.completion",
+                "created": int(time.time()),
+                "model": current_result.get("model", ""),
+                "choices": [{
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": final_text,
+                    },
+                    "finish_reason": "stop",
+                }],
+            }
 
         # Re-dispatch with updated messages
         tools = _inject_mcp_tools(body.get("tools"))

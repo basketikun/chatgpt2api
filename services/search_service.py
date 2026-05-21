@@ -787,9 +787,20 @@ class SearchService:
                     "vn_law":          "search_law",
                 }
                 tool_name = _TOOL_MAP.get(server_id, "search_web")
+                
+                args = {}
+                if server_id == "vn_weather":
+                    args = {"location": query}
+                elif server_id == "vn_currency":
+                    args = {"query": query} # Not structured, hope it works
+                else:
+                    args = {"query": query}
+                    if server_id in ("vn_search", "vn_news", "vn_law", "vn_stock"):
+                        args["limit"] = max(2, self.max_results)
+
                 text = call_mcp_tool(
                     tool_name,
-                    {"query": query, "limit": max(2, self.max_results)},
+                    args,
                     server_id=server_id,
                 )
                 return server_id, text
@@ -858,8 +869,8 @@ class SearchService:
                 futures[ex.submit(_call_rag, c)] = ("rag", c)
                 
         try:
-            # Giam timeout xuong 5 giay de phan hoi cuc nhanh
-            for future in concurrent.futures.as_completed(futures, timeout=5):
+            # Giam timeout xuong 8 giay de can bang giua toc do va do chinh xac
+            for future in concurrent.futures.as_completed(futures, timeout=8):
                 try:
                     job_type, name = futures[future]
                     if job_type == "mcp":
