@@ -1,54 +1,46 @@
-"""kb_tu_nhien — kho tri thức tự nhiên (động vật, thực vật, môi trường, khí hậu).
+"""kb_tu_nhien — kho tri thức tự nhiên
 
-RAG-backed: Chroma collection 'tu_nhien' (data/tu_nhien/*.md).
-
-Tools:
-- ask_tu_nhien(question): hỏi tự do
-- list_topics(): liệt kê chủ đề
-- get_topic_status(): kiểm tra Chroma collection
+RAG-backed: Chroma collection 'tu_nhien'.
+Hybrid: KB offline + live search khi cần dữ liệu hiện tại.
 """
 
 from __future__ import annotations
 
 from fastmcp import FastMCP
-
 from src.rag.retriever import RAGRetriever
-from src.rag.hybrid import hybrid_query, format_hybrid_results
+from src.kb.hybrid_search import kb_ask
 
 mcp = FastMCP("kb_tu_nhien")
-
 COLLECTION = "tu_nhien"
 
 
 @mcp.tool()
 def ask_tu_nhien(question: str, top_k: int = 4) -> str:
-    """Hỏi đáp về tự nhiên: động vật, thực vật, hệ sinh thái, khí hậu, địa lý.
+    """Hỏi đáp về tự nhiên: động vật, thực vật, hệ sinh thái, địa lý.
+
+    Tự động bổ sung dữ liệu live nếu câu hỏi liên quan đến thông tin hiện tại.
 
     Args:
-        question: Câu hỏi tiếng Việt (vd: "loài voi sống ở đâu",
-                  "rừng nhiệt đới VN", "biến đổi khí hậu là gì",
-                  "động đất hình thành thế nào").
+        question: Câu hỏi tiếng Việt.
         top_k: Số đoạn tài liệu liên quan trả về (1-8, mặc định 4).
 
     Returns:
-        Các đoạn tài liệu phù hợp từ kho tri thức tự nhiên.
+        Thông tin từ kho tri thức, kết hợp dữ liệu live nếu cần thiết.
     """
-    top_k = max(1, min(8, top_k))
-    results = hybrid_query(COLLECTION, question, top_k=top_k)
-    return format_hybrid_results(results)
+    return kb_ask(COLLECTION, question, top_k=top_k)
 
 
 @mcp.tool()
 def list_topics() -> str:
-    """Liệt kê chủ đề tự nhiên trong kho."""
+    """Liệt kê chủ đề trong kho tu_nhien."""
     from pathlib import Path
-    folder = Path("/app/data/tu_nhien")
+    folder = Path(f"/app/data/{COLLECTION}")
     if not folder.exists():
-        return "Kho tri thức chưa được seed (data/tu_nhien/ trống)."
+        return "Kho tri thức chưa được seed."
     files = sorted(folder.glob("*.md"))
     if not files:
         return "Kho tri thức rỗng."
-    lines = ["**Chủ đề tự nhiên:**", ""]
+    lines = ["**Chủ đề:**", ""]
     lines.extend(f"- {f.stem}" for f in files)
     return "\n".join(lines)
 
@@ -58,8 +50,8 @@ def get_topic_status() -> str:
     """Kiểm tra Chroma collection tu_nhien."""
     stats = RAGRetriever.get().collection_stats(COLLECTION)
     if not stats.get("available"):
-        return "Collection chưa khởi tạo. Chạy: docker exec vn-mcp-hub python -m src.rag.ingest"
+        return "Collection chua khoi tao."
     count = stats.get("count", 0)
     if count == 0:
-        return "Collection rỗng. Thêm file vào data/tu_nhien/ rồi chạy ingest."
-    return f"Collection 'tu_nhien' có {count} chunks."
+        return "Collection rong."
+    return f"Collection '{COLLECTION}' co {count} chunks."
