@@ -6,7 +6,12 @@ import { useAuthGuard } from "@/lib/use-auth-guard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-type Message = { role: "user" | "assistant"; content: string };
+type Message = {
+  role: "user" | "assistant";
+  content: string;
+  ttft?: number;      // time-to-first-token (ms)
+  duration?: number;  // total time (ms)
+};
 
 export default function ChatPage() {
   const { isCheckingAuth } = useAuthGuard(["admin"]);
@@ -15,7 +20,10 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
+  const [elapsed, setElapsed] = useState(0); // ms, live counter while streaming
   const bottomRef = useRef<HTMLDivElement>(null);
+  const startTimeRef = useRef<number>(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     request.get("/v1/models").then((d: any) => {
@@ -26,15 +34,28 @@ export default function ChatPage() {
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
+  // Live timer while streaming
+  useEffect(() => {
+    if (streaming) {
+      setElapsed(0);
+      timerRef.current = setInterval(() => {
+        setElapsed(Date.now() - startTimeRef.current);
+      }, 100);
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current);
+    }
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [streaming]);
+
   const send = async () => {
     if (!input.trim() || streaming) return;
     const userMsg = input.trim();
     setInput("");
     setMessages(prev => [...prev, { role: "user", content: userMsg }]);
     setStreaming(true);
+    startTimeRef.current = Date.now();
 
     try {
-      // Get auth key from the same source as request interceptor
       const { getStoredAuthKey } = await import("@/store/auth");
       let authKey = await getStoredAuthKey();
       if (!authKey) {
@@ -59,6 +80,7 @@ export default function ChatPage() {
       if (!reader) { setStreaming(false); return; }
 
       let assistantContent = "";
+      let ttft: number | undefined;
       setMessages(prev => [...prev, { role: "assistant", content: "" }]);
 
       const decoder = new TextDecoder();
@@ -74,6 +96,7 @@ export default function ChatPage() {
             const json = JSON.parse(data);
             const delta = json.choices?.[0]?.delta?.content;
             if (delta) {
+              if (ttft === undefined) ttft = Date.now() - startTimeRef.current;
               assistantContent += delta;
               setMessages(prev => {
                 const copy = [...prev];
@@ -84,6 +107,15 @@ export default function ChatPage() {
           } catch (e) {}
         }
       }
+
+      // Stamp final timing on last message
+      const totalMs = Date.now() - startTimeRef.current;
+      setMessages(prev => {
+        const copy = [...prev];
+        copy[copy.length - 1] = { role: "assistant", content: assistantContent, ttft, duration: totalMs };
+        return copy;
+      });
+
     } catch (e) {
       setMessages(prev => [...prev, { role: "assistant", content: "Lỗi kết nối." }]);
     }
@@ -101,6 +133,11 @@ export default function ChatPage() {
           {models.map(m => <option key={m.id} value={m.id}>{m.id}</option>)}
         </select>
         <Button variant="outline" size="sm" onClick={() => setMessages([])}>Xóa</Button>
+        {streaming && (
+          <span className="ml-auto text-xs text-muted-foreground tabular-nums animate-pulse">
+            ⏱ {(elapsed / 1000).toFixed(1)}s...
+          </span>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto space-y-3 mb-4">
@@ -110,12 +147,20 @@ export default function ChatPage() {
           </div>
         )}
         {messages.map((m, i) => (
-          <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+          <div key={i} className={`flex flex-col ${m.role === "user" ? "items-end" : "items-start"}`}>
             <div className={`max-w-[80%] px-4 py-2 rounded-xl whitespace-pre-wrap ${
               m.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"
             }`}>
               {m.content || (streaming && i === messages.length - 1 ? "▊" : "")}
             </div>
+            {m.role === "assistant" && m.duration !== undefined && (
+              <div className="flex gap-2 mt-1 px-1 text-[11px] text-muted-foreground/60">
+                <span title="Tổng thời gian phản hồi">⏱ {(m.duration / 1000).toFixed(2)}s</span>
+                {m.ttft !== undefined && (
+                  <span title="Thời gian đến chữ đầu tiên (TTFT)">⚡ TTFT {(m.ttft / 1000).toFixed(2)}s</span>
+                )}
+              </div>
+            )}
           </div>
         ))}
         <div ref={bottomRef} />
