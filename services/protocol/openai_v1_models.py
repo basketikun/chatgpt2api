@@ -590,6 +590,19 @@ def list_models(force_refresh: bool = False, apply_filter: bool = False) -> dict
                 # Add image models
                 all_enabled |= set(IMAGE_MODELS)
 
+                # Add custom provider models
+                from services.providers.custom_openai import get_custom_providers, CustomOpenAIProvider
+                custom_providers = get_custom_providers()
+                for cp_id, cp_cfg in custom_providers.items():
+                    try:
+                        provider = CustomOpenAIProvider(cp_cfg)
+                        for m in provider.list_models():
+                            mid = str(m.get("id") or "").strip()
+                            if mid:
+                                all_enabled.add(mid)
+                    except Exception:
+                        pass
+
                 # Filter
                 before = len(data)
                 data = [item for item in data if str(item.get("id") or "").strip() in all_enabled]

@@ -118,10 +118,12 @@ STUDIO_HTML = r"""<!DOCTYPE html>
       
       <label for="aiModel">AI Model tong hop RAG</label>
       <div style="display:flex; gap:8px;">
-        <input id="aiModel" list="model-list" placeholder="cx/auto" style="flex:1">
+        <select id="aiModel" style="flex:1">
+          <option value="cx/auto">cx/auto</option>
+          <option value="chatgpt/auto">chatgpt/auto</option>
+        </select>
         <button type="button" class="btn-sm" onclick="fetchModels()" style="padding:0 8px" title="Tai danh sach model tu chatgpt2api">🔄</button>
       </div>
-      <datalist id="model-list"></datalist>
 
       <button type="submit" class="btn-go" style="margin-top:1rem">Luu cai dat</button>
       <span id="settingsStatus" class="status-ok"></span>
@@ -250,11 +252,18 @@ refresh();
 document.getElementById('settingsForm').onsubmit = async (e) => { e.preventDefault(); const body = JSON.stringify({sync_interval_minutes:parseInt(document.getElementById('syncInterval').value),storage_mode:document.getElementById('storageMode').value,auto_update_interval_hours:parseInt(document.getElementById('autoUpdateInterval').value),api_base_url:document.getElementById('apiBaseUrl').value.trim()||'http://chatgpt2api:3030/v1',ai_model:document.getElementById('aiModel').value.trim()||'cx/auto',api_key:document.getElementById('apiKey').value.trim()}); const r = await fetch(API+'/settings',{method:'POST',headers:{'Content-Type':'application/json'},body}); if ((await r.json()).ok) { document.getElementById('settingsStatus').textContent = 'Da luu!'; toast('Cai dat da luu',true); fetchModels(); } };
 async function fetchModels() {
   try {
-    const list = document.getElementById('model-list');
+    const select = document.getElementById('aiModel');
     const r = await fetch('/api/rag/models');
     const d = await r.json();
     if (d.ok && d.models) {
-      list.innerHTML = d.models.map(m => `<option value="${m}">`).join('');
+      const currentVal = select.value;
+      select.innerHTML = d.models.map(m => `<option value="${m}">${m}</option>`).join('');
+      if (d.models.includes(currentVal)) {
+        select.value = currentVal;
+      } else if (currentVal) {
+        select.innerHTML += `<option value="${currentVal}">${currentVal}</option>`;
+        select.value = currentVal;
+      }
       toast('Da tai danh sach models', true);
     } else {
       toast('Loi tai models: ' + (d.error || ''), false);
