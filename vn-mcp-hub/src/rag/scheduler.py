@@ -164,6 +164,13 @@ def _run_refresh(collection: str, queries: list[str]) -> int:
 
 def _scheduler_loop(stop_event: threading.Event) -> None:
     logger.info("AI Auto-update scheduler started (check every %ds)", CHECK_INTERVAL_SEC)
+    
+    # Chạy ngay lần đầu tiên khi khởi động
+    try:
+        _check_all_collections()
+    except Exception as exc:
+        logger.warning("Scheduler init check failed: %s", exc)
+
     tick = 0
     while not stop_event.wait(CHECK_INTERVAL_SEC):
         tick += 1
