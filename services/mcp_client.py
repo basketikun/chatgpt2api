@@ -162,31 +162,61 @@ def get_enabled_mcp_tools() -> list[dict[str, Any]]:
     return all_tools
 
 
-def call_mcp_tool(tool_name: str, arguments: dict[str, Any]) -> str | None:
-    """Find which MCP session owns this tool and call it."""
+def call_mcp_tool(tool_name: str, arguments: dict[str, Any], server_id: str = "") -> str | None:
+    """Find which MCP session owns this tool and call it.
+
+    Args:
+        tool_name: Ten MCP tool can goi (vi du: 'search_web', 'get_news')
+        arguments: Tham so truyen vao tool
+        server_id: (Optional) ID cua MCP server cu the trong config (vi du: 'vn_search').
+                   Neu cung cap, se goi thang server nay thay vi tim kiem toan bo.
+    """
     installed = config.data.get("mcp_servers") or []
     if isinstance(installed, dict):
-        installed = installed.values()
+        installed = list(installed.values())
     if not isinstance(installed, list):
         return None
-    for info in installed:
+
+    def _try_call(info: dict) -> str | None:
         if not info.get("enabled", True):
-            continue
+            return None
         url = info.get("url", "")
         api_key = str(info.get("api_key") or "")
         if not url:
-            continue
+            return None
         key = _session_key(url, api_key)
         with _sessions_lock:
             if key not in _sessions:
                 _sessions[key] = MCPSession(url, api_key)
             session = _sessions[key]
-        # Check if this session has the tool
         if not session.ensure_connected():
-            continue
+            return None
+        # Neu co server_id cu the: goi tool khong can kiem tra ten tool trong tool list
+        # (vi IntentRouter da biet chinh xac tool nao dung cho server nay)
+        if server_id:
+            return session.call_tool(tool_name, arguments)
+        # Khong co server_id: tim tool theo ten nhu cu
         for t in session.tools:
             if t.get("name") == tool_name:
                 result = session.call_tool(tool_name, arguments)
                 if result is not None:
                     return result
+        return None
+
+    # Neu co server_id: chi goi server do
+    if server_id:
+        for info in installed:
+            # Match theo id field hoac theo url chua server_id
+            info_id = str(info.get("id") or info.get("name", "")).lower()
+            if info_id == server_id.lower() or server_id.lower() in info.get("url", "").lower():
+                result = _try_call(info)
+                if result is not None:
+                    return result
+        return None
+
+    # Khong co server_id: duyet tat ca nhu cu
+    for info in installed:
+        result = _try_call(info)
+        if result is not None:
+            return result
     return None

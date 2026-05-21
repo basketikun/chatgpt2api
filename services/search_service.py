@@ -31,12 +31,14 @@ _VI_WORD = r"[a-zA-Zàáảãạâầấẩẫậăằắẳẵặèéẻẽẹ�
 SEARCH_INTENT_PATTERNS = [
     rf"(?:giá|bao nhiêu|mấy nghìn|mấy triệu)\s+{_VI_WORD}",
     rf"(?:hôm nay|hôm qua|tuần này|tháng này|năm nay)\s+{_VI_WORD}",
-    rf"(?:thời tiết|nhiệt độ|dự báo)\s+{_VI_WORD}",
+    r"\b(?:thời tiết|nhiệt độ|dự báo|nắng|mưa|bão|lũ)\b",
     rf"(?:tin tức|tin mới|báo chí)\s+{_VI_WORD}",
     rf"(?:kết quả|tỉ số|trận đấu)\s+{_VI_WORD}",
     r"\b(?:search|tìm kiếm|tìm hiểu|tra cứu)\b",
     r"\b(?:ai là|ở đâu|khi nào|thế nào|làm sao)\b",
     r"\b(?:giá|hỏi\s+giá)\b",
+    r"\b(?:luật|nghị định|thông tư|pháp luật|quy định|hiệu lực)\b",
+    r"\b(?:mới nhất|cập nhật|hiện nay|2024|2025|2026)\b",
 ]
 
 
@@ -426,6 +428,93 @@ SEARCH_BACKENDS: dict[str, SearchBackend] = {
 }
 
 
+class IntentRouter:
+    """Phan tich y dinh cau hoi, tra ve danh sach MCP tool ID can goi."""
+
+    # MCP server IDs (phai khop voi ID trong config mcp_servers)
+    _WEATHER_TOOLS = ["vn_weather"]
+    _NEWS_TOOLS    = ["vn_news"]
+    _FINANCE_TOOLS = ["vn_currency"]
+    _STOCK_TOOLS   = ["vn_stock"]
+    _LAW_TOOLS     = ["vn_law"]
+    _SEARCH_TOOLS  = ["federated_search", "vn_search"]
+
+    # KB mapping: tu khoa -> collection ID
+    _KB_MAP = {
+        "dien": "kb_dien_nuoc", "nuoc": "kb_dien_nuoc", "mcb": "kb_dien_nuoc",
+        "mccb": "kb_dien_nuoc", "dieu hoa": "kb_dien_nuoc", "chiller": "kb_dien_nuoc",
+        "y te": "kb_y_te", "bong": "kb_y_te", "so cuu": "kb_y_te",
+        "benh": "kb_y_te", "thuoc": "kb_y_te",
+        "giao duc": "kb_giao_duc", "hoc": "kb_giao_duc", "truong": "kb_giao_duc",
+        "ngoai ngu": "kb_ngoai_ngu", "tieng anh": "kb_ngoai_ngu", "ngu phap": "kb_ngoai_ngu",
+        "khoa hoc": "kb_khoa_hoc", "vat ly": "kb_khoa_hoc", "hoa hoc": "kb_khoa_hoc",
+        "tu nhien": "kb_tu_nhien", "dong vat": "kb_tu_nhien", "thuc vat": "kb_tu_nhien",
+        "xa hoi": "kb_xa_hoi", "lich su": "kb_xa_hoi", "van hoa": "kb_xa_hoi",
+        "pccc": "kb_xa_hoi", "phap luat": "kb_xa_hoi",
+    }
+
+    _WEATHER_KW = ["thoi tiet", "thời tiết", "nhiet do", "nhiệt độ", "du bao",
+                   "dự báo", "mua", "mưa", "nang", "nắng", "bao", "bão", "lu", "lũ"]
+    _NEWS_KW    = ["tin tuc", "tin tức", "tin moi", "tin mới", "bao chi", "báo chí",
+                   "thoi su", "thời sự"]
+    _FINANCE_KW = ["gia vang", "giá vàng", "ty gia", "tỷ giá", "ngoai te", "ngoại tệ",
+                   "do la", "đô la", "usd", "euro"]
+    _STOCK_KW   = ["co phieu", "cổ phiếu", "vn-index", "vnindex", "chung khoan",
+                   "chứng khoán", "hnx", "hose"]
+    _LAW_KW     = ["luat", "luật", "nghi dinh", "nghị định", "thong tu", "thông tư",
+                   "phap luat", "pháp luật", "quy dinh", "quy định", "hieu luc",
+                   "hiệu lực", "pccc"]
+    _LIVE_KW    = ["moi nhat", "mới nhất", "cap nhat", "cập nhật", "hien nay",
+                   "hiện nay", "2024", "2025", "2026", "gan day", "gần đây"]
+
+    def _normalize(self, text: str) -> str:
+        """Lowercase + strip diacritics cua ban ban pho."""
+        import unicodedata
+        nfkd = unicodedata.normalize('NFKD', text.lower())
+        return ''.join(c for c in nfkd if not unicodedata.combining(c))
+
+    def detect(self, query: str) -> dict:
+        """Phan tich query, tra ve:
+        {
+          'mcp_tools': [list MCP server IDs can goi],
+          'kb_collections': [list KB collections lien quan],
+          'needs_live': bool,  # can search them ngoai KB
+        }"""
+        q = self._normalize(query)
+        tools = list(self._SEARCH_TOOLS)  # mac dinh luon co
+        kb_hits = []
+        needs_live = any(k in q for k in self._LIVE_KW)
+
+        if any(k in q for k in self._WEATHER_KW):
+            tools.extend(self._WEATHER_TOOLS)
+        if any(k in q for k in self._NEWS_KW):
+            tools.extend(self._NEWS_TOOLS)
+        if any(k in q for k in self._FINANCE_KW):
+            tools.extend(self._FINANCE_TOOLS)
+        if any(k in q for k in self._STOCK_KW):
+            tools.extend(self._STOCK_TOOLS)
+        if any(k in q for k in self._LAW_KW):
+            tools.extend(self._LAW_TOOLS)
+            needs_live = True  # Phap luat luon can kiem tra phien ban moi
+
+        # Phat hien KB lien quan
+        for kw, col in self._KB_MAP.items():
+            if kw in q and col not in kb_hits:
+                kb_hits.append(col)
+
+        # Neu co KB hits -> bo search general, KB se tu query
+        # Nhung neu co needs_live -> van giu search de bo sung
+        if kb_hits and not needs_live:
+            tools = [t for t in tools if t not in ["federated_search", "vn_search"]]
+
+        # Loai tru trung lap
+        tools = list(dict.fromkeys(tools))
+        return {"mcp_tools": tools, "kb_collections": kb_hits, "needs_live": needs_live}
+
+
+_intent_router = IntentRouter()
+
+
 def get_all_search_backends() -> dict[str, dict[str, str]]:
     """Get all available search backends including custom providers."""
     backends = dict(SEARCH_BACKENDS)
@@ -652,50 +741,105 @@ class SearchService:
         return []
 
     def search_all(self, query: str) -> list[dict[str, str]]:
-        """Run search on combo backends + MCP search tools.
+        """Smart search: phan tich intent, goi song song dung MCP tools + combo backends.
 
-        Respects user's search_combo config. Falls back to active backend.
+        Flow:
+        1. IntentRouter phan tich query -> chon dung MCP tools
+        2. Combo backends (Gemini Grounding, custom provider...)
+        3. Goi song song tat ca bang ThreadPoolExecutor
+        4. Merge ket qua, loai trung lap
         """
+        import concurrent.futures
         all_results: list[dict[str, str]] = []
-        seen = set()
+        seen: set[str] = set()
 
-        # Only use backends in the user's combo (or active backend)
+        def _add(results: list[dict], source: str) -> None:
+            for r in results:
+                key = r.get("url") or r.get("title", "") or r.get("snippet", "")[:50]
+                if key and key not in seen:
+                    seen.add(key)
+                    all_results.append(r)
+
+        # --- Luong 1: Smart MCP tool call dua theo intent ---
+        intent = _intent_router.detect(query)
+        mcp_server_ids = intent["mcp_tools"]
+        kb_collections = intent["kb_collections"]
+
+        logger.info({
+            "event": "search_intent",
+            "mcp_tools": mcp_server_ids,
+            "kb_hits": kb_collections,
+            "needs_live": intent["needs_live"],
+        })
+
+        def _call_mcp_server(server_id: str) -> tuple[str, str | None]:
+            """Goi mot MCP server, tra ve (server_id, ket_qua_text)."""
+            try:
+                from services.mcp_client import call_mcp_tool
+                # Map server ID sang ten tool MCP tuong ung
+                _TOOL_MAP = {
+                    "vn_search":       "search_web",
+                    "federated_search": "search_all",
+                    "vn_weather":      "get_current_weather",
+                    "vn_news":         "get_news",
+                    "vn_currency":     "get_exchange_rates",
+                    "vn_stock":        "get_stock_price",
+                    "vn_law":          "search_law",
+                }
+                tool_name = _TOOL_MAP.get(server_id, "search_web")
+                text = call_mcp_tool(
+                    tool_name,
+                    {"query": query, "limit": max(2, self.max_results)},
+                    server_id=server_id,
+                )
+                return server_id, text
+            except Exception as exc:
+                logger.debug("search_all: mcp %s skipped: %s", server_id, exc)
+                return server_id, None
+
+        # Goi song song tat ca MCP servers
+        if mcp_server_ids:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
+                futures = {ex.submit(_call_mcp_server, sid): sid for sid in mcp_server_ids}
+                for future in concurrent.futures.as_completed(futures, timeout=12):
+                    try:
+                        sid, text = future.result()
+                        if text and len(text) > 20:
+                            _add([{"title": f"[{sid}]", "snippet": text[:2000], "url": ""}], sid)
+                    except Exception:
+                        pass
+
+        # --- Luong 2: Combo backends (Gemini Grounding, custom provider...) ---
         combo = self.search_combo
         if not combo or combo == ["chatgpt"]:
             combo = [self._get_active_backend()]
 
-        for name in combo:
-            if name in ("chatgpt",):  # skip passthrough
-                continue
-            backend = self._get_backend(name)
-            if not backend:
-                continue
+        def _call_backend(name: str) -> tuple[str, list]:
             try:
-                results = backend.search(query, max(2, self.max_results // 2))
-                for r in results:
-                    key = r.get("url") or r.get("title", "")
-                    if key and key not in seen:
-                        seen.add(key)
-                        all_results.append(r)
+                backend = self._get_backend(name)
+                if not backend:
+                    return name, []
+                results = backend.search(query, max(2, self.max_results))
+                return name, results
             except Exception as exc:
-                logger.debug("search_all: %s skipped: %s", name, exc)
+                logger.debug("search_all: backend %s skipped: %s", name, exc)
+                return name, []
 
-        # 2. MCP search tools (query MCP servers directly)
-        try:
-            from services.mcp_client import call_mcp_tool
-            mcp_tools = ["search_web", "search_all", "search", "get_news"]
-            for tool in mcp_tools:
-                try:
-                    text = call_mcp_tool(tool, {"query": query, "limit": max(2, self.max_results // 2)})
-                    if text and len(text) > 20:
-                        all_results.append({"title": f"[MCP] {tool}", "snippet": text[:1500], "url": ""})
-                except Exception:
-                    pass
-        except Exception as exc:
-            logger.debug("search_all: mcp skipped: %s", exc)
+        # ChatGPT backend returns [] so it won't add duplicates, but we keep it in the list
+        # so that native search tool injection still works alongside MCP injection.
+        backend_names = [n for n in combo]
+        if backend_names:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+                futures = {ex.submit(_call_backend, n): n for n in backend_names}
+                for future in concurrent.futures.as_completed(futures, timeout=15):
+                    try:
+                        name, results = future.result()
+                        _add(results, name)
+                    except Exception:
+                        pass
 
         logger.info({"event": "search_all_done", "total": len(all_results)})
-        return all_results[:self.max_results * 3]
+        return all_results[:self.max_results * 4]
 
     def curate_response(self, query: str, response: str, collection: str = "") -> bool:
         """Store a Q&A pair to vn-mcp-hub RAG. Best-effort, non-blocking."""
@@ -726,17 +870,12 @@ class SearchService:
     def process_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Process messages: detect if search needed, execute, inject results.
 
-        If backend is 'chatgpt', this is a no-op — ChatGPT handles search internally.
+        Injects MCP/Gemini context for ALL models including chatgpt/cx/auto.
+        ChatGPT/CX models also run their own native web search tool in parallel,
+        so they get BOTH injected context AND live search — best of both worlds.
         """
         if not self.is_enabled:
             return messages
-
-        if self.backend_name == "chatgpt":
-            # Auto-detect Gemini if key configured, otherwise skip
-            from services.providers.gemini_free import gemini_provider
-            if not gemini_provider.api_key:
-                return messages  # No search backend available
-            # else: fall through to use Gemini search
 
         if self.auto_detect and not needs_search(messages):
             return messages
