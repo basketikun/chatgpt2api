@@ -252,30 +252,42 @@ def create_app() -> FastAPI:
         except Exception as e:
             return {"ok": False, "error": str(e), "models": ["cx/auto", "chatgpt/auto"]}
 
-    from fastapi import UploadFile, File, Form
+    from fastapi import Request
     import urllib.request
-    from bs4 import BeautifulSoup
-    from pypdf import PdfReader
     import io
 
     @app.post("/api/studio/analyze_source")
-    async def studio_analyze_source(
-        file: UploadFile = File(None),
-        url: str = Form(None)
-    ):
+    async def studio_analyze_source(request: Request):
         """Read a file or URL, extract text, and use AI to synthesize it into Markdown for RAG."""
         try:
+            try:
+                form = await request.form()
+            except Exception as e:
+                return {"ok": False, "error": f"Lỗi parse form (Cần chạy lại docker-compose build để cài python-multipart): {str(e)}"}
+            
+            file = form.get("file")
+            url = form.get("url")
+            
             raw_text = ""
             if url:
+                try:
+                    from bs4 import BeautifulSoup
+                except ImportError:
+                    return {"ok": False, "error": "Thiếu thư viện beautifulsoup4. Vui lòng build lại Docker."}
+                
                 req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
                 resp = urllib.request.urlopen(req, timeout=10)
                 html = resp.read().decode("utf-8", errors="ignore")
                 soup = BeautifulSoup(html, "html.parser")
                 raw_text = soup.get_text(separator="\n", strip=True)
-            elif file:
+            elif file and hasattr(file, "read"):
                 content = await file.read()
                 filename = file.filename.lower()
                 if filename.endswith(".pdf"):
+                    try:
+                        from pypdf import PdfReader
+                    except ImportError:
+                        return {"ok": False, "error": "Thiếu thư viện pypdf. Vui lòng chạy lệnh: docker compose up -d --build"}
                     reader = PdfReader(io.BytesIO(content))
                     for page in reader.pages:
                         text = page.extract_text()
