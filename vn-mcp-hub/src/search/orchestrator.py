@@ -36,7 +36,7 @@ SEARCH_BACKENDS = [
 ]
 
 MAX_WORKERS = 9
-PER_BACKEND_TIMEOUT = 8.0
+PER_BACKEND_TIMEOUT = 15.0
 
 
 def _call_one_backend(module_path: str, fn_name: str, query: str, limit: int) -> list[dict[str, Any]]:
