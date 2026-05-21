@@ -58,7 +58,7 @@ def wiki_search(query: str, lang: str = "vi", limit: int = 5) -> list[dict[str, 
                 api_url = f"https://{ip}/w/api.php"
             else:
                 api_url = WIKI_API.format(lang=lang)
-            with httpx.Client(timeout=10.0, headers=headers, verify=True) as client:
+            with httpx.Client(timeout=10.0, headers=headers, verify=(ip == hostname)) as client:
                 r = client.get(api_url, params=params)
                 r.raise_for_status()
             data = r.json()
