@@ -45,7 +45,7 @@ def _parse_results(html: str) -> list[dict[str, Any]]:
         snippet = snippet_el.get_text(" ", strip=True) if snippet_el else ""
         if not title or not link:
             continue
-        results.append({"title": title, "link": link, "snippet": snippet})
+        results.append({"title": title, "link": link, "url": link, "snippet": snippet})
     return results
 
 
