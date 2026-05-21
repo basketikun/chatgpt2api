@@ -221,6 +221,17 @@ def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
     if backend_router.is_combo(model):
         routes = backend_router.route_combo(model)
         last_error = ""
+        
+        # Only search and inject ONCE for the combo request
+        if search_service.is_enabled:
+            messages_copy = search_service.process_messages(messages)
+            # Auto-curate search results to RAG after response (best-effort bg)
+            _curate_search_results(messages_copy)
+        else:
+            messages_copy = messages
+            
+        tools_with_mcp = _inject_mcp_tools(tools)
+        
         for route in routes:
             try:
                 cooldown = model_cooldown.get_cooldown_info(route.model)
@@ -230,13 +241,7 @@ def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
                     continue
 
                 logger.info({"event": "combo_try", "combo": model, "provider": route.provider, "model": route.model})
-                if search_service.is_enabled:
-                    messages_copy = search_service.process_messages(messages)
-                    # Auto-curate search results to RAG after response (best-effort bg)
-                    _curate_search_results(messages)
-                else:
-                    messages_copy = messages
-                tools_with_mcp = _inject_mcp_tools(tools)
+                
                 result = _dispatch(route, messages_copy, tools_with_mcp, tool_choice, body)
                 # Execute MCP tools server-side for combo too
                 if not isinstance(result, dict):
