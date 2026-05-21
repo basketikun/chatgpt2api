@@ -28,12 +28,16 @@ WIKI_REST = "https://{lang}.wikipedia.org/api/rest_v1"
 HEADERS = {"User-Agent": "vn-mcp-hub/0.1 (chatgpt2api integration)"}
 
 
-def wiki_search(query: str, lang: str = "vi", limit: int = 5) -> list[dict[str, Any]]:
+def wiki_search(query: str, lang: str | int = "vi", limit: int = 5) -> list[dict[str, Any]]:
     """Direct Wikipedia search — reusable by hybrid RAG without MCP protocol.
 
-    Returns list of {title, snippet, url} dicts, empty list on failure.
+    Returns list of {title, snippet, url, source} dicts, empty list on failure.
     Uses standard hostname (DNS cached by dns_cache monkey-patch).
     """
+    if isinstance(lang, int):
+        limit = lang
+        lang = "vi"
+
     limit = max(1, min(30, limit))
     params = {
         "action": "query",
@@ -70,6 +74,7 @@ def wiki_search(query: str, lang: str = "vi", limit: int = 5) -> list[dict[str, 
                         .replace('<span class="searchmatch">', "**")
                         .replace("</span>", "**")),
             "url": f"https://{lang}.wikipedia.org/wiki/{h.get('title', '').replace(' ', '_')}",
+            "source": "Wikipedia",
         }
         for h in hits
     ]
