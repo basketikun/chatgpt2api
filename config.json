@@ -79,7 +79,7 @@
     "max_levels": 15
   },
   "combo_models": {
-    "ha-agent": ["oc/auto", "cx/auto", "chatgpt/auto"],
+    "ha-agent": ["ag/auto", "chatgpt/auto", "oc/auto", "cx/auto"],
     "ha-agent-image": ["sdwebui/stable-diffusion", "chatgpt/gpt-image-2"]
   },
   "search": {
