@@ -66,6 +66,7 @@ STUDIO_HTML = r"""<!DOCTYPE html>
   <button class="tab" onclick="switchTab('settings')">Cai dat</button>
   <button class="tab" onclick="switchTab('r2')">R2 Storage</button>
   <button class="tab" onclick="switchTab('external')">External MCP</button>
+  <button class="tab" onclick="switchTab('ingest')">Nap RAG</button>
 </div>
 
 <div id="toast" class="toast"></div>
@@ -180,6 +181,33 @@ STUDIO_HTML = r"""<!DOCTYPE html>
   <div class="card"><h2>External MCPs da them</h2><table id="extTable"><tr><td>Dang tai...</td></tr></table></div>
 </div>
 
+<!-- TAB: Ingest RAG -->
+<div id="tab-ingest" class="tab-content">
+  <div class="card">
+    <h2>Nap du lieu bang AI</h2>
+    <p style="color:var(--muted);font-size:.85rem;margin-bottom:1rem">Tai len file (PDF/TXT) hoac dien URL de AI doc, phan tich roi tong hop vao Kho RAG.</p>
+    <form id="ingestAnalyzeForm">
+      <label for="ingestUrl">Tu URL (Trang web)</label>
+      <input id="ingestUrl" placeholder="https://...">
+      <div style="margin: .5rem 0; text-align: center; color: var(--muted)">HOAC</div>
+      <label for="ingestFile">Tu File (May tinh)</label>
+      <input id="ingestFile" type="file" accept=".txt,.pdf,.md" style="padding: .5rem; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; width: 100%; margin-bottom: 1rem; color: var(--text);">
+      <button type="submit" class="btn-go" id="btnAnalyze" style="width: 100%;">AI Doc & Phan Tich</button>
+    </form>
+    <div id="ingestLoading" style="display:none; color:var(--accent); margin-top:1rem; text-align:center; font-weight: 500;">🤖 AI dang doc va tong hop (Co the mat 1-2 phut)...</div>
+  </div>
+  <div class="card" id="ingestResultCard" style="display:none">
+    <h2>Ket qua AI tong hop</h2>
+    <p style="color:var(--muted);font-size:.85rem;margin-bottom:1rem">Ban co the sua lai noi dung truoc khi nap.</p>
+    <form id="ingestSaveForm">
+      <textarea id="ingestMarkdown" style="min-height:250px" required></textarea>
+      <label for="ingestTargetKb">Chon Kho RAG (KB) de nap vao</label>
+      <select id="ingestTargetKb" style="width:100%;padding:.6rem;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);"></select>
+      <button type="submit" class="btn-go" style="width: 100%; margin-top: 1rem;">Nap vao KB nay</button>
+    </form>
+  </div>
+</div>
+
 <script>
 const API = '/api/studio';
 function switchTab(name) {
@@ -282,6 +310,85 @@ document.getElementById('addMcpForm').onsubmit = async (e) => { e.preventDefault
 async function loadExternalMcps() { try { const r = await fetch(API+'/external-mcps'); const d = await r.json(); let html = '<tr><th>Ten</th><th>URL</th><th>Mo ta</th><th></th></tr>'; (d.mcps||[]).forEach(m => { html += '<tr><td>'+m.name+'</td><td><code style="font-size:.75rem">'+m.url+'</code></td><td>'+(m.description||'')+'</td><td><button class="btn-del btn-sm" onclick="delExt(\"'+m.name+'\")">Xoa</button></td></tr>'; }); document.getElementById('extTable').innerHTML = html; } catch(e) {} }
 async function delExt(name) { if (!confirm('Xoa MCP '+name+'?')) return; await fetch(API+'/external-mcp/'+encodeURIComponent(name),{method:'DELETE'}); toast('Da xoa '+name,true); loadExternalMcps(); }
 loadExternalMcps();
+
+// ── Ingest RAG ──
+document.getElementById('ingestAnalyzeForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const url = document.getElementById('ingestUrl').value.trim();
+  const fileInput = document.getElementById('ingestFile');
+  if (!url && (!fileInput.files || fileInput.files.length === 0)) {
+    toast('Vui long dien URL hoac chon File', false); return;
+  }
+  document.getElementById('btnAnalyze').disabled = true;
+  document.getElementById('ingestLoading').style.display = 'block';
+  document.getElementById('ingestResultCard').style.display = 'none';
+  
+  const formData = new FormData();
+  if (url) formData.append('url', url);
+  if (fileInput.files && fileInput.files.length > 0) formData.append('file', fileInput.files[0]);
+  
+  try {
+    const r = await fetch('/api/studio/analyze_source', { method: 'POST', body: formData });
+    const d = await r.json();
+    if (d.ok) {
+      document.getElementById('ingestMarkdown').value = d.markdown || '';
+      document.getElementById('ingestResultCard').style.display = 'block';
+      await loadKbDropdown();
+      toast('Phan tich hoan tat!', true);
+    } else {
+      toast('Loi: ' + (d.error || 'Khong the phan tich'), false);
+    }
+  } catch (err) {
+    toast('Loi ket noi: ' + err.message, false);
+  } finally {
+    document.getElementById('btnAnalyze').disabled = false;
+    document.getElementById('ingestLoading').style.display = 'none';
+  }
+};
+
+async function loadKbDropdown() {
+  try {
+    const r = await fetch('/api/rag/list');
+    const d = await r.json();
+    const select = document.getElementById('ingestTargetKb');
+    let html = '';
+    (d.collections || []).forEach(c => {
+      html += `<option value="${c.name}">${c.name} (${c.chunks} chunks)</option>`;
+    });
+    select.innerHTML = html || '<option value="">(Chua co KB nao)</option>';
+  } catch (e) {}
+}
+
+document.getElementById('ingestSaveForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const targetKb = document.getElementById('ingestTargetKb').value;
+  const content = document.getElementById('ingestMarkdown').value;
+  if (!targetKb) { toast('Vui long chon KB', false); return; }
+  
+  const payload = {
+    title: 'Tai lieu AI tong hop',
+    text: content,
+    source: 'studio_ingest'
+  };
+  toast('Dang nap vao ChromaDB va R2...', true);
+  try {
+    const r = await fetch('/api/rag/curate/' + encodeURIComponent(targetKb), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const d = await r.json();
+    if (d.ok) {
+      toast(`Da nap xong ${d.chunks_added} chunks vao ${targetKb}`, true);
+      document.getElementById('ingestResultCard').style.display = 'none';
+      document.getElementById('ingestAnalyzeForm').reset();
+    } else {
+      toast('Loi nap: ' + d.error, false);
+    }
+  } catch (err) {
+    toast('Loi ket noi', false);
+  }
+};
 </script>
 </body>
 </html>"""

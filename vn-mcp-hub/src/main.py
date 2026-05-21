@@ -252,6 +252,59 @@ def create_app() -> FastAPI:
         except Exception as e:
             return {"ok": False, "error": str(e), "models": ["cx/auto", "chatgpt/auto"]}
 
+    from fastapi import UploadFile, File, Form
+    import urllib.request
+    from bs4 import BeautifulSoup
+    from pypdf import PdfReader
+    import io
+
+    @app.post("/api/studio/analyze_source")
+    async def studio_analyze_source(
+        file: UploadFile = File(None),
+        url: str = Form(None)
+    ):
+        """Read a file or URL, extract text, and use AI to synthesize it into Markdown for RAG."""
+        try:
+            raw_text = ""
+            if url:
+                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                resp = urllib.request.urlopen(req, timeout=10)
+                html = resp.read().decode("utf-8", errors="ignore")
+                soup = BeautifulSoup(html, "html.parser")
+                raw_text = soup.get_text(separator="\n", strip=True)
+            elif file:
+                content = await file.read()
+                filename = file.filename.lower()
+                if filename.endswith(".pdf"):
+                    reader = PdfReader(io.BytesIO(content))
+                    for page in reader.pages:
+                        text = page.extract_text()
+                        if text:
+                            raw_text += text + "\n"
+                else:
+                    raw_text = content.decode("utf-8", errors="ignore")
+            
+            if not raw_text.strip():
+                return {"ok": False, "error": "Khong the trich xuat van ban tu nguon."}
+            
+            from src.rag.scheduler import _synthesize_with_ai
+            title_hint = file.filename if file else url
+            query = f"Phân tích, chắt lọc kiến thức và trình bày lại nội dung từ nguồn ({title_hint}) thành bài viết Markdown chi tiết"
+            
+            raw_text = raw_text[:50000] 
+            
+            import logging
+            logger = logging.getLogger("vn-mcp-hub")
+            logger.info("Analyzing source: %s, extracted length: %d", title_hint, len(raw_text))
+            
+            synthesized = _synthesize_with_ai(query, raw_text)
+            if not synthesized or len(synthesized) < 50:
+                return {"ok": False, "error": "AI khong the tong hop hoac van ban qua ngan."}
+            
+            return {"ok": True, "markdown": synthesized}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
     @app.post("/api/rag/curate/{collection}")
     async def rag_curate(collection: str, request: Request):
         """Add curated content to a RAG collection + upload to R2.
