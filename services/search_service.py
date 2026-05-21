@@ -817,9 +817,30 @@ class SearchService:
         # so that native search tool injection still works alongside MCP injection.
         backend_names = [n for n in combo]
 
-        # --- Thuc thi song song ca MCP va Backend cung luc ---
+        # --- Luong 3: Tim kiem trong Vector DB (Neu co collection hop le) ---
+        def _call_rag(collection: str) -> tuple[str, list]:
+            try:
+                hub_url = config.data.get("mcp_hub_url", "http://vn-mcp-hub:8005")
+                import urllib.request, json
+                req = urllib.request.Request(
+                    f"{hub_url}/api/rag/query",
+                    data=json.dumps({"query": query, "collections": [collection], "limit": 3}).encode(),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=8) as r:
+                    data = json.loads(r.read())
+                    results = data.get("results") or []
+                    # Map vao format
+                    rag_results = [{"title": res.get("title", "KB"), "snippet": res.get("text", ""), "url": res.get("source", "")} for res in results]
+                    return "rag", rag_results
+            except Exception as exc:
+                logger.debug("search_all: RAG %s skipped: %s", collection, exc)
+                return "rag", []
+
+        # --- Thuc thi song song ca MCP, Backend va RAG cung luc ---
         import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=12) as ex:
             futures = {}
             if mcp_server_ids:
                 for sid in mcp_server_ids:
@@ -829,6 +850,10 @@ class SearchService:
                 for n in backend_names:
                     futures[ex.submit(_call_backend, n)] = ("backend", n)
                     
+            if enable_rag and kb_collections:
+                for c in kb_collections:
+                    futures[ex.submit(_call_rag, c)] = ("rag", c)
+                    
             for future in concurrent.futures.as_completed(futures, timeout=12):
                 try:
                     job_type, name = futures[future]
@@ -836,9 +861,9 @@ class SearchService:
                         sid, text = future.result()
                         if text and len(text) > 20:
                             _add([{"title": f"[{sid}]", "snippet": text[:2000], "url": ""}], sid)
-                    elif job_type == "backend":
-                        bname, results = future.result()
-                        _add(results, bname)
+                    else:
+                        _, results = future.result()
+                        _add(results, name)
                 except Exception:
                     pass
 
