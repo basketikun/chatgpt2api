@@ -373,9 +373,15 @@ def _wrap_mcp_stream(
         return
 
     mcp_calls = []
+    
+    # Get known server-side tool names
+    from services.mcp_client import get_enabled_mcp_tools
+    from services.ha_client import get_ha_tools
+    known_server_tools = {t.get("function", {}).get("name", "") for t in get_enabled_mcp_tools() + get_ha_tools()}
+    
     for tc in final_tool_calls:
         fn = tc.get("function", {})
-        if fn.get("name", "") not in ("GetLiveContext",):
+        if fn.get("name", "") in known_server_tools:
             mcp_calls.append(tc)
 
     if not mcp_calls:
@@ -438,13 +444,19 @@ def _execute_mcp_tools_in_response(
     # Separate MCP tools from HA/native tools
     mcp_calls = []
     native_calls = []
+    
+    # Get known server-side tool names
+    from services.mcp_client import get_enabled_mcp_tools
+    from services.ha_client import get_ha_tools
+    known_server_tools = {t.get("function", {}).get("name", "") for t in get_enabled_mcp_tools() + get_ha_tools()}
+    
     for tc in tool_calls:
         fn = tc.get("function", {})
         name = fn.get("name", "")
-        if name in ("GetLiveContext",):  # HA built-in — pass through
-            native_calls.append(tc)
-        else:
+        if name in known_server_tools:
             mcp_calls.append(tc)
+        else:
+            native_calls.append(tc)  # HA built-in (HassTurnOn, etc) — pass through
 
     if not mcp_calls:
         return result

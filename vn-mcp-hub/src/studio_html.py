@@ -251,7 +251,7 @@ document.getElementById('settingsForm').onsubmit = async (e) => { e.preventDefau
 async function fetchModels() {
   try {
     const list = document.getElementById('model-list');
-    const r = await fetch(API+'/rag/models');
+    const r = await fetch('/api/rag/models');
     const d = await r.json();
     if (d.ok && d.models) {
       list.innerHTML = d.models.map(m => `<option value="${m}">`).join('');
