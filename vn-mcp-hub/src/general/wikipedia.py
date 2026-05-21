@@ -32,7 +32,7 @@ def wiki_search(query: str, lang: str = "vi", limit: int = 5) -> list[dict[str, 
     """Direct Wikipedia search — reusable by hybrid RAG without MCP protocol.
 
     Returns list of {title, snippet, url} dicts, empty list on failure.
-    Pre-resolves DNS to work around Docker+AdGuard thread DNS issues.
+    DNS resolution is handled by dns_cache (socket.getaddrinfo monkey-patch).
     """
     limit = max(1, min(30, limit))
     params = {
@@ -42,23 +42,10 @@ def wiki_search(query: str, lang: str = "vi", limit: int = 5) -> list[dict[str, 
         "srlimit": limit,
         "format": "json",
     }
-    api_url = WIKI_API.format(lang=lang)
-    # Pre-resolve DNS in main thread (Docker DNS fails in worker threads)
-    try:
-        import socket
-        host = f"{lang}.wikipedia.org"
-        ip = socket.getaddrinfo(host, 443, socket.AF_INET)[0][4][0]
-        api_url = f"https://{ip}/w/api.php"
-    except Exception:
-        pass  # Fall back to hostname
-
     for attempt in range(2):
         try:
             with httpx.Client(timeout=10.0, headers=HEADERS) as client:
-                if api_url != WIKI_API.format(lang=lang):
-                    # Using IP — set Host header for Wikipedia
-                    client.headers["Host"] = f"{lang}.wikipedia.org"
-                r = client.get(api_url, params=params)
+                r = client.get(WIKI_API.format(lang=lang), params=params)
                 r.raise_for_status()
             data = r.json()
             break

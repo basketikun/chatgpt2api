@@ -1,44 +1,62 @@
-"""DNS cache for Wikipedia lookups — resolves hostnames in main thread.
+"""DNS cache for Docker threads — monkey-patches socket.getaddrinfo.
 
-Docker containers with AdGuard/WireGuard DNS can fail to resolve
-hostnames from worker threads (ThreadPoolExecutor). This module
-pre-resolves known hosts at import time so the orchestrator threads
-don't need to do DNS lookups.
+Docker containers behind AdGuard/WireGuard DNS can fail to resolve hostnames
+from worker threads (ThreadPoolExecutor). This module patches socket.getaddrinfo
+at module load time so DNS resolutions are cached from the main thread before
+any worker threads are spawned.
+
+Threads still use hostnames (SSL certs remain valid) — only the underlying
+DNS lookup is cached.
 """
 
 from __future__ import annotations
 
 import socket
-import time
+import threading
 import logging
 
 logger = logging.getLogger(__name__)
 
-_cache: dict[str, tuple[float, str]] = {}
-_TTL = 300  # 5 minutes
+_cache: dict[tuple, list] = {}
+_lock = threading.Lock()
+_original = socket.getaddrinfo
+_patched = False
 
 
-def get_ip(hostname: str) -> str:
-    """Resolve hostname to IP. Returns hostname unchanged on failure."""
-    now = time.time()
-    if hostname in _cache:
-        ts, ip = _cache[hostname]
-        if now - ts < _TTL:
-            return ip
-    try:
-        info = socket.getaddrinfo(hostname, 443, socket.AF_INET)
-        ip = info[0][4][0]
-        _cache[hostname] = (now, ip)
-        logger.info("DNS: %s -> %s", hostname, ip)
-        return ip
-    except Exception as exc:
-        logger.debug("DNS: %s failed: %s", hostname, exc)
-        return hostname  # Fall back to hostname
+def _patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    """Cached getaddrinfo — resolves once in main thread, returns cached from threads."""
+    key = (host, port, family, type, proto, flags)
+    with _lock:
+        if key in _cache:
+            return _cache[key]
+    result = _original(host, port, family, type, proto, flags)
+    with _lock:
+        _cache[key] = result
+    return result
 
 
-# Pre-resolve common hosts at import time (main thread)
-_PRELOAD = ["vi.wikipedia.org", "en.wikipedia.org", "api.semanticscholar.org",
-            "api.crossref.org", "api.openalex.org", "api.pubmed.gov",
-            "archive.org", "api.search.brave.com"]
-for _host in _PRELOAD:
-    get_ip(_host)
+def pre_resolve():
+    """Patch socket.getaddrinfo and pre-resolve known hosts. Call at startup."""
+    global _patched
+    if _patched:
+        return
+    socket.getaddrinfo = _patched_getaddrinfo
+    _patched = True
+
+    hosts = [
+        "vi.wikipedia.org", "en.wikipedia.org",
+        "api.semanticscholar.org", "api.crossref.org",
+        "api.openalex.org", "api.pubmed.gov",
+        "archive.org", "api.search.brave.com",
+        "eutils.ncbi.nlm.nih.gov",
+    ]
+    for host in hosts:
+        try:
+            _patched_getaddrinfo(host, 443)
+            logger.info("DNS cached: %s", host)
+        except OSError as e:
+            logger.warning("DNS pre-resolve failed: %s -> %s", host, e)
+
+
+# Auto-patch on import (before any threads are spawned)
+pre_resolve()
