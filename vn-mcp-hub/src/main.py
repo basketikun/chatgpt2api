@@ -231,6 +231,27 @@ def create_app() -> FastAPI:
         threading.Thread(target=_do_refresh, daemon=True).start()
         return {"ok": True, "message": "Dang chay ngam qua trinh AI tong hop..."}
 
+    @app.get("/api/rag/models")
+    async def rag_get_models():
+        """Fetch available models from the configured API Base URL."""
+        from src.rag.settings import read as read_settings
+        import urllib.request
+        import json
+        
+        settings = read_settings()
+        base_url = settings.get("api_base_url", "http://chatgpt2api:3030/v1").rstrip("/")
+        api_key = settings.get("api_key", "AnhNhi@0610")
+        
+        url = f"{base_url}/models"
+        try:
+            req = urllib.request.Request(url, headers={"Authorization": f"Bearer {api_key}"})
+            resp = urllib.request.urlopen(req, timeout=5)
+            data = json.loads(resp.read().decode())
+            models = [m["id"] for m in data.get("data", []) if "id" in m]
+            return {"ok": True, "models": models}
+        except Exception as e:
+            return {"ok": False, "error": str(e), "models": ["cx/auto", "chatgpt/auto"]}
+
     @app.post("/api/rag/curate/{collection}")
     async def rag_curate(collection: str, request: Request):
         """Add curated content to a RAG collection + upload to R2.

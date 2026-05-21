@@ -64,8 +64,9 @@ def _synthesize_with_ai(query: str, raw_text: str) -> str:
     settings = read_settings()
     api_key = settings.get("api_key", "AnhNhi@0610")
     ai_model = settings.get("ai_model", "cx/auto")
+    base_url = settings.get("api_base_url", "http://chatgpt2api:3030/v1").rstrip("/")
     
-    url = "http://chatgpt2api:3030/v1/chat/completions"
+    url = f"{base_url}/chat/completions"
     
     prompt = f"""Bạn là một chuyên gia tổng hợp tri thức (Knowledge Base).
 Dựa vào các kết quả tìm kiếm web thô dưới đây, hãy tổng hợp thành một bài viết Markdown chi tiết, mạch lạc, có cấu trúc rõ ràng (dùng Heading 2, 3, bullet points).

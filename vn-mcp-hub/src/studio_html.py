@@ -109,11 +109,21 @@ STUDIO_HTML = r"""<!DOCTYPE html>
       </select>
       <label for="autoUpdateInterval">Kiem tra auto-update (gio)</label>
       <input id="autoUpdateInterval" type="number" min="1" max="720" value="1">
-      <label for="aiModel">AI Model tong hop RAG</label>
-      <input id="aiModel" placeholder="cx/auto" value="cx/auto">
+      
+      <h3 style="margin-top:1.5rem">AI Settings</h3>
+      <label for="apiBaseUrl">API Base URL</label>
+      <input id="apiBaseUrl" placeholder="http://chatgpt2api:3030/v1">
       <label for="apiKey">API Key</label>
       <input id="apiKey" type="password" placeholder="AnhNhi@0610">
-      <button type="submit" class="btn-go">Luu cai dat</button>
+      
+      <label for="aiModel">AI Model tong hop RAG</label>
+      <div style="display:flex; gap:8px;">
+        <input id="aiModel" list="model-list" placeholder="cx/auto" style="flex:1">
+        <button type="button" class="btn-sm" onclick="fetchModels()" style="padding:0 8px" title="Tai danh sach model tu chatgpt2api">🔄</button>
+      </div>
+      <datalist id="model-list"></datalist>
+
+      <button type="submit" class="btn-go" style="margin-top:1rem">Luu cai dat</button>
       <span id="settingsStatus" class="status-ok"></span>
     </form>
   </div>
@@ -236,8 +246,21 @@ function showSettings(name, interval, autoUpdate) { const h = prompt('Chu ky cap
 document.getElementById('createForm').onsubmit = async (e) => { e.preventDefault(); const body = JSON.stringify({name:document.getElementById('name').value.trim(),label:document.getElementById('label').value.trim(),content:document.getElementById('content').value}); const r = await fetch(API+'/kb',{method:'POST',headers:{'Content-Type':'application/json'},body}); const d = await r.json(); if (d.ok) { toast('Da tao '+d.name+' ('+d.chunks+' chunks)',true); document.getElementById('createForm').reset(); refresh(); } else toast((d.errors||['Loi']).join('. '),false); };
 refresh();
 // ── Settings ──
-(async function(){ try { const r = await fetch(API+'/settings'); const d = await r.json(); document.getElementById('syncInterval').value = d.sync_interval_minutes || 360; document.getElementById('storageMode').value = d.storage_mode || 'local'; document.getElementById('autoUpdateInterval').value = d.auto_update_interval_hours || 1; document.getElementById('aiModel').value = d.ai_model || 'cx/auto'; document.getElementById('apiKey').value = d.api_key || 'AnhNhi@0610'; } catch(e) {} })();
-document.getElementById('settingsForm').onsubmit = async (e) => { e.preventDefault(); const body = JSON.stringify({sync_interval_minutes:parseInt(document.getElementById('syncInterval').value),storage_mode:document.getElementById('storageMode').value,auto_update_interval_hours:parseInt(document.getElementById('autoUpdateInterval').value),ai_model:document.getElementById('aiModel').value.trim()||'cx/auto',api_key:document.getElementById('apiKey').value.trim()||'AnhNhi@0610'}); const r = await fetch(API+'/settings',{method:'POST',headers:{'Content-Type':'application/json'},body}); if ((await r.json()).ok) { document.getElementById('settingsStatus').textContent = 'Da luu!'; toast('Cai dat da luu',true); } };
+(async function(){ try { const r = await fetch(API+'/settings'); const d = await r.json(); document.getElementById('syncInterval').value = d.sync_interval_minutes || 360; document.getElementById('storageMode').value = d.storage_mode || 'local'; document.getElementById('autoUpdateInterval').value = d.auto_update_interval_hours || 1; document.getElementById('apiBaseUrl').value = d.api_base_url || 'http://chatgpt2api:3030/v1'; document.getElementById('aiModel').value = d.ai_model || 'cx/auto'; document.getElementById('apiKey').value = d.api_key || 'AnhNhi@0610'; fetchModels(); } catch(e) {} })();
+document.getElementById('settingsForm').onsubmit = async (e) => { e.preventDefault(); const body = JSON.stringify({sync_interval_minutes:parseInt(document.getElementById('syncInterval').value),storage_mode:document.getElementById('storageMode').value,auto_update_interval_hours:parseInt(document.getElementById('autoUpdateInterval').value),api_base_url:document.getElementById('apiBaseUrl').value.trim()||'http://chatgpt2api:3030/v1',ai_model:document.getElementById('aiModel').value.trim()||'cx/auto',api_key:document.getElementById('apiKey').value.trim()}); const r = await fetch(API+'/settings',{method:'POST',headers:{'Content-Type':'application/json'},body}); if ((await r.json()).ok) { document.getElementById('settingsStatus').textContent = 'Da luu!'; toast('Cai dat da luu',true); fetchModels(); } };
+async function fetchModels() {
+  try {
+    const list = document.getElementById('model-list');
+    const r = await fetch(API+'/rag/models');
+    const d = await r.json();
+    if (d.ok && d.models) {
+      list.innerHTML = d.models.map(m => `<option value="${m}">`).join('');
+      toast('Da tai danh sach models', true);
+    } else {
+      toast('Loi tai models: ' + (d.error || ''), false);
+    }
+  } catch(e) { toast('Khong ket noi duoc API', false); }
+}
 async function loadApiKeyList() { try { const r = await fetch(API+'/sources'); const d = await r.json(); const list = document.getElementById('apiKeyList'); let html = ''; for (const [mcp, srcs] of Object.entries(d.sources||{})) { for (const [name, info] of Object.entries(srcs)) { if (info.needs_key) { html += `<div class="src-row"><div><label>${name} (${mcp})</label><span class="help-text">${info.help||''}</span></div><input class="key-input" type="password" placeholder="${info.has_key?'*** Da co ***':'Nhap key...'}" onchange="saveKey('${name}',this.value)" style="width:250px"><span class="key-saved">${info.has_key?'OK':''}</span></div>`; } } } list.innerHTML = html || '<p style="color:var(--muted)">Khong co source nao can API key.</p>'; } catch(e) {} }
 // ── R2 ──
 (async function(){ try { const r = await fetch(API+'/r2'); const d = await r.json(); if (d.configured) { document.getElementById('r2endpoint').value = d.config.endpoint||''; document.getElementById('r2bucket').value = d.config.bucket||''; document.getElementById('r2key').value = d.config.access_key_id||''; document.getElementById('r2secret').value = d.config.secret_access_key||''; document.getElementById('r2Status').textContent = 'Da cau hinh'; } } catch(e) {} })();
