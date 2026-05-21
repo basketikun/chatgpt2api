@@ -60,8 +60,11 @@ def _get_refresh_queries(collection: str, meta: dict) -> list[str]:
 
 def _synthesize_with_ai(query: str, raw_text: str) -> str:
     """Gọi chatgpt2api (cổng 3030) để AI tổng hợp kiến thức từ kết quả search."""
-    # API key ngầm định đang dùng ở chatgpt2api
-    api_key = "AnhNhi@0610"
+    from src.rag.settings import read as read_settings
+    settings = read_settings()
+    api_key = settings.get("api_key", "AnhNhi@0610")
+    ai_model = settings.get("ai_model", "cx/auto")
+    
     url = "http://chatgpt2api:3030/v1/chat/completions"
     
     prompt = f"""Bạn là một chuyên gia tổng hợp tri thức (Knowledge Base).
@@ -76,7 +79,7 @@ CHỈ TRẢ VỀ nội dung bài viết, không thêm lời chào hỏi.
 """
     
     payload = {
-        "model": "cx/auto",  # Dùng model tốt nhất của hệ thống
+        "model": ai_model,
         "messages": [{"role": "user", "content": prompt}],
         "stream": False,
     }

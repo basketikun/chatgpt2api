@@ -18,6 +18,8 @@ DEFAULTS = {
     "sync_interval_minutes": 360,     # 6 hours between R2 syncs
     "storage_mode": "local",          # "local" | "cloud" | "both"
     "auto_update_interval_hours": 1,  # scheduler check frequency
+    "ai_model": "cx/auto",
+    "api_key": "AnhNhi@0610",
 }
 
 
