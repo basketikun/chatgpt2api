@@ -49,12 +49,18 @@ class MCPSession:
             sid = resp.getheader("mcp-session-id")
             if sid:
                 self.session_id = sid
-            raw = resp.read().decode()
-            for line in raw.split("\n"):
+            # Read line by line instead of resp.read() to avoid blocking on SSE streams
+            for line_bytes in resp:
+                line = line_bytes.decode('utf-8', errors='ignore').strip()
                 if line.startswith("data: "):
-                    d = json.loads(line[6:])
-                    if d.get("id") != "server-error":
-                        return d
+                    try:
+                        d = json.loads(line[6:])
+                        if d.get("id") != "server-error":
+                            resp.close()
+                            return d
+                    except json.JSONDecodeError:
+                        pass
+            resp.close()
         except urllib.error.HTTPError as e:
             sid = e.getheader("mcp-session-id")
             if sid:
@@ -70,11 +76,18 @@ class MCPSession:
     def ensure_connected(self) -> bool:
         """Initialize session if not connected. Returns True on success."""
         now = time.time()
+        # Fast path check for both success and recent failure (30s cooldown)
         if self.session_id and (now - self._last_init) < 300:
             return True
+        if not self.session_id and (now - getattr(self, '_last_fail', 0)) < 30:
+            return False
+
         with self._lock:
             if self.session_id and (now - self._last_init) < 300:
                 return True
+            if not self.session_id and (now - getattr(self, '_last_fail', 0)) < 30:
+                return False
+
             init = self._call("initialize", {
                 "protocolVersion": "0.1.0",
                 "capabilities": {},
@@ -82,7 +95,9 @@ class MCPSession:
             })
             if not init:
                 self.session_id = None
+                self._last_fail = now
                 return False
+
             self.server_name = init.get("result", {}).get("serverInfo", {}).get("name", "")
             # Fetch tools
             tools_resp = self._call("tools/list")

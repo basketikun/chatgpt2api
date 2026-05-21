@@ -339,15 +339,16 @@ def _extract_user_query(messages: list[dict[str, Any]]) -> str:
 def _wrap_mcp_stream(
     stream_iter, messages: list[dict[str, Any]], route, body: dict[str, Any]
 ):
-    """Wrap a streaming response to execute MCP tools before returning to client.
+    """Wrap a streaming response to execute MCP/HA tools and return final answer.
 
-    Collects the full stream, checks for MCP tool calls in the final delta,
-    executes them server-side, then re-streams the follow-up LLM response.
+    Collects the full stream, checks for server-side tool calls, executes them in
+    an agentic loop (multi-step: e.g. ha_search_entities → ha_get_state → answer),
+    then streams the final LLM response.
     """
     # Collect full response from stream
     chunks = []
     full_content = ""
-    final_tool_calls = None
+    final_tool_calls: list | None = None
     model = ""
 
     try:
@@ -359,149 +360,165 @@ def _wrap_mcp_stream(
                 full_content += delta.get("content") or ""
                 tc = delta.get("tool_calls")
                 if tc:
-                    final_tool_calls = tc  # last delta wins for tool_calls
+                    final_tool_calls = tc
     except Exception:
-        # If collection fails, just re-yield what we have
         for c in chunks:
             yield c
         return
 
-    # Check for MCP tools
+    # No tool calls → stream as-is
     if not final_tool_calls:
         for c in chunks:
             yield c
         return
 
-    mcp_calls = []
-    
-    # Get known server-side tool names
+    # Filter to server-side tools only
     from services.mcp_client import get_enabled_mcp_tools
     from services.ha_client import get_ha_tools
-    known_server_tools = {t.get("function", {}).get("name", "") for t in get_enabled_mcp_tools() + get_ha_tools()}
-    
-    for tc in final_tool_calls:
-        fn = tc.get("function", {})
-        if fn.get("name", "") in known_server_tools:
-            mcp_calls.append(tc)
+    known_server_tools = {
+        t.get("function", {}).get("name", "")
+        for t in get_enabled_mcp_tools() + get_ha_tools()
+    }
+
+    mcp_calls = [tc for tc in final_tool_calls
+                 if tc.get("function", {}).get("name", "") in known_server_tools]
 
     if not mcp_calls:
         for c in chunks:
             yield c
         return
 
-    # Execute MCP tool
-    args_str = mcp_calls[0].get("function", {}).get("arguments", "{}")
+    # Build a synthetic non-stream result to feed into the agentic loop
+    synthetic_result = {
+        "id": f"chatcmpl-{uuid.uuid4().hex}",
+        "object": "chat.completion",
+        "created": int(time.time()),
+        "model": model,
+        "choices": [{
+            "index": 0,
+            "message": {
+                "role": "assistant",
+                "content": full_content,
+                "tool_calls": mcp_calls,
+            },
+            "finish_reason": "tool_calls",
+        }],
+    }
+
+    # Run agentic loop (handles multi-step chains)
     try:
-        args = json.loads(args_str) if isinstance(args_str, str) else args_str
-    except Exception:
-        args = {}
-    tool_name = mcp_calls[0].get("function", {}).get("name", "")
-    tool_id = mcp_calls[0].get("id", "mcp_0")
-
-    logger.info({"event": "mcp_tool_exec_stream", "tool": tool_name, "args": str(args)[:200]})
-    mcp_result = _execute_mcp_tool(tool_name, args)
-    if mcp_result is None:
-        mcp_result = f"Tool '{tool_name}' execution failed."
-
-    # Auto-search enrichment for richer context
-    user_query = _extract_user_query(messages)
-    search_extra = _auto_search_enrich(user_query) if user_query else ""
-    if search_extra:
-        mcp_result += search_extra
-
-    # Build follow-up messages and dispatch
-    new_messages = list(messages)
-    new_messages.append({"role": "assistant", "content": full_content, "tool_calls": mcp_calls})
-    new_messages.append({"role": "tool", "tool_call_id": tool_id, "name": tool_name, "content": mcp_result[:3000]})
-
-    tools = _inject_mcp_tools(body.get("tools"))
-    try:
-        follow_up = _dispatch(route, new_messages, tools, body.get("tool_choice"), body)
-        if hasattr(follow_up, "__iter__") and not isinstance(follow_up, (dict, str)):
-            yield from follow_up
-        elif isinstance(follow_up, dict):
-            yield follow_up
-        else:
-            for c in chunks:
-                yield c
+        final_result = _execute_mcp_tools_in_response(messages, synthetic_result, route, body)
     except Exception as exc:
-        logger.warning({"event": "mcp_stream_followup_failed", "error": str(exc)})
+        logger.warning({"event": "mcp_stream_loop_failed", "error": str(exc)})
+        for c in chunks:
+            yield c
+        return
+
+    # Stream the final result back to client
+    if hasattr(final_result, "__iter__") and not isinstance(final_result, (dict, str)):
+        yield from final_result
+    elif isinstance(final_result, dict):
+        # Convert non-streaming result into stream chunks
+        completion_id = f"chatcmpl-{uuid.uuid4().hex}"
+        created = int(time.time())
+        choice = (final_result.get("choices") or [{}])[0]
+        content = (choice.get("message") or {}).get("content") or ""
+        yield completion_chunk(model, {"role": "assistant", "content": content}, None, completion_id, created)
+        yield completion_chunk(model, {}, "stop", completion_id, created)
+    else:
         for c in chunks:
             yield c
 
 
 def _execute_mcp_tools_in_response(
-    messages: list[dict[str, Any]], result: dict, route, body: dict[str, Any]
+    messages: list[dict[str, Any]], result: dict, route, body: dict[str, Any],
+    max_iterations: int = 4,
 ) -> dict[str, Any]:
-    """Check response for MCP tool calls, execute server-side, continue LLM."""
-    choice = (result.get("choices") or [{}])[0]
-    msg = choice.get("message") or {}
-    tool_calls = msg.get("tool_calls") or []
+    """Execute MCP/HA tool calls in an agentic loop until final answer or max_iterations.
 
-    if not tool_calls:
-        return result
-
-    # Separate MCP tools from HA/native tools
-    mcp_calls = []
-    native_calls = []
-    
-    # Get known server-side tool names
+    Supports multi-step tool chains like:
+      ha_search_entities → ha_get_state → final LLM answer
+    """
     from services.mcp_client import get_enabled_mcp_tools
     from services.ha_client import get_ha_tools
-    known_server_tools = {t.get("function", {}).get("name", "") for t in get_enabled_mcp_tools() + get_ha_tools()}
-    
-    for tc in tool_calls:
-        fn = tc.get("function", {})
-        name = fn.get("name", "")
-        if name in known_server_tools:
-            mcp_calls.append(tc)
-        else:
-            native_calls.append(tc)  # HA built-in (HassTurnOn, etc) — pass through
 
-    if not mcp_calls:
-        return result
+    current_result = result
+    current_messages = list(messages)
 
-    args_str = mcp_calls[0].get("function", {}).get("arguments", "{}")
-    try:
-        args = json.loads(args_str) if isinstance(args_str, str) else args_str
-    except Exception:
-        args = {}
-    tool_name = mcp_calls[0].get("function", {}).get("name", "")
-    tool_id = mcp_calls[0].get("id", "mcp_0")
+    for iteration in range(max_iterations):
+        choice = (current_result.get("choices") or [{}])[0]
+        msg = choice.get("message") or {}
+        tool_calls = msg.get("tool_calls") or []
 
-    logger.info({"event": "mcp_tool_exec", "tool": tool_name, "args": str(args)[:200]})
+        if not tool_calls:
+            return current_result  # No more tool calls → final answer
 
-    mcp_result = _execute_mcp_tool(tool_name, args)
-    if mcp_result is None:
-        mcp_result = f"Tool '{tool_name}' execution failed."
+        # Identify server-side vs native (HA pipeline) tools
+        known_server_tools = {
+            t.get("function", {}).get("name", "")
+            for t in get_enabled_mcp_tools() + get_ha_tools()
+        }
 
-    # Auto-search enrichment
-    user_query = _extract_user_query(messages)
-    search_extra = _auto_search_enrich(user_query) if user_query else ""
-    if search_extra:
-        mcp_result += search_extra
+        mcp_calls = []
+        native_calls = []
+        for tc in tool_calls:
+            fn = tc.get("function", {})
+            name = fn.get("name", "")
+            if name in known_server_tools:
+                mcp_calls.append(tc)
+            else:
+                native_calls.append(tc)
 
-    # Build messages for follow-up LLM call
-    new_messages = list(messages)
-    new_messages.append({"role": "assistant", "content": msg.get("content") or "",
-                         "tool_calls": mcp_calls})
-    new_messages.append({"role": "tool", "tool_call_id": tool_id,
-                         "name": tool_name, "content": mcp_result[:3000]})
+        if not mcp_calls:
+            return current_result  # Only native HA tools → pass through
 
-    # Re-inject MCP tools + dispatch again (non-streaming for simplicity)
-    tools = _inject_mcp_tools(body.get("tools"))
-    try:
-        follow_up = _dispatch(route, new_messages, tools, body.get("tool_choice"), body)
-        if isinstance(follow_up, dict):
-            choice2 = (follow_up.get("choices") or [{}])[0]
-            # Keep native tool calls from original + MCP result in follow-up
-            if native_calls:
-                choice2.setdefault("message", {})["tool_calls"] = native_calls
-            return follow_up
-    except Exception as exc:
-        logger.warning({"event": "mcp_followup_failed", "error": str(exc)})
+        # Append assistant message with all server-side tool calls
+        current_messages.append({
+            "role": "assistant",
+            "content": msg.get("content") or "",
+            "tool_calls": mcp_calls,
+        })
 
-    return result
+        # Execute ALL server-side tool calls and collect results
+        for tc in mcp_calls:
+            args_str = tc.get("function", {}).get("arguments", "{}")
+            try:
+                args = json.loads(args_str) if isinstance(args_str, str) else args_str
+            except Exception:
+                args = {}
+            tool_name = tc.get("function", {}).get("name", "")
+            tool_id = tc.get("id", f"mcp_{iteration}")
+
+            logger.info({
+                "event": "mcp_tool_exec",
+                "tool": tool_name,
+                "args": str(args)[:200],
+                "iteration": iteration,
+            })
+
+            mcp_result = _execute_mcp_tool(tool_name, args)
+            if mcp_result is None:
+                mcp_result = f"Tool '{tool_name}' returned no result."
+
+            current_messages.append({
+                "role": "tool",
+                "tool_call_id": tool_id,
+                "name": tool_name,
+                "content": mcp_result[:3000],
+            })
+
+        # Re-dispatch with updated messages
+        tools = _inject_mcp_tools(body.get("tools"))
+        try:
+            current_result = _dispatch(route, current_messages, tools, body.get("tool_choice"), body)
+            if not isinstance(current_result, dict):
+                # Got a stream back — yield it directly
+                return current_result
+        except Exception as exc:
+            logger.warning({"event": "mcp_followup_failed", "error": str(exc), "iteration": iteration})
+            return current_result
+
+    return current_result
 
 
 def _dispatch(route, messages, tools, tool_choice, body):
@@ -745,45 +762,8 @@ def _has_device_keyword(text: str) -> bool:
 
 
 def _inject_tool_force_hint(messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
-    """Inject a system hint forcing tool call when user asks about devices.
-
-    Only applies when GetLiveContext is in the tool list and the last user message
-    contains device-related keywords.
-    """
-    if not tools:
-        return messages
-
-    has_live_context = any(
-        isinstance(t, dict) and str(t.get("function", {}).get("name", "")).strip() == "GetLiveContext"
-        for t in tools
-    )
-    if not has_live_context:
-        return messages
-
-    last_user = ""
-    for m in reversed(messages):
-        if isinstance(m, dict) and str(m.get("role", "")).strip() == "user":
-            last_user = str(m.get("content", "") or "")
-            break
-
-    if not _has_device_keyword(last_user):
-        return messages
-
-    force_hint = (
-        "\n\nIMPORTANT: The user is asking about a smart home device. "
-        "You MUST call the GetLiveContext tool FIRST to get the current device state. "
-        "Do NOT guess or use stale data — always check live state via GetLiveContext. "
-        "Respond with ONLY the tool call XML block."
-    )
-
-    msgs = list(messages)
-    for i, m in enumerate(msgs):
-        if isinstance(m, dict) and str(m.get("role", "")).strip() == "system":
-            msgs[i] = {**m, "content": str(m.get("content", "") or "") + force_hint}
-            return msgs
-
-    msgs.insert(0, {"role": "system", "content": force_hint})
-    return msgs
+    # Legacy: No longer used since HA redesigned
+    return messages
 
 
 def _stream_chatgpt_addon(backend, messages, model, tools, tool_choice):

@@ -840,21 +840,26 @@ class SearchService:
 
         # --- Thuc thi song song ca MCP, Backend va RAG cung luc ---
         import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor(max_workers=12) as ex:
-            futures = {}
-            if mcp_server_ids:
-                for sid in mcp_server_ids:
-                    futures[ex.submit(_call_mcp_server, sid)] = ("mcp", sid)
-            
-            if backend_names:
-                for n in backend_names:
-                    futures[ex.submit(_call_backend, n)] = ("backend", n)
-                    
-            if enable_rag and kb_collections:
-                for c in kb_collections:
-                    futures[ex.submit(_call_rag, c)] = ("rag", c)
-                    
-            for future in concurrent.futures.as_completed(futures, timeout=12):
+        import time
+        start_t = time.time()
+        
+        ex = concurrent.futures.ThreadPoolExecutor(max_workers=12)
+        futures = {}
+        if mcp_server_ids:
+            for sid in mcp_server_ids:
+                futures[ex.submit(_call_mcp_server, sid)] = ("mcp", sid)
+        
+        if backend_names:
+            for n in backend_names:
+                futures[ex.submit(_call_backend, n)] = ("backend", n)
+                
+        if kb_collections:
+            for c in kb_collections:
+                futures[ex.submit(_call_rag, c)] = ("rag", c)
+                
+        try:
+            # Giam timeout xuong 5 giay de phan hoi cuc nhanh
+            for future in concurrent.futures.as_completed(futures, timeout=5):
                 try:
                     job_type, name = futures[future]
                     if job_type == "mcp":
@@ -864,10 +869,19 @@ class SearchService:
                     else:
                         _, results = future.result()
                         _add(results, name)
+                        
+                    # Early exit if we have enough results to save time
+                    if len(all_results) >= self.max_results:
+                        logger.info({"event": "search_all_early_exit", "count": len(all_results), "took": time.time() - start_t})
+                        break
                 except Exception:
                     pass
+        except concurrent.futures.TimeoutError:
+            logger.warning({"event": "search_all_timeout", "took": time.time() - start_t})
+        finally:
+            ex.shutdown(wait=False)
 
-        logger.info({"event": "search_all_done", "total": len(all_results)})
+        logger.info({"event": "search_all_done", "total": len(all_results), "took": time.time() - start_t})
         return all_results[:self.max_results * 4]
 
     def curate_response(self, query: str, response: str, collection: str = "") -> bool:

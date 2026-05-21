@@ -75,40 +75,113 @@ def call_service(domain: str, service: str, data: dict[str, Any] | None = None) 
 
 
 def format_states_context() -> str:
-    """Format HA entity states as LLM context string."""
+    """Format HA entities as a compact grouped registry for LLM context.
+    
+    Returns entity_id + friendly_name + current state, grouped by domain.
+    Compact format reduces tokens while giving AI exact entity IDs to use with tools.
+    """
     states = get_states()
     if not states:
         return ""
-    lines = ["## Smart Home State"]
-    for s in states[:100]:  # limit to 100 most relevant
+
+    IMPORTANT_DOMAINS = ["light", "switch", "climate", "fan", "cover", "lock", "media_player"]
+    USEFUL_DOMAINS = ["sensor", "binary_sensor", "alarm_control_panel", "input_boolean", "input_number"]
+    NOISY_DOMAINS = {"automation", "script", "zone", "sun", "update", "device_tracker",
+                     "person", "weather", "persistent_notification", "timer", "counter",
+                     "input_select", "input_text", "tts", "stt", "conversation", "assist_pipeline"}
+
+    by_domain: dict[str, list[dict]] = {}
+    for s in states:
+        eid = s.get("entity_id", "")
+        domain = eid.split(".")[0] if "." in eid else "other"
+        if domain in NOISY_DOMAINS:
+            continue
+        by_domain.setdefault(domain, []).append(s)
+
+    if not by_domain:
+        return ""
+
+    lines = [
+        "## Smart Home State (Live & Up-to-date)",
+        "Danh sách dưới đây là trạng thái THỰC TẾ và MỚI NHẤT của các thiết bị trong nhà.",
+        "Bạn KHÔNG CẦN gọi tool ha_get_state cho các thiết bị đã có trong danh sách này. Hãy dùng trực tiếp trạng thái được liệt kê (on/off/...).",
+        "Chỉ gọi tool ha_search_entities / ha_get_state nếu bạn cần tìm một thiết bị KHÔNG CÓ mặt ở đây.",
+        "",
+    ]
+
+    def _fmt(s: dict) -> str:
         eid = s.get("entity_id", "")
         state = s.get("state", "")
         attrs = s.get("attributes", {})
-        friendly = attrs.get("friendly_name", "")
+        name = attrs.get("friendly_name", "")
         unit = attrs.get("unit_of_measurement", "")
-        label = f"{friendly} ({eid})" if friendly else eid
-        line = f"- {label}: {state}"
-        if unit:
-            line += f" {unit}"
-        lines.append(line)
+        label = f"{name} ({eid})" if name else eid
+        return f"  - {label}: {state}{' ' + unit if unit else ''}"
+
+    for domain in IMPORTANT_DOMAINS:
+        entities = by_domain.get(domain)
+        if not entities:
+            continue
+        lines.append(f"[{domain}]")
+        for s in entities[:60]:
+            lines.append(_fmt(s))
+
+    for domain in USEFUL_DOMAINS:
+        entities = by_domain.get(domain)
+        if not entities:
+            continue
+        lines.append(f"[{domain}]")
+        for s in entities[:30]:
+            lines.append(_fmt(s))
+
+    # Remaining domains not in the priority lists
+    shown = set(IMPORTANT_DOMAINS + USEFUL_DOMAINS)
+    for domain, entities in sorted(by_domain.items()):
+        if domain in shown:
+            continue
+        lines.append(f"[{domain}]")
+        for s in entities[:20]:
+            lines.append(_fmt(s))
+
     return "\n".join(lines)
 
 
+# Smart home keywords for detecting HA-relevant queries
+_HA_KEYWORDS = (
+    "đèn", "quạt", "máy lạnh", "điều hòa", "cửa", "khóa", "rèm",
+    "bật", "tắt", "mở", "đóng", "trạng thái", "nhiệt độ", "độ ẩm",
+    "cảm biến", "công tắc", "ổ cắm", "thiết bị", "nhà",
+    "phòng", "bếp", "tắm", "ngủ", "khách", "ban công",
+    "light", "switch", "sensor", "climate", "cover", "lock",
+)
+
+
+def _is_ha_query(messages: list[dict[str, Any]]) -> bool:
+    """Heuristic: is the last user message asking about smart home devices?"""
+    for m in reversed(messages):
+        if m.get("role") == "user":
+            text = str(m.get("content") or "").lower()
+            return any(kw in text for kw in _HA_KEYWORDS)
+    return False
+
+
 def inject_ha_context(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Inject HA state context as a system message before the last user message."""
+    """Inject HA entity registry as a system message — only for HA-related queries."""
+    if not _is_ha_query(messages):
+        return messages
+
     ctx = format_states_context()
     if not ctx:
         return messages
 
     result = list(messages)
-    # Insert before the last user message
     insert_pos = len(result)
     for i in range(len(result) - 1, -1, -1):
         if result[i].get("role") == "user":
             insert_pos = i
             break
     result.insert(insert_pos, {"role": "system", "content": ctx})
-    logger.info({"event": "ha_context_injected", "states_len": len(ctx)})
+    logger.info({"event": "ha_context_injected", "chars": len(ctx)})
     return result
 
 
@@ -129,6 +202,20 @@ def get_ha_tools() -> list[dict[str, Any]]:
                         "entity_id": {"type": "string", "description": "Entity ID (vd: light.ban_cong, sensor.nhiet_do)"}
                     },
                     "required": ["entity_id"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "ha_search_entities",
+                "description": "Tìm kiếm entity_id của thiết bị Home Assistant dựa vào tên hoặc từ khóa (vd: 'đèn', 'phòng ngủ', 'nhiệt độ'). Rất hữu ích khi không biết chính xác entity_id.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Từ khóa tìm kiếm (vd: đèn ban công)"}
+                    },
+                    "required": ["query"],
                 },
             },
         },
@@ -159,6 +246,18 @@ def execute_ha_tool(tool_name: str, arguments: dict[str, Any]) -> str | None:
         if state is None:
             return f"Không tìm thấy thiết bị '{eid}'"
         return json.dumps(state, ensure_ascii=False, indent=2)
+    elif tool_name == "ha_search_entities":
+        query = arguments.get("query", "").lower()
+        states = get_states()
+        matches = []
+        for s in states:
+            eid = s.get("entity_id", "").lower()
+            name = s.get("attributes", {}).get("friendly_name", "").lower()
+            if query in eid or query in name:
+                matches.append(f"- {s.get('attributes', {}).get('friendly_name', '')} ({s.get('entity_id', '')}): {s.get('state', '')}")
+        if not matches:
+            return f"Không tìm thấy thiết bị nào khớp với '{query}'"
+        return f"Các thiết bị tìm thấy (từ khóa '{query}'):\n" + "\n".join(matches[:20])
     elif tool_name == "ha_call_service":
         domain = arguments.get("domain", "")
         service = arguments.get("service", "")
