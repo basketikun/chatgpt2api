@@ -46,9 +46,8 @@ def pre_resolve():
     hosts = [
         "vi.wikipedia.org", "en.wikipedia.org",
         "api.semanticscholar.org", "api.crossref.org",
-        "api.openalex.org", "api.pubmed.gov",
+        "api.openalex.org", "eutils.ncbi.nlm.nih.gov",
         "archive.org", "api.search.brave.com",
-        "eutils.ncbi.nlm.nih.gov",
     ]
     for host in hosts:
         try:

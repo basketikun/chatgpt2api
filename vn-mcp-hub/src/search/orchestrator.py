@@ -58,6 +58,13 @@ def federated_search(query: str, limit_per_source: int = 3) -> list[dict[str, An
     Returns flat list of {title, snippet, url, source} dicts.
     Results are deduplicated by URL.
     """
+    # Pre-resolve DNS in main thread (Docker DNS fails in worker threads)
+    try:
+        import src.dns_cache
+        src.dns_cache.pre_resolve()
+    except Exception:
+        pass
+
     results: list[dict[str, Any]] = []
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = {
