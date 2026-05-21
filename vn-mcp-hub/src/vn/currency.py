@@ -26,6 +26,7 @@ mcp = FastMCP("vn_currency")
 
 VCB_RATES_URL = "https://portal.vietcombank.com.vn/Usercontrols/TVPortal.TyGia/pXML.aspx"
 SJC_URL = "https://sjc.com.vn/giavang/textContent.php"
+DOJI_URL = "https://giavang.doji.vn/"
 EXR_URL = "https://open.er-api.com/v6/latest/{base}"
 
 
@@ -65,6 +66,35 @@ def _fetch_sjc() -> list[dict[str, Any]]:
     for tr in soup.find_all("tr"):
         cols = [c.get_text(strip=True) for c in tr.find_all(["td", "th"])]
         if len(cols) < 3:
+            continue
+        rows.append({"type": cols[0], "buy": cols[1], "sell": cols[2]})
+    return rows
+
+
+def _fetch_doji() -> list[dict[str, Any]]:
+    """DOJI HTML scrape — gold prices by type."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    try:
+        with httpx.Client(timeout=10.0, follow_redirects=True, headers=headers) as client:
+            r = client.get(DOJI_URL)
+            r.raise_for_status()
+        soup = BeautifulSoup(r.text, "html.parser")
+    except Exception as exc:
+        logger.warning("DOJI fetch failed: %s", exc)
+        return []
+    
+    tables = soup.find_all("table")
+    if not tables:
+        return []
+    
+    rows: list[dict[str, Any]] = []
+    # Extract from the first table which contains the retail gold rates
+    table = tables[0]
+    for tr in table.find_all("tr"):
+        cols = [c.get_text(strip=True) for c in tr.find_all(["td", "th"])]
+        if len(cols) < 3 or cols[0] in ("Giá vàng trong nước", "Loại"):
             continue
         rows.append({"type": cols[0], "buy": cols[1], "sell": cols[2]})
     return rows
@@ -131,18 +161,47 @@ def get_exchange_rate(base: str = "USD", quote: str = "VND") -> str:
 
 
 @mcp.tool()
-def get_gold_prices() -> str:
-    """Lấy giá vàng SJC hôm nay tại Việt Nam.
+def get_gold_prices(brand: str = "all") -> str:
+    """Lấy giá vàng hôm nay tại Việt Nam từ SJC và DOJI.
+
+    Args:
+        brand: Thương hiệu vàng cần lấy ("sjc", "doji", hoặc "all" để lấy cả hai). Mặc định "all".
 
     Returns:
-        Bảng giá vàng SJC theo loại (vàng miếng, vàng nhẫn, etc.) với giá mua/bán
-        đơn vị nghìn đồng/lượng.
+        Bảng giá vàng chi tiết kèm giá mua vào/bán ra.
     """
-    rows = _fetch_sjc()
-    if not rows:
-        return "Không lấy được giá vàng SJC lúc này."
-    lines = ["**Giá vàng SJC hôm nay:**", "", "| Loại vàng | Mua | Bán |", "|---|---:|---:|"]
-    for r in rows:
-        lines.append(f"| {r['type']} | {r['buy']} | {r['sell']} |")
-    lines.append("\n_Đơn vị: nghìn đồng/lượng. Nguồn: sjc.com.vn_")
+    brand = brand.lower().strip()
+    lines = []
+    
+    if brand in ("sjc", "all"):
+        sjc_rows = _fetch_sjc()
+        if sjc_rows:
+            lines.append("**Giá vàng SJC hôm nay:**")
+            lines.append("")
+            lines.append("| Loại vàng | Mua vào | Bán ra |")
+            lines.append("|---|---:|---:|")
+            for r in sjc_rows:
+                lines.append(f"| {r['type']} | {r['buy']} | {r['sell']} |")
+            lines.append("\n_Đơn vị SJC: nghìn đồng/lượng. Nguồn: sjc.com.vn_")
+        elif brand == "sjc":
+            return "Không lấy được giá vàng SJC lúc này."
+            
+    if brand in ("doji", "all"):
+        if lines:
+            lines.append("\n" + "─" * 40 + "\n")
+        doji_rows = _fetch_doji()
+        if doji_rows:
+            lines.append("**Giá vàng DOJI hôm nay:**")
+            lines.append("")
+            lines.append("| Loại vàng | Mua vào | Bán ra |")
+            lines.append("|---|---:|---:|")
+            for r in doji_rows:
+                lines.append(f"| {r['type']} | {r['buy']} | {r['sell']} |")
+            lines.append("\n_Đơn vị DOJI: nghìn đồng/chỉ (1 lượng = 10 chỉ). Nguồn: giavang.doji.vn_")
+        elif brand == "doji":
+            return "Không lấy được giá vàng DOJI lúc này."
+            
+    if not lines:
+        return "Không lấy được thông tin giá vàng lúc này."
+        
     return "\n".join(lines)
