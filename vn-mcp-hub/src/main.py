@@ -293,20 +293,31 @@ def create_app() -> FastAPI:
                     return {"ok": False, "error": "File bạn tải lên rỗng (0 bytes)."}
                     
                 filename = file.filename.lower()
-                if filename.endswith(".pdf"):
+                if filename.endswith((".pdf", ".docx", ".pptx", ".xlsx")):
                     try:
-                        from pypdf import PdfReader
+                        from markitdown import MarkItDown
+                        import tempfile
+                        import os
                     except ImportError:
-                        return {"ok": False, "error": "Thiếu thư viện pypdf. Vui lòng chạy lệnh: docker compose up -d --build"}
-                    reader = PdfReader(io.BytesIO(content))
-                    for page in reader.pages:
-                        text = page.extract_text()
-                        if text:
-                            raw_text += text + "\n"
-                    if not raw_text.strip():
-                        return {"ok": False, "error": "Đây là file PDF dạng ảnh chụp (scanned) hoặc file PDF không có lớp văn bản. Hệ thống hiện chỉ hỗ trợ PDF có text chuẩn."}
-                elif filename.endswith(".docx") or filename.endswith(".doc"):
-                    return {"ok": False, "error": "Hiện tại hệ thống chưa hỗ trợ định dạng Word (.docx). Vui lòng chuyển sang .PDF hoặc copy ra file .TXT rồi thử lại."}
+                        return {"ok": False, "error": "Thiếu thư viện markitdown. Vui lòng chạy lệnh: docker compose up -d --build"}
+                    
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(filename)[1]) as tmp:
+                        tmp.write(content)
+                        tmp_path = tmp.name
+                    
+                    try:
+                        md = MarkItDown()
+                        result = md.convert(tmp_path)
+                        raw_text = result.text_content
+                        if not raw_text or not raw_text.strip():
+                            raw_text = ""
+                            if filename.endswith(".pdf"):
+                                return {"ok": False, "error": "Đây là file PDF dạng ảnh chụp (scanned) không có lớp văn bản. Hãy dùng tính năng lưu file Word dưới dạng PDF hoặc dùng bản PDF gốc (không phải bản in ra rồi scan lại)."}
+                    except Exception as e:
+                        return {"ok": False, "error": f"Lỗi phân tích định dạng file: {str(e)} (Có thể cần cài đặt thêm thư viện cho định dạng này)"}
+                    finally:
+                        if os.path.exists(tmp_path):
+                            os.remove(tmp_path)
                 else:
                     raw_text = content.decode("utf-8", errors="ignore")
                     if not raw_text.strip():
