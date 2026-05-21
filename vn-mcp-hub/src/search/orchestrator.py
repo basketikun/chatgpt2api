@@ -17,6 +17,9 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# Pre-resolve known hostnames in main thread (Docker DNS fails in worker threads)
+import src.dns_cache as _dns  # noqa
+
 # Backend registry: (module, fn_name). Each fn takes (query, limit) -> list[dict].
 SEARCH_BACKENDS = [
     # Web search — general purpose
