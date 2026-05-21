@@ -701,12 +701,7 @@ class SearchService:
 
     def _get_active_backend(self) -> str:
         """Get actual search backend to use."""
-        backend = self.backend_name
-        if backend == "chatgpt":
-            from services.providers.gemini_free import gemini_provider
-            if gemini_provider.api_key:
-                return "gemini"
-        return backend
+        return self.backend_name
 
     def search(self, query: str) -> list[dict[str, str]]:
         """Execute search using configured backends in combo order. Falls back on failure."""
