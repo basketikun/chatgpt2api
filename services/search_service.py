@@ -870,10 +870,6 @@ class SearchService:
                         _, results = future.result()
                         _add(results, name)
                         
-                    # Early exit if we have enough results to save time
-                    if len(all_results) >= self.max_results:
-                        logger.info({"event": "search_all_early_exit", "count": len(all_results), "took": time.time() - start_t})
-                        break
                 except Exception:
                     pass
         except concurrent.futures.TimeoutError:
