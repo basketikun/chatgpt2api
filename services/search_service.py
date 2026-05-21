@@ -797,18 +797,6 @@ class SearchService:
                 logger.debug("search_all: mcp %s skipped: %s", server_id, exc)
                 return server_id, None
 
-        # Goi song song tat ca MCP servers
-        if mcp_server_ids:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
-                futures = {ex.submit(_call_mcp_server, sid): sid for sid in mcp_server_ids}
-                for future in concurrent.futures.as_completed(futures, timeout=12):
-                    try:
-                        sid, text = future.result()
-                        if text and len(text) > 20:
-                            _add([{"title": f"[{sid}]", "snippet": text[:2000], "url": ""}], sid)
-                    except Exception:
-                        pass
-
         # --- Luong 2: Combo backends (Gemini Grounding, custom provider...) ---
         combo = self.search_combo
         if not combo or combo == ["chatgpt"]:
@@ -828,15 +816,31 @@ class SearchService:
         # ChatGPT backend returns [] so it won't add duplicates, but we keep it in the list
         # so that native search tool injection still works alongside MCP injection.
         backend_names = [n for n in combo]
-        if backend_names:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
-                futures = {ex.submit(_call_backend, n): n for n in backend_names}
-                for future in concurrent.futures.as_completed(futures, timeout=15):
-                    try:
-                        name, results = future.result()
-                        _add(results, name)
-                    except Exception:
-                        pass
+
+        # --- Thuc thi song song ca MCP va Backend cung luc ---
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
+            futures = {}
+            if mcp_server_ids:
+                for sid in mcp_server_ids:
+                    futures[ex.submit(_call_mcp_server, sid)] = ("mcp", sid)
+            
+            if backend_names:
+                for n in backend_names:
+                    futures[ex.submit(_call_backend, n)] = ("backend", n)
+                    
+            for future in concurrent.futures.as_completed(futures, timeout=12):
+                try:
+                    job_type, name = futures[future]
+                    if job_type == "mcp":
+                        sid, text = future.result()
+                        if text and len(text) > 20:
+                            _add([{"title": f"[{sid}]", "snippet": text[:2000], "url": ""}], sid)
+                    elif job_type == "backend":
+                        bname, results = future.result()
+                        _add(results, bname)
+                except Exception:
+                    pass
 
         logger.info({"event": "search_all_done", "total": len(all_results)})
         return all_results[:self.max_results * 4]
