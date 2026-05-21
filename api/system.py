@@ -702,6 +702,46 @@ def create_router(app_version: str) -> APIRouter:
         except Exception as exc:
             raise HTTPException(status_code=400, detail={"error": str(exc)})
 
+    # ── Antigravity Google OAuth Login ──
+
+    @router.get("/api/oauth/antigravity/start")
+    async def start_antigravity_oauth(request: Request, authorization: str | None = Header(default=None)):
+        """Generate Antigravity Google OAuth URL for user to login."""
+        require_admin(authorization)
+        from services.oauth_service import get_antigravity_auth_url
+        result = get_antigravity_auth_url()
+        result["help"] = (
+            "1. Mở URL trên trong browser. "
+            "2. Đăng nhập Google và cấp quyền. "
+            "3. Sau khi redirect, copy TOÀN BỘ URL trên thanh địa chỉ (có dạng http://localhost:8080/callback?code=...). "
+            "4. Dán URL đó vào POST /api/oauth/antigravity/exchange với body {\"redirect_url\": \"URL_DA_COPY\"}"
+        )
+        return result
+
+    class AntigravityExchangeRequest(BaseModel):
+        redirect_url: str = ""
+
+    @router.post("/api/oauth/antigravity/exchange")
+    async def antigravity_oauth_exchange(body: AntigravityExchangeRequest, authorization: str | None = Header(default=None)):
+        """Exchange Antigravity Google OAuth code manually — user pastes redirect URL."""
+        require_admin(authorization)
+        from urllib.parse import urlparse, parse_qs
+        from services.oauth_service import exchange_antigravity_code
+        url = (body.redirect_url or "").strip()
+        if not url:
+            raise HTTPException(status_code=400, detail={"error": "redirect_url is required"})
+        parsed = urlparse(url)
+        params = parse_qs(parsed.query)
+        code = (params.get("code") or [""])[0]
+        state = (params.get("state") or [""])[0]
+        if not code or not state:
+            raise HTTPException(status_code=400, detail={"error": "URL không chứa code và state. Copy TOÀN BỘ URL sau khi redirect."})
+        try:
+            result = exchange_antigravity_code(code, state)
+            return result
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail={"error": str(exc)})
+
     @router.get("/api/oauth/session-url")
     async def get_session_url(authorization: str | None = Header(default=None)):
         """Return chatgpt.com session URL for getting image token."""

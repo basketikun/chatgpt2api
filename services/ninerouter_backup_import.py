@@ -254,7 +254,38 @@ def import_9router_backup(filepath: str | Path) -> dict[str, Any]:
                 "skipped": skipped,
             })
         except Exception as exc:
-            errors.append(f"Failed to add accounts: {exc}")
+            errors.append(f"Failed to add Codex accounts: {exc}")
+
+    # Extract & import Antigravity tokens
+    antigravity_oauth = [t for t in all_oauth if t.get("provider") == "antigravity"]
+    if antigravity_oauth:
+        try:
+            creds_ag = [
+                {
+                    "access_token": t["access_token"],
+                    "refresh_token": t.get("refresh_token"),
+                    "expires_at": t.get("expires_at"),
+                }
+                for t in antigravity_oauth
+            ]
+            result_ag = account_service.add_accounts_with_credentials(creds_ag, "antigravity")
+            for t in antigravity_oauth:
+                tok = t["access_token"]
+                account_service.update_account(tok, {
+                    "image_quota_unknown": True,
+                    "quota": 100,
+                    "status": "active",
+                })
+            imported_ag = result_ag.get("added", 0) + result_ag.get("updated", 0)
+            skipped_ag = result_ag.get("skipped", 0)
+            logger.info({
+                "event": "9router_backup_antigravity_imported",
+                "tokens_found": len(antigravity_oauth),
+                "imported": imported_ag,
+                "skipped": skipped_ag,
+            })
+        except Exception as exc:
+            errors.append(f"Failed to add Antigravity accounts: {exc}")
 
     # Provider summary for response
     provider_counts: dict[str, int] = {}

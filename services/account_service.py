@@ -118,6 +118,7 @@ class AccountService:
         normalized["limits_progress"] = limits_progress if isinstance(limits_progress, list) else []
         normalized["default_model_slug"] = normalized.get("default_model_slug") or None
         normalized["restore_at"] = normalized.get("restore_at") or None
+        normalized["project_id"] = normalized.get("project_id") or None
         normalized["success"] = int(normalized.get("success") or 0)
         normalized["fail"] = int(normalized.get("fail") or 0)
         normalized["last_used_at"] = normalized.get("last_used_at")
@@ -348,6 +349,10 @@ class AccountService:
                     updated += 1
                 if expires_at:
                     base["expires_at"] = expires_at
+                if cred.get("project_id"):
+                    base["project_id"] = cred["project_id"]
+                if cred.get("email"):
+                    base["email"] = cred["email"]
                 account = self._normalize_account(base)
                 if account is not None:
                     self._accounts[access_token] = account

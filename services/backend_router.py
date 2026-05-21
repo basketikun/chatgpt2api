@@ -38,6 +38,7 @@ PROVIDER_PREFIXES: dict[str, str] = {
     "cc/": "claude",
     "cx/": "codex",
     "nv/": "nvidia_nim",
+    "ag/": "antigravity",
 }
 
 # NoAuth providers — no credentials needed (port from 9router FREE_PROVIDERS)
@@ -114,6 +115,7 @@ class BackendRouter:
         "gemini_free": "gemini-3-flash-preview",
         "openrouter": "openai/gpt-4o",
         "nvidia_nim": "openai/gpt-oss-120b",
+        "antigravity": "gemini-3.1-pro-high",
     }
 
     @staticmethod

@@ -513,6 +513,8 @@ def _dispatch(route, messages, tools, tool_choice, body):
         return _handle_openai_oauth_chat(route.model, messages, tools, tool_choice, body.get("stream"), body)
     elif route.provider == "gemini_free":
         return _handle_gemini_chat(route.model, messages, body.get("stream"), body)
+    elif route.provider == "antigravity":
+        return _handle_antigravity_chat(route.model, messages, tools, tool_choice, body.get("stream"), body)
     elif route.provider == "nvidia_nim":
         return _handle_nvidia_chat(route.model, messages, tools, tool_choice, body.get("stream"), body)
     elif route.provider.startswith("custom:"):
@@ -1329,6 +1331,72 @@ def _handle_custom_openai_chat(
             content=f"[{provider.name}] Error: {exc}",
             messages=messages,
         )
+
+
+def _handle_antigravity_chat(
+    model: str,
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]] | None,
+    tool_choice: Any,
+    stream: bool,
+    body: dict[str, Any],
+) -> dict[str, Any] | Iterator[dict[str, Any]]:
+    """Use Antigravity rotated Google Cloud companion tokens for chat completions."""
+    from services.providers.antigravity import antigravity_provider
+
+    pure_model = model[3:] if model.startswith("ag/") else model
+    if not pure_model or pure_model == "auto":
+        pure_model = "gemini-3.1-pro-high"
+
+    logger.info({
+        "event": "antigravity_chat",
+        "model": pure_model,
+        "stream": stream,
+    })
+
+    temperature = body.get("temperature")
+    max_tokens = body.get("max_tokens")
+
+    attempted: set[str] = set()
+    last_error = ""
+
+    while True:
+        try:
+            account = antigravity_provider.get_token_for_request(attempted)
+        except RuntimeError as exc:
+            raise RuntimeError(str(exc))
+
+        token = account.get("access_token", "")
+        if not token or token in attempted:
+            break
+        attempted.add(token)
+
+        try:
+            if stream:
+                return antigravity_provider.chat_completions(
+                    account=account, messages=messages, model=pure_model,
+                    stream=True, temperature=temperature, max_tokens=max_tokens,
+                    tools=tools, tool_choice=tool_choice,
+                )
+            else:
+                result = antigravity_provider.chat_completions(
+                    account=account, messages=messages, model=pure_model,
+                    stream=False, temperature=temperature, max_tokens=max_tokens,
+                    tools=tools, tool_choice=tool_choice,
+                )
+                account_service.mark_text_used(token)
+                return result
+        except Exception as exc:
+            last_error = str(exc)
+            # On 401/expired → skip this token, try next
+            if any(x in last_error.lower() for x in ("expired", "401", "unauthorized")):
+                continue
+            # On 400/429/quota → try next
+            if any(x in last_error.lower() for x in ("400", "429", "rate", "quota")):
+                continue
+            break
+
+    raise RuntimeError(f"Antigravity error: {last_error}")
 
 
 def _inject_mcp_tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:

@@ -29,7 +29,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { createAccounts, createOAuthAccounts, type Account } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-type ImportMethod = "menu" | "token" | "session" | "cpa" | "oauth" | "oauth_flow";
+type ImportMethod = "menu" | "token" | "session" | "cpa" | "oauth" | "oauth_flow" | "antigravity_flow";
 
 type AccountImportDialogProps = {
   disabled?: boolean;
@@ -543,6 +543,63 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
       );
     }
 
+    if (method === "antigravity_flow") {
+      return (
+        <div className="space-y-4">
+          <button type="button" onClick={() => setMethod("menu")}
+            className="inline-flex items-center gap-1 text-sm text-stone-500 transition hover:text-stone-800">
+            <ArrowLeft className="size-4" /> Quay lại
+          </button>
+
+          <div className="rounded-2xl border border-stone-200 bg-stone-100 p-4">
+            <div className="mb-2 text-sm font-medium">Bước 1: Đăng nhập Google (Antigravity)</div>
+            <p className="text-sm text-stone-600 mb-3">Nhấn nút bên dưới để mở trang đăng nhập tài khoản Google. Sau khi đăng nhập và cấp quyền, trình duyệt của bạn sẽ chuyển hướng đến localhost (có thể báo lỗi "không thể kết nối" hoặc "không tìm thấy trang"). Hãy copy TOÀN BỘ URL trên thanh địa chỉ đó.</p>
+            <Button variant="outline" className="bg-white"
+              onClick={async () => {
+                try {
+                  const { request: req } = await import("@/lib/request");
+                  const data = await req.get("/api/oauth/antigravity/start");
+                  const url = (data.data as any)?.auth_url;
+                  if (url) window.open(url, "_blank", "width=600,height=700");
+                  else toast.error("Không thể tạo URL OAuth");
+                } catch (e) { toast.error("Lỗi tạo OAuth URL"); }
+              }}>
+              Mở trang Đăng nhập Google
+            </Button>
+          </div>
+
+          <div className="rounded-2xl border border-stone-200 bg-stone-100 p-4">
+            <div className="mb-2 text-sm font-medium">Bước 2: Dán URL callback</div>
+            <p className="text-sm text-stone-600 mb-3">Dán toàn bộ URL đã copy ở Bước 1 vào ô dưới đây (có dạng http://localhost:8080/callback?code=...):</p>
+            <Textarea
+              placeholder="http://localhost:8080/callback?code=..."
+              value={oauthRedirectUrl}
+              onChange={(e) => setOauthRedirectUrl(e.target.value)}
+              className="min-h-24 resize-none rounded-xl border-stone-300 font-mono text-xs mb-3"
+            />
+            <Button className="w-full bg-stone-900 text-white hover:bg-stone-800"
+              disabled={!oauthRedirectUrl || isSubmitting}
+              onClick={async () => {
+                setIsSubmitting(true);
+                try {
+                  const { request: req } = await import("@/lib/request");
+                  await req.post("/api/oauth/antigravity/exchange", { redirect_url: oauthRedirectUrl });
+                  toast.success("Đăng nhập thành công! Tài khoản Antigravity đã được thêm vào pool.");
+                  setOpen(false);
+                  resetState();
+                  onImported([]);
+                } catch (error) {
+                  toast.error(error instanceof Error ? error.message : "Xác thực thất bại");
+                } finally { setIsSubmitting(false); }
+              }}>
+              {isSubmitting ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : null}
+              Xác nhận và Lưu Token
+            </Button>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="space-y-3">
         <MethodCard
@@ -586,6 +643,12 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
           onClick={() => setMethod("oauth_flow")}
         />
         <MethodCard
+          title="Đăng nhập Antigravity (Google)"
+          description="Đăng nhập bằng tài khoản Google để lấy token Antigravity (hỗ trợ Docker/Server)."
+          icon={KeyRound}
+          onClick={() => setMethod("antigravity_flow")}
+        />
+        <MethodCard
           title="Lấy token tạo ảnh"
           description="Mở chatgpt.com — đăng nhập → copy JSON → paste vào mục Session JSON ở trên."
           icon={KeyRound}
@@ -627,7 +690,9 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
                   ? "Nhập Access Token"
                   : method === "session"
                     ? "Nhập Session JSON"
-                    : "Nhập CPA JSON"}
+                    : method === "antigravity_flow"
+                      ? "Đăng nhập Antigravity (Google)"
+                      : "Nhập CPA JSON"}
             </DialogTitle>
             <DialogDescription className="text-sm leading-6">
               {method === "menu"
@@ -636,7 +701,9 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
                   ? "Hỗ trợ dán thủ công hoặc nhập từ tệp TXT, mỗi dòng một Token."
                   : method === "session"
                     ? "Dán toàn bộ Session JSON, hệ thống sẽ tự động trích xuất accessToken."
-                    : "Hỗ trợ đọc nhiều tệp JSON cùng lúc và xác nhận số lượng trước khi gửi."}
+                    : method === "antigravity_flow"
+                      ? "Đăng nhập bằng tài khoản Google để lấy token Antigravity."
+                      : "Hỗ trợ đọc nhiều tệp JSON cùng lúc và xác nhận số lượng trước khi gửi."}
             </DialogDescription>
           </DialogHeader>
 

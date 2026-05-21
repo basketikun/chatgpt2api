@@ -190,3 +190,150 @@ def detect_token_type(access_token: str) -> str:
         return "unknown"
     except Exception:
         return "unknown"
+
+
+# ===== Antigravity Google OAuth Flow =====
+
+_pending_antigravity_auths: dict[str, dict[str, str]] = {}
+
+ANTIGRAVITY_CLIENT_ID = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com"
+ANTIGRAVITY_CLIENT_SECRET = "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"
+ANTIGRAVITY_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+ANTIGRAVITY_TOKEN_URL = "https://oauth2.googleapis.com/token"
+ANTIGRAVITY_SCOPES = [
+    "https://www.googleapis.com/auth/cloud-platform",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.profile",
+    "https://www.googleapis.com/auth/cclog",
+    "https://www.googleapis.com/auth/experimentsandconfigs",
+]
+
+def get_antigravity_auth_url(base_url: str = "") -> dict[str, str]:
+    """Generate Antigravity Google OAuth authorization URL.
+
+    IMPORTANT: Google Client ID for Cloud Code strictly registers specific redirect URIs.
+    We will use 'http://localhost:8080/callback' as the default loopback, which works
+    for manual callback paste from user browsers.
+    """
+    state = secrets.token_hex(16)
+    redirect_uri = "http://localhost:8080/callback"
+
+    params = {
+        "client_id": ANTIGRAVITY_CLIENT_ID,
+        "response_type": "code",
+        "redirect_uri": redirect_uri,
+        "scope": " ".join(ANTIGRAVITY_SCOPES),
+        "state": state,
+        "access_type": "offline",
+        "prompt": "consent",
+    }
+
+    query_parts = []
+    for k, v in params.items():
+        encoded_key = urllib.parse.quote(str(k), safe="")
+        encoded_val = urllib.parse.quote(str(v), safe="")
+        query_parts.append(f"{encoded_key}={encoded_val}")
+    query_string = "&".join(query_parts)
+
+    auth_url = f"{ANTIGRAVITY_AUTH_URL}?{query_string}"
+
+    _pending_antigravity_auths[state] = {
+        "redirect_uri": redirect_uri,
+    }
+
+    return {
+        "auth_url": auth_url,
+        "state": state,
+    }
+
+
+def exchange_antigravity_code(code: str, state: str) -> dict[str, Any]:
+    """Exchange authorization code for Antigravity Google OAuth token."""
+    pending = _pending_antigravity_auths.pop(state, None)
+    redirect_uri = pending["redirect_uri"] if pending else "http://localhost:8080/callback"
+
+    body = {
+        "grant_type": "authorization_code",
+        "client_id": ANTIGRAVITY_CLIENT_ID,
+        "client_secret": ANTIGRAVITY_CLIENT_SECRET,
+        "code": code,
+        "redirect_uri": redirect_uri,
+    }
+
+    resp = _curl_post(
+        ANTIGRAVITY_TOKEN_URL,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        data=body,
+        timeout=30,
+    )
+
+    if resp.status_code != 200:
+        raise RuntimeError(f"Google Token exchange failed: {resp.status_code} {resp.text[:200]}")
+
+    token_data = resp.json()
+    access_token = token_data.get("access_token", "")
+    refresh_token = token_data.get("refresh_token", "")
+
+    if not access_token:
+        raise RuntimeError("No access_token returned from Google")
+
+    # 1. Fetch Google user info (email)
+    email = None
+    try:
+        user_resp = requests.get(
+            "https://www.googleapis.com/oauth2/v1/userinfo?alt=json",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10,
+        )
+        if user_resp.status_code == 200:
+            email = user_resp.json().get("email")
+    except Exception as e:
+        logger.warning(f"Failed to fetch Google userinfo during OAuth: {e}")
+
+    # 2. Fetch project ID
+    project_id = None
+    try:
+        load_headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+            "User-Agent": "google-api-nodejs-client/9.15.1",
+            "X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
+            "Client-Metadata": json.dumps({ "ideType": "IDE_UNSPECIFIED", "platform": "PLATFORM_UNSPECIFIED", "pluginType": "GEMINI" }),
+            "x-request-source": "local",
+        }
+        load_resp = requests.post(
+            "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
+            headers=load_headers,
+            json={"metadata": { "ideType": "IDE_UNSPECIFIED", "platform": "PLATFORM_UNSPECIFIED", "pluginType": "GEMINI" }},
+            timeout=15,
+        )
+        if load_resp.status_code == 200:
+            data = load_resp.json()
+            project_id = data.get("cloudaicompanionProject", {}).get("id") or data.get("cloudaicompanionProject")
+    except Exception as e:
+        logger.warning(f"Failed to fetch Antigravity project_id during OAuth: {e}")
+
+    import time
+    expires_at = int(time.time()) + int(token_data.get("expires_in", 3599))
+
+    creds = {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "expires_at": expires_at,
+    }
+    if email:
+        creds["email"] = email
+    if project_id:
+        creds["project_id"] = project_id
+
+    # Add to account pool with type "antigravity"
+    account_service.add_accounts_with_credentials([creds], "antigravity")
+
+    return {
+        "ok": True,
+        "message": "Đăng nhập Antigravity Google OAuth thành công! Token đã được thêm.",
+        "email": email,
+        "project_id": project_id,
+        "has_refresh_token": bool(refresh_token),
+    }
+
