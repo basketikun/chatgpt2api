@@ -1442,12 +1442,17 @@ def _inject_mcp_tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]
         from services.mcp_client import get_enabled_mcp_tools
         from services.ha_client import get_ha_tools
         mcp_tools = get_enabled_mcp_tools()
-        ha_tools = get_ha_tools()
-        all_new_tools = mcp_tools + ha_tools
-        if not all_new_tools:
-            return tools
+        
         tools = list(tools or [])
         existing_names = {t.get("function", {}).get("name", "") for t in tools}
+        
+        client_is_ha = any(name.startswith("Hass") or name == "GetLiveContext" for name in existing_names)
+        ha_tools = [] if client_is_ha else get_ha_tools()
+        
+        all_new_tools = mcp_tools + ha_tools
+        if not all_new_tools:
+            return tools if tools else None
+            
         for mt in all_new_tools:
             if mt.get("function", {}).get("name", "") not in existing_names:
                 tools.append(mt)
