@@ -72,7 +72,8 @@ def get_codex_auth_url(base_url: str = "") -> dict[str, str]:
     4. POST that URL to /api/oauth/codex/exchange
     """
     pkce = generate_pkce()
-    redirect_uri = "http://localhost:3030/auth/callback" if not base_url else f"{base_url.rstrip('/')}/auth/callback"
+    # OpenAI strictly only whitelists localhost:1455/auth/callback for Codex CLI OAuth client
+    redirect_uri = "http://localhost:1455/auth/callback"
 
     params = {
         "response_type": "code",
