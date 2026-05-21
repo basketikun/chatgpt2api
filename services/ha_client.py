@@ -6,12 +6,18 @@ the smart home directly, without needing the HA voice pipeline.
 
 from __future__ import annotations
 
-import json, logging
+import json, logging, time, threading
 from typing import Any
 import urllib.request
 
 from services.config import config
 from utils.log import logger
+
+# ── Module-level state cache (60s TTL) ─────────────────────────────────────
+_state_cache: list[dict] = []
+_state_cache_ts: float = 0.0
+_state_cache_lock = threading.Lock()
+_CACHE_TTL = 60  # seconds
 
 
 def _get_ha_config() -> dict[str, str] | None:
@@ -23,8 +29,12 @@ def _get_ha_config() -> dict[str, str] | None:
     return {"url": url, "token": token}
 
 
-def get_states() -> list[dict[str, Any]]:
-    """Fetch all entity states from HA. Returns empty list if not configured."""
+def get_states(use_cache: bool = True) -> list[dict[str, Any]]:
+    """Fetch all entity states from HA. Caches for 60s to avoid redundant calls."""
+    global _state_cache, _state_cache_ts
+    now = time.time()
+    if use_cache and _state_cache and (now - _state_cache_ts) < _CACHE_TTL:
+        return _state_cache
     cfg = _get_ha_config()
     if not cfg:
         return []
@@ -33,10 +43,14 @@ def get_states() -> list[dict[str, Any]]:
             f"{cfg['url']}/api/states",
             headers={"Authorization": f"Bearer {cfg['token']}", "Content-Type": "application/json"},
         )
-        return json.loads(urllib.request.urlopen(req, timeout=10).read())
+        data = json.loads(urllib.request.urlopen(req, timeout=10).read())
+        with _state_cache_lock:
+            _state_cache = data
+            _state_cache_ts = now
+        return data
     except Exception as exc:
         logger.warning({"event": "ha_states_failed", "error": str(exc)})
-        return []
+        return _state_cache or []  # return stale cache on error
 
 
 def get_state(entity_id: str) -> dict[str, Any] | None:
@@ -56,92 +70,73 @@ def get_state(entity_id: str) -> dict[str, Any] | None:
 
 
 def call_service(domain: str, service: str, data: dict[str, Any] | None = None) -> bool:
-    """Call an HA service (e.g., light.turn_on)."""
+    """Call an HA service (e.g., light.turn_on). Passes full data dict as payload."""
     cfg = _get_ha_config()
     if not cfg:
         return False
     try:
-        body = json.dumps({"entity_id": data.get("entity_id", "")}) if data else "{}"
+        payload = data or {}
+        body = json.dumps(payload)
         req = urllib.request.Request(
             f"{cfg['url']}/api/services/{domain}/{service}",
             data=body.encode(),
             headers={"Authorization": f"Bearer {cfg['token']}", "Content-Type": "application/json"},
         )
         urllib.request.urlopen(req, timeout=10)
+        # Invalidate cache after any write operation
+        global _state_cache_ts
+        _state_cache_ts = 0.0
         return True
     except Exception as exc:
         logger.warning({"event": "ha_service_failed", "domain": domain, "service": service, "error": str(exc)})
         return False
 
 
+# Domains that are actionable and shown to AI
+_CONTEXT_DOMAINS = ["light", "switch", "climate", "cover", "lock", "fan", "media_player"]
+# Max entities per domain shown in context (keep token count low)
+_MAX_PER_DOMAIN = 30
+
+
 def format_states_context() -> str:
-    """Format HA entities as a compact grouped registry for LLM context.
-    
-    Returns entity_id + friendly_name + current state, grouped by domain.
-    Compact format reduces tokens while giving AI exact entity IDs to use with tools.
+    """Format HA entities as ultra-compact context for LLM.
+
+    Only actionable domains (light/switch/climate/cover/lock) are shown.
+    State format: `name (entity_id): state` — no extra attributes.
+    This keeps the context under ~1500 tokens even for large setups.
     """
     states = get_states()
     if not states:
         return ""
 
-    IMPORTANT_DOMAINS = ["light", "switch", "climate", "fan", "cover", "lock", "media_player"]
-    USEFUL_DOMAINS = ["sensor", "binary_sensor", "alarm_control_panel", "input_boolean", "input_number"]
-    NOISY_DOMAINS = {"automation", "script", "zone", "sun", "update", "device_tracker",
-                     "person", "weather", "persistent_notification", "timer", "counter",
-                     "input_select", "input_text", "tts", "stt", "conversation", "assist_pipeline"}
-
     by_domain: dict[str, list[dict]] = {}
     for s in states:
         eid = s.get("entity_id", "")
-        domain = eid.split(".")[0] if "." in eid else "other"
-        if domain in NOISY_DOMAINS:
-            continue
-        by_domain.setdefault(domain, []).append(s)
+        domain = eid.split(".")[0] if "." in eid else ""
+        if domain in _CONTEXT_DOMAINS:
+            by_domain.setdefault(domain, []).append(s)
 
     if not by_domain:
         return ""
 
     lines = [
-        "## Smart Home State (Live & Up-to-date)",
-        "Danh sách dưới đây là trạng thái THỰC TẾ và MỚI NHẤT của các thiết bị trong nhà.",
-        "Bạn KHÔNG CẦN gọi tool ha_get_state cho các thiết bị đã có trong danh sách này. Hãy dùng trực tiếp trạng thái được liệt kê (on/off/...).",
-        "Chỉ gọi tool ha_search_entities / ha_get_state nếu bạn cần tìm một thiết bị KHÔNG CÓ mặt ở đây.",
+        "## Smart Home — Live State",
+        "Trạng thái bên dưới là DỮ LIỆU THỰC TẾ, KHÔNG cần gọi ha_get_state hay ha_search_entities.",
+        "Chỉ dùng ha_call_service để điều khiển. Chỉ gọi ha_search_entities khi thiết bị KHÔNG có trong danh sách.",
         "",
     ]
 
-    def _fmt(s: dict) -> str:
-        eid = s.get("entity_id", "")
-        state = s.get("state", "")
-        attrs = s.get("attributes", {})
-        name = attrs.get("friendly_name", "")
-        unit = attrs.get("unit_of_measurement", "")
-        label = f"{name} ({eid})" if name else eid
-        return f"  - {label}: {state}{' ' + unit if unit else ''}"
-
-    for domain in IMPORTANT_DOMAINS:
+    for domain in _CONTEXT_DOMAINS:
         entities = by_domain.get(domain)
         if not entities:
             continue
         lines.append(f"[{domain}]")
-        for s in entities[:60]:
-            lines.append(_fmt(s))
-
-    for domain in USEFUL_DOMAINS:
-        entities = by_domain.get(domain)
-        if not entities:
-            continue
-        lines.append(f"[{domain}]")
-        for s in entities[:30]:
-            lines.append(_fmt(s))
-
-    # Remaining domains not in the priority lists
-    shown = set(IMPORTANT_DOMAINS + USEFUL_DOMAINS)
-    for domain, entities in sorted(by_domain.items()):
-        if domain in shown:
-            continue
-        lines.append(f"[{domain}]")
-        for s in entities[:20]:
-            lines.append(_fmt(s))
+        for s in entities[:_MAX_PER_DOMAIN]:
+            eid = s.get("entity_id", "")
+            state = s.get("state", "")
+            name = s.get("attributes", {}).get("friendly_name", "")
+            label = f"{name} ({eid})" if name else eid
+            lines.append(f"  {label}: {state}")
 
     return "\n".join(lines)
 
