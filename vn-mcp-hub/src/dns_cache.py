@@ -59,3 +59,19 @@ def pre_resolve():
 
 # Auto-patch on import (before any threads are spawned)
 pre_resolve()
+
+
+def get_ip(hostname: str) -> str:
+    """Get cached IP from pre-resolved cache. Returns hostname if not cached."""
+    key = (hostname, 443, socket.AF_INET, socket.SOCK_STREAM, 6, 0)
+    with _lock:
+        if key in _cache:
+            result = _cache[key]
+            if result:
+                return result[0][4][0]
+    # Fallback: try resolving now
+    try:
+        info = _original(hostname, 443, socket.AF_INET)
+        return info[0][4][0]
+    except Exception:
+        return hostname  # Return hostname — will fail but at least not crash
