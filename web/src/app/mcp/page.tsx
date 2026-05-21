@@ -43,11 +43,15 @@ export default function McpPage() {
     try {
       const presets = await request.get("/api/mcp/presets");
       const data = presets.data?.presets || presets.presets || [];
-      const installed: Record<string, boolean> = {};
-      data.forEach((p: any) => { if (p.installed) installed[p.id] = true; });
+      const installed: Record<string, any> = {};
+      data.forEach((p: any) => { if (p.installed) installed[p.id] = p; });
       setGroups(prev => prev.map(g => {
         const count = g.mcps.filter(m => installed[m.id]).length;
-        return { ...g, installedCount: count };
+        return { 
+          ...g, 
+          installedCount: count,
+          mcps: g.mcps.map(m => installed[m.id]?.url ? { ...m, url: installed[m.id].url } : m)
+        };
       }));
     } catch (e) { console.error(e); }
     setLoading(false);
