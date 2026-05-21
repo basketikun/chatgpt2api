@@ -226,11 +226,16 @@ class GeminiGrounding(SearchBackend):
             return []
 
         try:
+            kwargs = {"timeout": 30}
+            proxy = str(config.data.get("proxy") or "").strip()
+            if proxy:
+                kwargs["proxies"] = {"http": proxy, "https": proxy}
+
             resp = requests.post(
                 f"https://generativelanguage.googleapis.com/v1beta/models/{self._get_model()}:generateContent?key={api_key}",
                 headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
                 json={"contents": [{"parts": [{"text": query}]}], "tools": [{"google_search": {}}]},
-                timeout=30,
+                **kwargs
             )
 
             if resp.status_code in (429, 403):
@@ -256,6 +261,13 @@ class GeminiGrounding(SearchBackend):
                 parts = (c.get("content") or {}).get("parts") or []
                 model_text = " ".join(p.get("text", "") for p in parts if isinstance(p, dict))
 
+            if model_text:
+                results.append({
+                    "title": "Tổng hợp Google Search (Gemini)",
+                    "snippet": model_text[:2000],
+                    "url": ""
+                })
+
             for c in candidates:
                 grounding = c.get("groundingMetadata") or {}
                 chunks = grounding.get("groundingChunks") or []
@@ -263,14 +275,13 @@ class GeminiGrounding(SearchBackend):
                 for chunk in chunks[:max_results]:
                     web = chunk.get("web") or {}
                     snippet = str(web.get("snippet") or "")
-                    if not snippet:
-                        snippet = model_text[:300]  # Fallback to model response
-                    results.append({
-                        "title": str(web.get("title") or (sources[0] if sources else query)),
-                        "snippet": snippet,
-                        "url": str(web.get("uri") or ""),
-                    })
-            return results[:max_results]
+                    if snippet:
+                        results.append({
+                            "title": str(web.get("title") or (sources[0] if sources else query)),
+                            "snippet": snippet,
+                            "url": str(web.get("uri") or ""),
+                        })
+            return results[:max_results + 1]
 
         except Exception as exc:
             logger.warning({"event": "gemini_exception", "error": str(exc)})
@@ -601,7 +612,12 @@ class SearchService:
 
     def _get_active_backend(self) -> str:
         """Get actual search backend to use."""
-        return self.backend_name
+        backend = self.backend_name
+        if backend == "chatgpt":
+            from services.providers.gemini_free import gemini_provider
+            if gemini_provider.api_key:
+                return "gemini"
+        return backend
 
     def search(self, query: str) -> list[dict[str, str]]:
         """Execute search using configured backends in combo order. Falls back on failure."""

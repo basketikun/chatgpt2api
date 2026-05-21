@@ -24,7 +24,9 @@ def create_router() -> APIRouter:
     async def list_presets(authorization: str | None = Header(default=None)):
         require_admin(authorization)
         installed = config.data.get("mcp_servers") or {}
-        if not isinstance(installed, dict):
+        if isinstance(installed, list):
+            installed = {item.get("id", str(i)): item for i, item in enumerate(installed) if isinstance(item, dict)}
+        elif not isinstance(installed, dict):
             installed = {}
 
         result = []
@@ -69,7 +71,9 @@ def create_router() -> APIRouter:
             raise HTTPException(status_code=404, detail=f"Unknown preset: {body.id}")
 
         installed = config.data.get("mcp_servers") or {}
-        if not isinstance(installed, dict):
+        if isinstance(installed, list):
+            installed = {item.get("id", str(i)): item for i, item in enumerate(installed) if isinstance(item, dict)}
+        elif not isinstance(installed, dict):
             installed = {}
 
         url = body.url_override or (preset.url if preset else "")
@@ -97,7 +101,9 @@ def create_router() -> APIRouter:
     ):
         require_admin(authorization)
         installed = config.data.get("mcp_servers") or {}
-        if not isinstance(installed, dict):
+        if isinstance(installed, list):
+            installed = {item.get("id", str(i)): item for i, item in enumerate(installed) if isinstance(item, dict)}
+        elif not isinstance(installed, dict):
             installed = {}
 
         if preset_id in installed:
@@ -114,7 +120,9 @@ def create_router() -> APIRouter:
     ):
         require_admin(authorization)
         installed = config.data.get("mcp_servers") or {}
-        if not isinstance(installed, dict):
+        if isinstance(installed, list):
+            installed = {item.get("id", str(i)): item for i, item in enumerate(installed) if isinstance(item, dict)}
+        elif not isinstance(installed, dict):
             installed = {}
 
         entry = installed.get(preset_id)
@@ -147,7 +155,9 @@ def create_router() -> APIRouter:
         # Build a lookup for labels/descriptions
         detail_map = {d["id"]: d for d in mcp_details}
         installed = config.data.get("mcp_servers") or {}
-        if not isinstance(installed, dict):
+        if isinstance(installed, list):
+            installed = {item.get("id", str(i)): item for i, item in enumerate(installed) if isinstance(item, dict)}
+        elif not isinstance(installed, dict):
             installed = {}
         mcps = []
         for name in mcp_names:

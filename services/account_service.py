@@ -92,6 +92,8 @@ class AccountService:
             return False
         if account.get("status") in {"disabled", "limited", "error"}:
             return False
+        if "antigravity" in str(account.get("type") or "").split(","):
+            return False
         if bool(account.get("image_quota_unknown")):
             return True
         return int(account.get("quota") or 0) > 0
@@ -191,6 +193,7 @@ class AccountService:
                 token
                 for account in self._accounts.values()
                 if account.get("status") not in {"disabled", "error"}
+                   and "antigravity" not in str(account.get("type") or "").split(",")
                    and (token := account.get("access_token") or "")
                    and token not in excluded
             ]

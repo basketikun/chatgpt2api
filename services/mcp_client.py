@@ -134,12 +134,14 @@ def _session_key(url: str, api_key: str) -> str:
 
 def get_enabled_mcp_tools() -> list[dict[str, Any]]:
     """Collect OpenAI-format tools from all enabled MCP servers in config."""
-    installed = config.data.get("mcp_servers") or {}
-    if not isinstance(installed, dict):
+    installed = config.data.get("mcp_servers") or []
+    if isinstance(installed, dict):
+        installed = installed.values()
+    if not isinstance(installed, list):
         return []
 
     all_tools: list[dict[str, Any]] = []
-    for preset_id, info in installed.items():
+    for info in installed:
         if not info.get("enabled", True):
             continue
         url = info.get("url", "")
@@ -154,18 +156,20 @@ def get_enabled_mcp_tools() -> list[dict[str, Any]]:
         try:
             tools = session.get_tools()
             all_tools.extend(tools)
-            logger.info({"event": "mcp_tools_loaded", "name": info.get("name", preset_id), "count": len(tools)})
+            logger.info({"event": "mcp_tools_loaded", "name": info.get("name", "unknown"), "count": len(tools)})
         except Exception as exc:
-            logger.warning({"event": "mcp_session_failed", "name": info.get("name", preset_id), "error": str(exc)})
+            logger.warning({"event": "mcp_session_failed", "name": info.get("name", "unknown"), "error": str(exc)})
     return all_tools
 
 
 def call_mcp_tool(tool_name: str, arguments: dict[str, Any]) -> str | None:
     """Find which MCP session owns this tool and call it."""
-    installed = config.data.get("mcp_servers") or {}
-    if not isinstance(installed, dict):
+    installed = config.data.get("mcp_servers") or []
+    if isinstance(installed, dict):
+        installed = installed.values()
+    if not isinstance(installed, list):
         return None
-    for preset_id, info in installed.items():
+    for info in installed:
         if not info.get("enabled", True):
             continue
         url = info.get("url", "")

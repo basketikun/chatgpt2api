@@ -154,14 +154,15 @@ class AntigravityProvider:
         """Call Antigravity streamGenerateContent / generateContent."""
         access_token = account["access_token"]
         
-        # Load or generate project ID
-        project_id = account.get("project_id") or account.get("email")
-        if not project_id or not str(project_id).strip():
-            # Try fetching from loadCodeAssist API
+        # Load or generate project ID — NEVER use email (causes 403 CONSUMER_INVALID)
+        project_id = account.get("project_id") or ""
+        if not str(project_id).strip():
+            # Try fetching the real GCP project ID from loadCodeAssist API
             project_id = load_code_assist(access_token)
             if project_id:
                 account_service.update_account(access_token, {"project_id": project_id})
             else:
+                # Generate a decoy — will fail but allows graceful error vs email 403
                 project_id = generate_project_id()
 
         # Convert OpenAI request structures to Gemini structures
@@ -246,6 +247,18 @@ class AntigravityProvider:
                     else:
                         account_service.update_account(access_token, {"status": "disabled"})
                         raise RuntimeError("Antigravity OAuth token expired")
+
+                if resp.status_code == 429:
+                    # Quota exhausted — mark account as limited and raise immediately
+                    # so combo fallback can try next provider
+                    err_text = resp.text[:300]
+                    logger.warning({
+                        "event": "antigravity_quota_exhausted",
+                        "status": 429,
+                        "body": err_text,
+                    })
+                    account_service.update_account(access_token, {"status": "limited"})
+                    raise RuntimeError(f"Antigravity quota exhausted (429): {err_text}")
 
                 if resp.status_code >= 400:
                     err_text = resp.text[:500]

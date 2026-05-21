@@ -201,16 +201,18 @@ def _convert_request(messages, tools):
 
     si = {"parts": [{"text": "\n".join(system_parts)}]} if system_parts else None
 
-    gtools = None
+    gtools = []
     if tools:
         decls = [{"name": t.get("function", {}).get("name", ""),
                   "description": t.get("function", {}).get("description", ""),
                   "parameters": t.get("function", {}).get("parameters", {})} for t in tools]
         if decls:
-            gtools = [{"functionDeclarations": decls}]
-
+            gtools.append({"functionDeclarations": decls})
+            
+    # Auto-inject Google Search grounding to match ChatGPT's built-in browser behavior
+    gtools.append({"googleSearch": {}})
+    
     return contents, si, gtools
-
 
 def _parse_gemini_stream(response, model: str) -> Iterator[dict[str, Any]]:
     """Parse Gemini SSE stream → OpenAI chunks with native tool_calls support."""

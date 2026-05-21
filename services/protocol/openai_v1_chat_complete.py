@@ -637,7 +637,32 @@ def _handle_chatgpt_chat(
     from services.account_service import detect_token_audience, _TOKEN_AUDIENCE_OPENAI_API, _TOKEN_AUDIENCE_CHATGPT
     token = account_service.get_text_access_token()
 
-    if token and detect_token_audience(token) == _TOKEN_AUDIENCE_OPENAI_API:
+    is_openai_api = False
+    is_codex = False
+    if token:
+        if token.startswith("sk-"):
+            is_openai_api = True
+        else:
+            acc = account_service.get_account(token)
+            if acc:
+                acc_type = str(acc.get("type") or "").split(",")
+                if "codex" in acc_type:
+                    is_codex = True
+                elif ("standard" in acc_type or "openai" in acc_type) or (
+                    detect_token_audience(token) == _TOKEN_AUDIENCE_OPENAI_API
+                    and "free" not in acc_type
+                    and "antigravity" not in acc_type
+                ):
+                    is_openai_api = True
+
+    if is_codex:
+        logger.info({"event": "chatgpt_codex_routed", "token_type": "codex"})
+        import services.providers.openai_oauth as openai_oauth
+        return openai_oauth.codex_oauth.chat_completions(
+            messages, model=model, stream=stream, tools=tools, tool_choice=tool_choice, **body
+        )
+
+    if is_openai_api:
         # OpenAI API — native tools, all architectures
         logger.info({"event": "chatgpt_openai_api_routed"})
         default_model = config.openai_default_model or "gpt-4o"

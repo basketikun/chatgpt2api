@@ -33,7 +33,8 @@ const GROUPS: McpGroup[] = [
 export default function McpPage() {
   const { isCheckingAuth } = useAuthGuard(["admin"]);
   const [groups, setGroups] = useState<McpGroup[]>(GROUPS);
-  const [hubUrl, setHubUrl] = useState("http://172.16.10.38:8005");
+  const [hubUrl, setHubUrl] = useState("");
+
   const [connecting, setConnecting] = useState(false);
   const [saving, setSaving] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -44,15 +45,19 @@ export default function McpPage() {
       const data = presets.data?.presets || presets.presets || [];
       const installed: Record<string, boolean> = {};
       data.forEach((p: any) => { if (p.installed) installed[p.id] = true; });
-      setGroups(GROUPS.map(g => {
+      setGroups(prev => prev.map(g => {
         const count = g.mcps.filter(m => installed[m.id]).length;
-        return { ...g, installedCount: count, mcps: [...g.mcps] };
+        return { ...g, installedCount: count };
       }));
     } catch (e) { console.error(e); }
     setLoading(false);
   }, []);
 
-  useEffect(() => { loadStatus(); }, []);
+  useEffect(() => { 
+    const saved = localStorage.getItem("mcp_hub_url") || "http://vn-mcp-hub:8005";
+    setHubUrl(saved);
+    loadStatus(); 
+  }, []);
 
   const connectHub = async () => {
     setConnecting(true);
@@ -73,6 +78,8 @@ export default function McpPage() {
       }
     } catch (e) { alert("Không kết nối được Hub"); }
     setConnecting(false);
+    // Remove loadStatus() call here to prevent overwriting URL state immediately after connecting,
+    // or just let it run since loadStatus now uses prev state.
     loadStatus();
   };
 
@@ -81,7 +88,6 @@ export default function McpPage() {
     const allInstalled = group.installedCount === group.totalCount;
     let delta = 0;
     for (const m of group.mcps) {
-      if (!m.url) continue;
       try {
         if (allInstalled) {
           await request.post(`/api/mcp/uninstall/${m.id}`);
@@ -106,13 +112,13 @@ export default function McpPage() {
       <div>
         <h1 className="text-2xl font-bold">MCP Servers</h1>
         <p className="text-muted-foreground text-sm mt-1">
-          Kết nối vn-mcp-hub. Bật/tắt nhóm MCP. Chi tiết từng MCP quản lý tại <a href="http://172.16.10.38:8005/studio" target="_blank" className="text-primary underline">Studio</a>.
+          Kết nối vn-mcp-hub. Bật/tắt nhóm MCP. Chi tiết từng MCP quản lý tại <a href={`${hubUrl}/studio`} target="_blank" className="text-primary underline">Studio</a>.
         </p>
       </div>
 
       <div className="flex gap-2 items-end">
         <div className="flex-1">
-          <Input value={hubUrl} onChange={(e) => setHubUrl(e.target.value)} placeholder="http://172.16.10.38:8005" />
+          <Input value={hubUrl} onChange={(e) => setHubUrl(e.target.value)} placeholder="http://vn-mcp-hub:8005" />
         </div>
         <Button onClick={connectHub} disabled={connecting}>{connecting ? "..." : "Kết nối Hub"}</Button>
       </div>
