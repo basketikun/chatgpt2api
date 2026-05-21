@@ -167,7 +167,7 @@ type SettingsStore = {
 
   initialize: () => Promise<void>;
   loadConfig: () => Promise<void>;
-  saveConfig: () => Promise<boolean>;
+  saveConfig: (updatedConfig?: SettingsConfig) => Promise<boolean>;
   loadBackups: (silent?: boolean) => Promise<void>;
   runBackup: () => Promise<void>;
   removeBackup: (key: string) => Promise<void>;
@@ -296,8 +296,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     }
   },
 
-  saveConfig: async () => {
-    const { config } = get();
+  saveConfig: async (updatedConfig) => {
+    const config = updatedConfig || get().config;
     if (!config) {
       return false;
     }
