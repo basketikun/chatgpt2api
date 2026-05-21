@@ -269,7 +269,10 @@ def create_app() -> FastAPI:
             url = form.get("url")
             
             raw_text = ""
+            source_type = "unknown"
+            
             if url:
+                source_type = "url"
                 try:
                     from bs4 import BeautifulSoup
                 except ImportError:
@@ -280,8 +283,15 @@ def create_app() -> FastAPI:
                 html = resp.read().decode("utf-8", errors="ignore")
                 soup = BeautifulSoup(html, "html.parser")
                 raw_text = soup.get_text(separator="\n", strip=True)
+                if not raw_text.strip():
+                    return {"ok": False, "error": "URL cung cấp không chứa nội dung văn bản (có thể là trang web trống, chống bot, hoặc chỉ chứa hình ảnh)."}
+                    
             elif file and hasattr(file, "read"):
+                source_type = "file"
                 content = await file.read()
+                if not content:
+                    return {"ok": False, "error": "File bạn tải lên rỗng (0 bytes)."}
+                    
                 filename = file.filename.lower()
                 if filename.endswith(".pdf"):
                     try:
@@ -293,11 +303,19 @@ def create_app() -> FastAPI:
                         text = page.extract_text()
                         if text:
                             raw_text += text + "\n"
+                    if not raw_text.strip():
+                        return {"ok": False, "error": "Đây là file PDF dạng ảnh chụp (scanned) hoặc file PDF không có lớp văn bản. Hệ thống hiện chỉ hỗ trợ PDF có text chuẩn."}
+                elif filename.endswith(".docx") or filename.endswith(".doc"):
+                    return {"ok": False, "error": "Hiện tại hệ thống chưa hỗ trợ định dạng Word (.docx). Vui lòng chuyển sang .PDF hoặc copy ra file .TXT rồi thử lại."}
                 else:
                     raw_text = content.decode("utf-8", errors="ignore")
+                    if not raw_text.strip():
+                        return {"ok": False, "error": "File văn bản không hợp lệ hoặc không có nội dung chữ."}
+            else:
+                return {"ok": False, "error": "Không nhận được URL hay File hợp lệ từ trình duyệt."}
             
             if not raw_text.strip():
-                return {"ok": False, "error": "Khong the trich xuat van ban tu nguon."}
+                return {"ok": False, "error": "Lỗi không xác định: Không thể trích xuất văn bản từ nguồn."}
             
             from src.rag.scheduler import _synthesize_with_ai
             title_hint = file.filename if file else url
