@@ -158,7 +158,7 @@ Truy cập trang `http://[IP_MÁY_CHỦ]:8005/studio` để mở giao diện ki�
 - **Khái niệm**: RAG (Retrieval-Augmented Generation) là kho kiến thức bạn tự dạy cho AI.
 - **Cách sử dụng**:
   - Tại đây có sẵn các kho: Điện nước, Sơ cứu y tế, Luật.
-  - Bạn có thể bấm **Create New KB**, tải lên file PDF tài liệu công ty hoặc file TXT hướng dẫn gia đình. Hub sẽ tự động băm nhỏ (chunking) và nhét vào Chroma DB. AI sau này sẽ tự ưu tiên tìm trong kho này trước khi tra Google.
+  - Bạn có thể bấm **Create New KB**, dán nội dung (copy & paste) từ tài liệu công ty hoặc hướng dẫn gia đình (dưới dạng văn bản hoặc Markdown) vào ô nội dung. Hub sẽ tự động băm nhỏ (chunking) và nhét vào Chroma DB. AI sau này sẽ tự ưu tiên tìm trong kho này trước khi tra Google.
 
 ### 2. Tab Multi-Search (Cấu Hình Tìm Kiếm)
 - **Công dụng**: Chọn các Search Engine quốc tế để AI quét dữ liệu thời gian thực.
