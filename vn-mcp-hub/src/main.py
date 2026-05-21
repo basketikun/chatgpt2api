@@ -208,6 +208,29 @@ def create_app() -> FastAPI:
         ok = upload_collection(collection)
         return {"ok": ok, "collection": collection}
 
+    @app.post("/api/rag/refresh/{collection}")
+    async def rag_force_refresh(collection: str):
+        """Force manual AI refresh for a specific collection."""
+        from src.rag.scheduler import _run_refresh, _get_refresh_queries
+        from src.rag.meta import read_meta, touch
+        import threading
+        
+        def _do_refresh():
+            meta = read_meta(collection)
+            queries = _get_refresh_queries(collection, meta)
+            total = _run_refresh(collection, queries)
+            if total > 0:
+                from datetime import datetime, timezone
+                touch(collection, chunks=total, source=f"manual_ai/{datetime.now(timezone.utc).strftime('%Y-%m-%d')}")
+                try:
+                    from src.rag.cloud import sync_collection_2way
+                    sync_collection_2way(collection)
+                except Exception:
+                    pass
+
+        threading.Thread(target=_do_refresh, daemon=True).start()
+        return {"ok": True, "message": "Dang chay ngam qua trinh AI tong hop..."}
+
     @app.post("/api/rag/curate/{collection}")
     async def rag_curate(collection: str, request: Request):
         """Add curated content to a RAG collection + upload to R2.

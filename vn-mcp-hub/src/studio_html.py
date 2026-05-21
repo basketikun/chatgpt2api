@@ -191,7 +191,9 @@ async function refresh() {
   if (!data.mcps || !data.mcps.length) { tbody.innerHTML = '<tr><td colspan="6">Chua co MCP.</td></tr>'; return; }
   tbody.innerHTML = data.mcps.map(m => {
     const builtin = m.builtin;
+    const refreshBtn = m.name.startsWith('kb_') ? `<button class="btn-go btn-sm" onclick="forceRefresh('${m.name}')" style="margin-right:4px">Update</button>` : '';
     const delBtn = builtin ? '' : `<button class="btn-del btn-sm" onclick="del('${m.name}')">Xoa</button>`;
+    const actions = refreshBtn + delBtn;
     const badge = builtin ? '<span class="badge badge-ok">built-in</span>' : '<span class="badge badge-warn">dynamic</span>';
     const srcCfg = allSources[m.name] || {}; const srcCount = Object.keys(srcCfg).length;
     const srcBtn = srcCount > 0 ? `<button class="expand-btn" onclick="toggleSources('${m.name}')">${srcCount} src</button>` : '';
@@ -210,8 +212,17 @@ async function refresh() {
         return `<div class="src-row"><div><label>${k}</label>${helpHtml}${keyHtml}</div><input type="checkbox" class="src-toggle" ${enabled?'checked':''} onchange="toggleSource('${m.name}','${k}',this.checked)"></div>`;
       }).join('') + '</div>';
     }
-    return `<tr><td>${badge} ${m.name}</td><td>${m.label||m.name}</td><td>${m.chunks||'-'}</td><td>${ageBtn}</td><td>${srcBtn}</td><td>${delBtn}</td></tr><tr id="src-row-${m.name}" style="display:none"><td colspan="6">${srcPanel}</td></tr>`;
+    return `<tr><td>${badge} ${m.name}</td><td>${m.label||m.name}</td><td>${m.chunks||'-'}</td><td>${ageBtn}</td><td>${srcBtn}</td><td>${actions}</td></tr><tr id="src-row-${m.name}" style="display:none"><td colspan="6">${srcPanel}</td></tr>`;
   }).join('');
+}
+async function forceRefresh(name) {
+  if (!confirm('Chay tong hop AI thu cong cho ' + name + '? (Mat vai phut)')) return;
+  toast('Dang kich hoat tong hop AI...', true);
+  try {
+    const r = await fetch('/api/rag/refresh/' + encodeURIComponent(name), {method: 'POST'});
+    const d = await r.json();
+    toast(d.message || 'Da gui yeu cau', d.ok);
+  } catch(e) { toast('Loi', false); }
 }
 function toggleSources(name) { const row = document.getElementById('src-row-'+name), panel = document.getElementById('src-'+name); if (row && panel) { const open = row.style.display !== 'none'; row.style.display = open ? 'none' : 'table-row'; panel.className = 'src-panel' + (open ? '' : ' open'); } }
 async function toggleSource(mcp, source, enabled) { await fetch(API+'/sources/'+encodeURIComponent(mcp),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({[source]:enabled})}); toast(source+' '+(enabled?'ON':'OFF'),true); }
