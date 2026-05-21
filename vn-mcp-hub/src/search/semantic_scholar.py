@@ -34,9 +34,17 @@ def semantic_scholar_search(query: str, limit: int = 5) -> list[dict[str, Any]]:
         if time.time() - ts < _CACHE_TTL:
             return cached
 
-    for attempt in range(2):
+    # Retrieve API key if available
+    from src.sources_config import get_api_key
+    api_key = get_api_key("semantic_scholar")
+    headers = dict(HEADERS)
+    if api_key:
+        headers["x-api-key"] = api_key
+
+    data = {}
+    for attempt in range(3):
         try:
-            with httpx.Client(timeout=10.0, headers=HEADERS) as client:
+            with httpx.Client(timeout=10.0, headers=headers) as client:
                 r = client.get(
                     SS_API,
                     params={
@@ -49,8 +57,10 @@ def semantic_scholar_search(query: str, limit: int = 5) -> list[dict[str, Any]]:
                 data = r.json()
             break
         except Exception as exc:
-            if attempt == 0 and "429" in str(exc):
-                time.sleep(2)
+            if attempt < 2 and ("429" in str(exc) or "too many requests" in str(exc).lower()):
+                sleep_time = (attempt + 1) * 2
+                logger.info("Semantic Scholar rate limited (429). Retrying in %d seconds...", sleep_time)
+                time.sleep(sleep_time)
                 continue
             logger.warning("Semantic Scholar search failed: %s", exc)
             return []

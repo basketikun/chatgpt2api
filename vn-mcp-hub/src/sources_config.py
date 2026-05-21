@@ -63,6 +63,7 @@ SOURCE_HELP: dict[str, dict[str, str]] = {
     "federated_search": {
         "brave": "Cần BRAVE_API_KEY. Đăng ký free 2000 queries/tháng tại brave.com/search/api",
         "mojeek": "Cần MOJEEK_API_KEY. Đăng ký free tier tại mojeek.com/search/api",
+        "semantic_scholar": "Nhập SEMANTIC_SCHOLAR_API_KEY (không bắt buộc) từ api.semanticscholar.org để tránh lỗi 429 (Rate Limit).",
     },
     "vn_news": {
         "google_news": "Google News RSS có thể bị chặn ở một số quốc gia. Dùng VPN nếu cần.",
@@ -74,6 +75,7 @@ SOURCE_ENV_MAP = {
     "accuweather": "ACCUWEATHER_API_KEY",
     "brave": "BRAVE_API_KEY",
     "mojeek": "MOJEEK_API_KEY",
+    "semantic_scholar": "SEMANTIC_SCHOLAR_API_KEY",
 }
 
 
