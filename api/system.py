@@ -283,6 +283,14 @@ class RestoreRequest(BaseModel):
     path: str = ""
 
 
+class CodexExchangeRequest(BaseModel):
+    redirect_url: str = ""
+
+
+class AntigravityExchangeRequest(BaseModel):
+    redirect_url: str = ""
+
+
 def create_router(app_version: str) -> APIRouter:
     router = APIRouter()
 
@@ -678,9 +686,6 @@ def create_router(app_version: str) -> APIRouter:
         except Exception as exc:
             raise HTTPException(status_code=400, detail={"error": str(exc)})
 
-    class CodexExchangeRequest(BaseModel):
-        redirect_url: str = ""
-
     @router.post("/api/oauth/codex/exchange")
     async def codex_oauth_exchange(body: CodexExchangeRequest, authorization: str | None = Header(default=None)):
         """Exchange Codex OAuth code manually — user pastes redirect URL."""
@@ -717,9 +722,6 @@ def create_router(app_version: str) -> APIRouter:
             "4. Dán URL đó vào POST /api/oauth/antigravity/exchange với body {\"redirect_url\": \"URL_DA_COPY\"}"
         )
         return result
-
-    class AntigravityExchangeRequest(BaseModel):
-        redirect_url: str = ""
 
     @router.post("/api/oauth/antigravity/exchange")
     async def antigravity_oauth_exchange(body: AntigravityExchangeRequest, authorization: str | None = Header(default=None)):
