@@ -24,14 +24,18 @@ _patched = False
 
 
 def _patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
-    """Cached getaddrinfo — resolves once in main thread, returns cached from threads."""
-    key = (host, port, family, type, proto, flags)
+    """Cached getaddrinfo — resolves once in main thread, returns cached from threads.
+
+    Cache key is (host, port) only — httpx may call with different family/type/flags
+    than pre_resolve(), but the DNS result is the same.
+    """
+    broad_key = (host, port)
     with _lock:
-        if key in _cache:
-            return _cache[key]
+        if broad_key in _cache:
+            return _cache[broad_key]
     result = _original(host, port, family, type, proto, flags)
     with _lock:
-        _cache[key] = result
+        _cache[broad_key] = result
     return result
 
 
@@ -63,22 +67,12 @@ pre_resolve()
 
 def get_ip(hostname: str) -> str:
     """Get cached IP from pre-resolved cache. Returns hostname if not cached."""
-    # pre_resolve stores with (host, 443, 0, 0, 0, 0) — match that key
-    key = (hostname, 443, 0, 0, 0, 0)
+    broad_key = (hostname, 443)
     with _lock:
-        if key in _cache:
-            result = _cache[key]
+        if broad_key in _cache:
+            result = _cache[broad_key]
             if result:
                 return result[0][4][0]
-    # Try other common key patterns
-    for fam in (0, socket.AF_INET):
-        for typ in (0, socket.SOCK_STREAM):
-            k = (hostname, 443, fam, typ, 0, 0)
-            with _lock:
-                if k in _cache:
-                    result = _cache[k]
-                    if result:
-                        return result[0][4][0]
     # Fallback
     try:
         info = _original(hostname, 443, socket.AF_INET)
