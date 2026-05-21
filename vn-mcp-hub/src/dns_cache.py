@@ -63,15 +63,25 @@ pre_resolve()
 
 def get_ip(hostname: str) -> str:
     """Get cached IP from pre-resolved cache. Returns hostname if not cached."""
-    key = (hostname, 443, socket.AF_INET, socket.SOCK_STREAM, 6, 0)
+    # pre_resolve stores with (host, 443, 0, 0, 0, 0) — match that key
+    key = (hostname, 443, 0, 0, 0, 0)
     with _lock:
         if key in _cache:
             result = _cache[key]
             if result:
                 return result[0][4][0]
-    # Fallback: try resolving now
+    # Try other common key patterns
+    for fam in (0, socket.AF_INET):
+        for typ in (0, socket.SOCK_STREAM):
+            k = (hostname, 443, fam, typ, 0, 0)
+            with _lock:
+                if k in _cache:
+                    result = _cache[k]
+                    if result:
+                        return result[0][4][0]
+    # Fallback
     try:
         info = _original(hostname, 443, socket.AF_INET)
         return info[0][4][0]
     except Exception:
-        return hostname  # Return hostname — will fail but at least not crash
+        return hostname
