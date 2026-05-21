@@ -20,21 +20,21 @@ def archive_search(query: str, limit: int = 5) -> list[dict[str, Any]]:
     for attempt in range(2):
         try:
             with httpx.Client(timeout=20.0) as client:
-            r = client.get(ARCHIVE_URL, params={
-                "q": f"title:({query}) OR description:({query})",
-                "fl[]": "identifier,title,description,year,mediatype",
-                "rows": min(limit, 10),
-                "output": "json",
-            })
-            r.raise_for_status()
-        data = r.json()
-        break
-    except Exception as exc:
-        if attempt == 0:
-            import time; time.sleep(1)
-            continue
-        logger.warning("Internet Archive search failed: %s", exc)
-        return []
+                r = client.get(ARCHIVE_URL, params={
+                    "q": f"title:({query}) OR description:({query})",
+                    "fl[]": "identifier,title,description,year,mediatype",
+                    "rows": min(limit, 10),
+                    "output": "json",
+                })
+                r.raise_for_status()
+                data = r.json()
+            break
+        except Exception as exc:
+            if attempt == 0:
+                import time; time.sleep(1)
+                continue
+            logger.warning("Internet Archive search failed: %s", exc)
+            return []
 
     results: list[dict[str, Any]] = []
     for doc in (data.get("response", {}).get("docs") or [])[:limit]:

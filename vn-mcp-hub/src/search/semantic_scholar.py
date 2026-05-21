@@ -37,23 +37,23 @@ def semantic_scholar_search(query: str, limit: int = 5) -> list[dict[str, Any]]:
     for attempt in range(2):
         try:
             with httpx.Client(timeout=10.0, headers=HEADERS) as client:
-            r = client.get(
-                SS_API,
-                params={
-                    "query": query,
-                    "limit": min(limit, 10),
-                    "fields": "title,year,abstract,citationCount,url",
-                },
-            )
-            r.raise_for_status()
-        data = r.json()
-        break
-    except Exception as exc:
-        if attempt == 0 and "429" in str(exc):
-            import time; time.sleep(2)
-            continue
-        logger.warning("Semantic Scholar search failed: %s", exc)
-        return []
+                r = client.get(
+                    SS_API,
+                    params={
+                        "query": query,
+                        "limit": min(limit, 10),
+                        "fields": "title,year,abstract,citationCount,url",
+                    },
+                )
+                r.raise_for_status()
+                data = r.json()
+            break
+        except Exception as exc:
+            if attempt == 0 and "429" in str(exc):
+                time.sleep(2)
+                continue
+            logger.warning("Semantic Scholar search failed: %s", exc)
+            return []
 
     results: list[dict[str, Any]] = []
     for paper in (data.get("data") or [])[:limit]:

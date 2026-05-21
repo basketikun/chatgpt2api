@@ -38,7 +38,6 @@ def _scheduler_loop(stop_event: threading.Event) -> None:
             try:
                 from src.rag.cloud import restore_all_from_r2
                 n = restore_all_from_r2()
-                n = restore_all_from_r2()
                 if n > 0:
                     logger.info("Scheduler: synced %d chunks from R2", n)
             except Exception as exc:
