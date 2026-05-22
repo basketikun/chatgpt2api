@@ -171,9 +171,11 @@ def format_states_context() -> str:
 
     # Show ALL devices with name + entity_id
     lines = [
-        "## Smart Home — All Devices",
-        f"Tổng: {len(states)} thiết bị. Dùng entity_id để điều khiển trực tiếp.",
-        f"Tự động cập nhật mỗi {ttl}s hoặc vào: {', '.join(refresh_times) if refresh_times else 'không có lịch'}.",
+        "## Smart Home — Device Registry",
+        f"Danh sách {len(states)} thiết bị (tên | entity_id).",
+        "Trạng thái bên dưới là cached — dùng `ha_get_state` để lấy REAL-TIME.",
+        "Điều khiển: dùng `ha_call_service` với entity_id từ danh sách này.",
+        f"Tự động cập nhật danh sách mỗi {ttl}s hoặc vào: {', '.join(refresh_times) if refresh_times else 'không có lịch'}.",
         "",
     ]
 
@@ -192,6 +194,27 @@ def format_states_context() -> str:
         if len(entities) > _MAX_PER_DOMAIN:
             lines.append(f"  ... còn {len(entities) - _MAX_PER_DOMAIN} thiết bị [{domain}]")
 
+    lines.append("")
+    lines.append("## Available Services (per domain)")
+    lines.append("| Domain | Services |")
+    lines.append("|--------|----------|")
+    service_map = {
+        "light": "turn_on, turn_off, toggle",
+        "switch": "turn_on, turn_off, toggle",
+        "climate": "set_temperature, set_hvac_mode, turn_on, turn_off",
+        "cover": "open_cover, close_cover, stop_cover, set_cover_position",
+        "lock": "lock, unlock",
+        "fan": "turn_on, turn_off, set_speed",
+        "media_player": "media_play, media_pause, volume_set, turn_on, turn_off",
+        "scene": "turn_on",
+        "script": "turn_on",
+        "automation": "turn_on, turn_off, trigger",
+        "vacuum": "start, stop, return_to_base",
+        "camera": "snapshot",
+    }
+    for domain, services in service_map.items():
+        if domain in by_domain:
+            lines.append(f"| {domain} | {services} |")
     lines.append("")
     lines.append(f"Hiển thị {total_shown}/{len(states)} thiết bị. Dùng `ha_search_entities` nếu chưa thấy.")
 
