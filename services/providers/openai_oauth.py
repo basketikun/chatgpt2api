@@ -234,11 +234,14 @@ class CodexOAuthProvider:
                 if isinstance(enabled, list):
                     for m in enabled:
                         m = str(m).strip()
-                        if not m or m == "auto":
+                        if not m:
                             continue
                         if m.startswith("cx/"):
                             m = m[3:]
-                        if m and m not in user_order:
+                        # Skip "auto" placeholder AFTER stripping prefix
+                        if not m or m == "auto":
+                            continue
+                        if m not in user_order:
                             user_order.append(m)
                 models_to_try = user_order if user_order else list(CODEX_AUTO_FALLBACK)
             except Exception:
