@@ -22,20 +22,22 @@ mcp = FastMCP("vn_stock")
 
 
 def _get_quote(symbol: str) -> dict[str, Any] | None:
-    """Lấy quote intraday từ vnstock. Tự failover giữa các nguồn."""
+    """Lấy quote từ vnstock. Tự failover giữa các nguồn."""
     try:
         from vnstock import Market
-        df = Market().quote.intraday(symbol=symbol.upper(), show_log=False)
+        df = Market().quote(symbol=symbol.upper(), show_log=False)
         if df is not None and not df.empty:
-            row = df.iloc[-1] if len(df) > 1 else df.iloc[0]
+            row = df.iloc[0]
+            from datetime import datetime, timezone
+            ts = row.get("time", 0)
+            time_str = datetime.fromtimestamp(int(ts)/1000, tz=timezone.utc).strftime("%H:%M:%S %d/%m/%Y") if ts else ""
             return {
                 "symbol": symbol.upper(),
                 "price": float(row.get("price", 0)),
                 "change": float(row.get("change", 0)) if "change" in row else 0,
                 "pct_change": float(row.get("pct_change", 0)) if "pct_change" in row else 0,
-                "volume": int(row.get("volume", 0)) if "volume" in row else 0,
-                "time": str(row.get("time", "")) if "time" in row else "",
-                "raw": row.to_dict(),
+                "volume": int(row.get("total_volume", row.get("volume", 0))),
+                "time": time_str,
             }
     except Exception as exc:
         logger.info("vnstock quote failed for %s: %s", symbol, exc)
@@ -118,9 +120,12 @@ def get_market_overview() -> str:
     """Lấy tổng quan thị trường: VN-Index, top tăng/giảm."""
     try:
         from vnstock import Market
-        df = Market().quote.intraday(symbol="VNINDEX", show_log=False)
+        df = Market().quote(symbol="VNINDEX", show_log=False)
         if df is not None and not df.empty:
-            row = df.iloc[-1]
+            row = df.iloc[0]
+            from datetime import datetime, timezone
+            ts = row.get("time", 0)
+            time_str = datetime.fromtimestamp(int(ts)/1000, tz=timezone.utc).strftime("%H:%M:%S %d/%m/%Y") if ts else ""
             price = float(row.get("price", 0))
             change = float(row.get("change", 0)) if "change" in row else 0
             pct = float(row.get("pct_change", 0)) if "pct_change" in row else 0
