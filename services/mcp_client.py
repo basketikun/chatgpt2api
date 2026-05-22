@@ -95,17 +95,13 @@ class MCPSession:
     def ensure_connected(self) -> bool:
         """Initialize session if not connected. Returns True on success."""
         now = time.time()
-        # Fast path check for both success and recent failure (30s cooldown)
+        # Fast path check for session validity (5 min TTL)
         if self.session_id and (now - self._last_init) < 300:
             return True
-        if not self.session_id and (now - getattr(self, '_last_fail', 0)) < 30:
-            return False
 
         with self._lock:
             if self.session_id and (now - self._last_init) < 300:
                 return True
-            if not self.session_id and (now - getattr(self, '_last_fail', 0)) < 30:
-                return False
 
             init = self._call("initialize", {
                 "protocolVersion": "0.1.0",
@@ -114,7 +110,6 @@ class MCPSession:
             })
             if not init:
                 self.session_id = None
-                self._last_fail = now
                 return False
 
             self.server_name = init.get("result", {}).get("serverInfo", {}).get("name", "")
