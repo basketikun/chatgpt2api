@@ -123,7 +123,7 @@ async def handle_webhook(request) -> dict:
         req = urllib.request.Request(f"{base_url}/chat/completions",
             data=json.dumps(payload).encode(),
             headers={"Authorization": f"Bearer {auth_header}", "Content-Type": "application/json"})
-        resp = urllib.request.urlopen(req, timeout=90)
+        resp = urllib.request.urlopen(req, timeout=180)
         reply = json.loads(resp.read().decode()).get("choices", [{}])[0].get("message", {}).get("content", "")
         reply = reply.strip() or "..."
     except Exception as exc:
