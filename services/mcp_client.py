@@ -104,13 +104,16 @@ class MCPSession:
                 return True
 
             init = self._call("initialize", {
-                "protocolVersion": "0.1.0",
+                "protocolVersion": "2024-11-05",
                 "capabilities": {},
                 "clientInfo": {"name": "chatgpt2api", "version": "1.0"},
             })
             if not init:
                 self.session_id = None
                 return False
+
+            # Send initialized notification (required by MCP spec)
+            self._call("notifications/initialized")
 
             self.server_name = init.get("result", {}).get("serverInfo", {}).get("name", "")
             # Fetch tools
