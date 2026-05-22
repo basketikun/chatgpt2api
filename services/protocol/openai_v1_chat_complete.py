@@ -1443,10 +1443,12 @@ def _handle_antigravity_chat(
 
 def _inject_mcp_tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
     """Inject tools from enabled MCP servers + HA into the tools list."""
+    logger.info({"event": "mcp_inject_start", "input_tools": len(tools or [])})
     try:
         from services.mcp_client import get_enabled_mcp_tools
         from services.ha_client import get_ha_tools
         mcp_tools = get_enabled_mcp_tools()
+        logger.info({"event": "mcp_inject_got_tools", "count": len(mcp_tools)})
         
         tools = list(tools or [])
         existing_names = {t.get("function", {}).get("name", "") for t in tools}
