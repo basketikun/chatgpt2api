@@ -333,6 +333,11 @@ export default function ModelsPage() {
                           .replace("gemini_free/", "")
                           .replace("openrouter/", "");
 
+                        // Position in enabled list (1-based) — shows which order /auto tries
+                        const enabledList = settings.enabled_models[provider] || [];
+                        const orderIdx = enabled ? enabledList.indexOf(modelId) : -1;
+                        const orderNum = orderIdx >= 0 ? orderIdx + 1 : null;
+
                         return (
                           <div key={modelId} className="group flex items-center gap-2">
                             {/* Toggle checkbox */}
@@ -348,6 +353,16 @@ export default function ModelsPage() {
                             >
                               {enabled && <Check className="size-3 text-emerald-400" />}
                             </button>
+
+                            {/* Order badge (only when enabled) */}
+                            {orderNum !== null && (
+                              <span
+                                className="inline-flex items-center justify-center size-5 rounded-full bg-indigo-500/15 text-indigo-600 text-[10px] font-bold shrink-0"
+                                title={`Thứ tự ưu tiên: ${orderNum}`}
+                              >
+                                {orderNum}
+                              </span>
+                            )}
 
                             {/* Model name */}
                             <span
