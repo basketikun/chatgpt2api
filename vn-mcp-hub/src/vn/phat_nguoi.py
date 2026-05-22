@@ -125,78 +125,47 @@ def check_traffic_violation(plate: str, vehicle_type: str = "oto") -> str:
         return f"Loại xe '{vehicle_type}' không hợp lệ. Chọn: ô tô, xe máy, xe đạp điện."
     code, vt_label = vt
 
-    # ── Query: try phatnguoi.vn API first (simpler, no captcha) ──
+    # ── 1) Try phatnguoi.vn (simpler, no captcha) with retry ──
     import requests as req_lib
-    import json
+    import json as _json
 
-    # 1) Try phatnguoi.vn
     vtype_map = {"1": 1, "2": 2, "3": 3}
     pn_url = f"https://api.phatnguoi.vn/tra-cuu/{norm_plate.replace('-', '')}/{vtype_map.get(code, 1)}"
-    try:
-        r = req_lib.get(pn_url, headers=HEADERS, timeout=10)
-        if r.status_code == 200 and len(r.text) > 50:
-            try:
-                data = json.loads(r.text)
-                if data.get("status") and data.get("data"):
-                    violations = []
-                    for item in data["data"]:
-                        if isinstance(item, dict):
-                            v = {}
-                            for k, val in item.items():
-                                v[k] = val
-                            violations.append(v)
-                    if violations:
-                        return _format_violations(violations, norm_plate, vt_label)
-            except json.JSONDecodeError:
-                pass  # Not JSON, try HTML parsing
-    except Exception:
-        pass
 
-    # 2) Fallback: csgt.vn with captcha
-    session = req_lib.Session()
-    session.headers.update(HEADERS)
-
-    try:
-        session.get(RESULTS_URL, timeout=15)
-    except Exception:
-        pass
-
-    violations = None
-    for attempt in range(1, MAX_RETRIES + 1):
+    for pn_attempt in range(3):
         try:
-            r_cap = session.get(CAPTCHA_URL, timeout=15)
-            if len(r_cap.content) < 200 or "html" in r_cap.headers.get("content-type", ""):
-                continue  # Not an image
-            captcha_text = _solve_captcha(r_cap.content)
-            if not captcha_text or captcha_text == "0000":
-                continue
-
-            form_data = {
-                "BienKS": norm_plate.replace("-", ""), "Xe": code,
-                "captcha": captcha_text, "ipClient": "1.1.1.1", "cUrl": "1",
-            }
-            r_post = session.post(FORM_ENDPOINT, data=form_data,
-                headers={"Content-Type": "application/x-www-form-urlencoded"}, timeout=20)
-            if r_post.text.strip() in ("404", "") or r_post.status_code == 404:
-                continue
-
-            params = {"LoaiXe": code, "BienKiemSoat": norm_plate.replace("-", "")}
-            r_result = session.get(RESULTS_URL, params=params, timeout=20)
-            r_result.encoding = "utf-8"
-            violations = _parse_violations(r_result.text)
-            break
+            r = req_lib.get(pn_url, headers=HEADERS, timeout=15)
+            if r.status_code == 200 and len(r.text) > 50:
+                try:
+                    data = _json.loads(r.text)
+                    if data.get("status") and data.get("data"):
+                        violations = []
+                        for item in data["data"]:
+                            if isinstance(item, dict):
+                                violations.append(item)
+                        if violations:
+                            return _format_violations(violations, norm_plate, vt_label)
+                    # status=false or empty data → no violations
+                    if isinstance(data.get("data"), list) and len(data.get("data", [])) == 0:
+                        # Could be "no violations" or "overloaded"
+                        msg = str(data.get("message", "")).lower()
+                        if "quá tải" in msg or "qua tai" in msg:
+                            continue  # Retry
+                        return _format_violations([], norm_plate, vt_label)
+                except _json.JSONDecodeError:
+                    pass
         except Exception:
             pass
 
-    # 3) Format results
-    if violations is None:
-        return (
-            f"**Tra cứu phạt nguội cho {vt_label} biển số {norm_plate}:**\n\n"
-            f"⚠️ Tra cứu thất bại sau {MAX_RETRIES} lần thử.\n"
-            f"Vui lòng tra cứu thủ công: {BASE_URL}/tra-cuu-phuong-tien-vi-pham.html"
-        )
-
-    return _format_violations(violations, norm_plate, vt_label)
+    # ── 2) Fallback: return manual instructions ──
+    return (
+        f"**Tra cứu phạt nguội cho {vt_label} biển số {norm_plate}:**\n\n"
+        f"⚠️ Hệ thống đang quá tải, không thể tra cứu tự động.\n\n"
+        f"Vui lòng tra cứu thủ công:\n"
+        f"- {BASE_URL}/tra-cuu-phuong-tien-vi-pham.html\n"
+        f"- https://phatnguoi.vn\n\n"
+        f"Chọn **{vt_label}**, nhập `{norm_plate}`, giải CAPTCHA, bấm Tra cứu."
+    )
 
 
 def _format_violations(violations: list, norm_plate: str, vt_label: str) -> str:
