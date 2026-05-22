@@ -37,6 +37,11 @@ MAX_REFRESH_WORKERS = 4
 # Cooldown after a failed refresh attempt (seconds)
 REFRESH_FAILURE_COOLDOWN = 300  # 5 minutes
 
+# Auto-reset disabled accounts after this many seconds (give them another chance)
+# Free accounts often get marked disabled on transient 401/403, so we periodically
+# reset them so the rotation pool can try again.
+DISABLED_RESET_AFTER = 6 * 3600  # 6 hours
+
 
 @dataclass(order=True)
 class QuotaCheckItem:
@@ -110,7 +115,24 @@ class QuotaWatcher:
             status = str(account.get("status", ""))
             quota = int(account.get("quota") or 0)
 
-            # Skip disabled/abnormal accounts
+            # Auto-reset disabled accounts after DISABLED_RESET_AFTER — give free
+            # accounts another chance since they often got 401/403 transiently.
+            if status == "disabled":
+                last_used_str = account.get("last_used_at") or ""
+                last_used_ts = _parse_iso_timestamp(last_used_str) if last_used_str else None
+                if last_used_ts is None or (now - last_used_ts) >= DISABLED_RESET_AFTER:
+                    try:
+                        account_service.update_account(acc_id, {"status": "active"})
+                        logger.info({
+                            "event": "quota_watcher_disabled_reset",
+                            "account_id": acc_id[:20] + "...",
+                            "hours_since_last_used": int((now - last_used_ts) / 3600) if last_used_ts else None,
+                        })
+                        status = "active"
+                    except Exception as exc:
+                        logger.warning({"event": "quota_watcher_reset_failed", "error": str(exc)})
+
+            # Skip still-disabled or error accounts
             if status in ("disabled", "error"):
                 continue
 
