@@ -16,19 +16,36 @@ from utils.log import logger
 # ── Module-level state cache ────────────────────────────────────────────────
 _state_cache: list[dict] = []
 _state_cache_ts: float = 0.0
-_context_cache: str = ""          # Pre-computed context string
+_context_cache: str = ""
 _context_cache_ts: float = 0.0
 _state_cache_lock = threading.Lock()
-_CACHE_TTL = 60  # seconds (configurable via home_assistant.refresh_interval)
+_DEFAULT_TTL = 3600  # 1 hour default (only refresh at scheduled times or interval)
+_scheduler_started = False
+
+
+def _get_ha_settings() -> dict:
+    """Get HA settings: url, token, refresh_interval, refresh_times."""
+    try:
+        return config.data.get("home_assistant") or {}
+    except Exception:
+        return {}
 
 
 def _get_cache_ttl() -> int:
-    """Get refresh interval from HA settings, default 60s."""
+    """Get refresh interval from HA settings, default 3600s."""
     try:
-        ha = config.data.get("home_assistant") or {}
-        return int(ha.get("refresh_interval", 60))
+        return int(_get_ha_settings().get("refresh_interval", 3600))
     except Exception:
-        return 60
+        return 3600
+
+
+def _get_refresh_times() -> list[str]:
+    """Get scheduled refresh times (e.g., ['00:30', '06:00'])."""
+    try:
+        times = _get_ha_settings().get("refresh_times", [])
+        return times if isinstance(times, list) else []
+    except Exception:
+        return []
 
 
 def _get_ha_config() -> dict[str, str] | None:
@@ -116,63 +133,67 @@ _MAX_PER_DOMAIN = 20
 
 
 def format_states_context() -> str:
-    """Format HA entities as compact summary — cached until TTL expires.
+    """Format ALL HA entities with name + entity_id — cached with scheduled refresh.
 
-    First call fetches all states once and pre-computes the context string.
-    Subsequent calls within TTL return cached string instantly (no processing).
+    Shows every device so AI can directly control by name without searching.
+    Context auto-refreshes at scheduled times (e.g., '00:30', '06:00') or
+    after refresh_interval expires.
     """
     global _context_cache, _context_cache_ts
     ttl = _get_cache_ttl()
     now = time.time()
+
+    # Check if scheduled refresh is due
+    refresh_times = _get_refresh_times()
+    if refresh_times and _context_cache_ts > 0:
+        from datetime import datetime
+        current_time = datetime.now().strftime("%H:%M")
+        last_refresh_day = datetime.fromtimestamp(_context_cache_ts).strftime("%Y-%m-%d")
+        today = datetime.now().strftime("%Y-%m-%d")
+        for rt in refresh_times:
+            if current_time >= rt and last_refresh_day != today:
+                _context_cache = ""  # Force refresh
+                break
+
     if _context_cache and (now - _context_cache_ts) < ttl:
         return _context_cache
 
-    states = get_states(use_cache=False)  # Force fresh fetch
+    states = get_states(use_cache=False)
     if not states:
         return ""
 
+    # Group by domain
     by_domain: dict[str, list[dict]] = {}
     for s in states:
         eid = s.get("entity_id", "")
         domain = eid.split(".")[0] if "." in eid else ""
-        if domain in _CONTEXT_DOMAINS:
-            by_domain.setdefault(domain, []).append(s)
+        by_domain.setdefault(domain, []).append(s)
 
-    if not by_domain:
-        return ""
-
-    actionable_domains = {"light", "switch", "climate", "cover", "lock", "fan", "media_player"}
+    # Show ALL devices with name + entity_id
     lines = [
-        "## Smart Home — Live State",
-        f"Tổng: {len(states)} thiết bị. Dùng `ha_search_entities` để tìm theo tên.",
-        f"Dữ liệu cập nhật mỗi {ttl}s. Các thiết bị điều khiển:",
+        "## Smart Home — All Devices",
+        f"Tổng: {len(states)} thiết bị. Dùng entity_id để điều khiển trực tiếp.",
+        f"Tự động cập nhật mỗi {ttl}s hoặc vào: {', '.join(refresh_times) if refresh_times else 'không có lịch'}.",
         "",
     ]
 
-    for domain in _CONTEXT_DOMAINS:
-        entities = by_domain.get(domain)
-        if not entities:
-            continue
-        if domain in actionable_domains:
-            shown = entities[:_MAX_PER_DOMAIN]
-            lines.append(f"[{domain}] ({len(entities)} total)")
-            for s in shown:
-                eid = s.get("entity_id", "")
-                state = s.get("state", "")
-                name = s.get("attributes", {}).get("friendly_name", "")
-                label = f"{name} ({eid})" if name else eid
-                lines.append(f"  {label}: {state}")
-        else:
-            names = []
-            for s in entities[:_MAX_PER_DOMAIN]:
-                name = s.get("attributes", {}).get("friendly_name", "")
-                if name:
-                    names.append(name)
-            preview = ", ".join(names[:10])
-            lines.append(f"[{domain}] ({len(entities)}): {preview}...")
+    total_shown = 0
+    for domain in sorted(by_domain.keys()):
+        entities = by_domain[domain]
+        # Show up to _MAX_PER_DOMAIN per domain
+        lines.append(f"[{domain}] ({len(entities)})")
+        for s in entities[:_MAX_PER_DOMAIN]:
+            eid = s.get("entity_id", "")
+            state = s.get("state", "")
+            name = s.get("attributes", {}).get("friendly_name", "")
+            label = f"{name} | {eid}" if name else eid
+            lines.append(f"  {label}: {state}")
+            total_shown += 1
+        if len(entities) > _MAX_PER_DOMAIN:
+            lines.append(f"  ... còn {len(entities) - _MAX_PER_DOMAIN} thiết bị [{domain}]")
 
     lines.append("")
-    lines.append("Dùng `ha_search_entities` để tìm thiết bị KHÔNG có trong danh sách trên.")
+    lines.append(f"Hiển thị {total_shown}/{len(states)} thiết bị. Dùng `ha_search_entities` nếu chưa thấy.")
 
     _context_cache = "\n".join(lines)
     _context_cache_ts = now
