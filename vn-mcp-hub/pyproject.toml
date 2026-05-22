@@ -23,6 +23,8 @@ dependencies = [
     "vnstock>=4.0.0",
     "ddddocr>=1.4.0",
     "requests>=2.31.0",
+    "cloudscraper>=1.2.0",
+    "playwright>=1.40.0",
 ]
 
 [build-system]
