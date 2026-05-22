@@ -370,19 +370,72 @@ def execute_ha_tool(tool_name: str, arguments: dict[str, Any]) -> str | None:
             return f"Không tìm thấy thiết bị '{eid}'"
         return json.dumps(state, ensure_ascii=False, indent=2)
     elif tool_name == "ha_search_entities":
-        query = arguments.get("query", "").lower()
+        query = arguments.get("query", "").lower().strip()
         states = get_states()
+
+        # Detect domain intent from query keywords (Vietnamese + English).
+        # If user asks "đèn" → only light.*, not switch/automation/scene that also contain "đèn"
+        # in friendly_name. To include automations, user must say "tự động hóa đèn" / "automation đèn".
+        DOMAIN_KEYWORDS: dict[str, list[str]] = {
+            "light": ["đèn", "light"],
+            "switch": ["công tắc", "switch", "ổ cắm", "ổ điện"],
+            "climate": ["điều hòa", "máy lạnh", "climate", "nhiệt độ", "thermostat"],
+            "cover": ["rèm", "mành", "cửa cuốn", "cover"],
+            "lock": ["khóa", "lock"],
+            "fan": ["quạt", "fan"],
+            "media_player": ["loa", "tivi", "tv", "media"],
+            "sensor": ["cảm biến", "sensor"],
+            "scene": ["scene", "ngữ cảnh"],
+            "automation": ["tự động hóa", "automation"],
+            "script": ["script", "kịch bản"],
+            "vacuum": ["robot hút bụi", "vacuum"],
+        }
+        # Force-domain takes priority: phrases that mention "đèn" but explicitly ask
+        # for automation/scene/script of that thing.
+        force_domain: str | None = None
+        for kw in DOMAIN_KEYWORDS["automation"]:
+            if kw in query:
+                force_domain = "automation"
+                break
+        if force_domain is None:
+            for kw in DOMAIN_KEYWORDS["scene"]:
+                if kw in query:
+                    force_domain = "scene"
+                    break
+        if force_domain is None:
+            for kw in DOMAIN_KEYWORDS["script"]:
+                if kw in query:
+                    force_domain = "script"
+                    break
+        # Match primary thing (light/switch/etc) only when no force_domain
+        primary_domain: str | None = None
+        if force_domain is None:
+            for domain, kws in DOMAIN_KEYWORDS.items():
+                if domain in ("automation", "scene", "script"):
+                    continue
+                if any(kw in query for kw in kws):
+                    primary_domain = domain
+                    break
+
+        target_domain = force_domain or primary_domain
+
         matches = []
         for s in states:
             eid = s.get("entity_id", "").lower()
             name = s.get("attributes", {}).get("friendly_name", "").lower()
+            domain = eid.split(".")[0] if "." in eid else ""
+            # If we detected a target domain, hard-filter to that domain only
+            if target_domain and domain != target_domain:
+                continue
             if query in eid or query in name:
                 real_name = s.get("attributes", {}).get("friendly_name", "")
                 label = f"{real_name} | {eid}" if real_name else eid
                 matches.append(label)
         if not matches:
-            return f"Không tìm thấy thiết bị nào khớp với '{query}'"
-        return f"Thiết bị khớp '{query}' ({len(matches)}):\n" + "\n".join(matches[:30])
+            scope = f" (domain={target_domain})" if target_domain else ""
+            return f"Không tìm thấy thiết bị nào khớp với '{query}'{scope}"
+        scope = f" [domain={target_domain}]" if target_domain else ""
+        return f"Thiết bị khớp '{query}'{scope} ({len(matches)}):\n" + "\n".join(matches[:30])
     elif tool_name == "ha_call_service":
         domain = arguments.get("domain", "")
         service = arguments.get("service", "")
