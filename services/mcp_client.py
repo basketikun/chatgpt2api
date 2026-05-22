@@ -194,7 +194,7 @@ def get_enabled_mcp_tools() -> list[dict[str, Any]]:
         try:
             tools = session.get_tools()
             for t in tools:
-                name = t.get("name", "")
+                name = t.get("function", {}).get("name", "")
                 if name and name not in seen_names:
                     seen_names.add(name)
                     all_tools.append(t)
