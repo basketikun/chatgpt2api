@@ -329,3 +329,28 @@ table.data-table { width: 100%; border-collapse: collapse; }
 /* ═══ ReactFlow dark canvas ═══ */
 .dark .react-flow { background: transparent !important; }
 .dark .react-flow__controls button { background: var(--card) !important; border-color: var(--border) !important; color: var(--foreground) !important; fill: var(--foreground) !important; }
+
+/* ═══ Dark mode overrides for hardcoded Tailwind colors ═══
+   Many components use bg-white, bg-stone-*, bg-slate-* without dark: variants.
+   Map them to theme vars so they adapt automatically. */
+.dark .bg-white { background-color: var(--card) !important; }
+.dark .bg-stone-50, .dark .bg-slate-50 { background-color: var(--card) !important; }
+.dark .bg-stone-100, .dark .bg-slate-100 { background-color: var(--secondary) !important; }
+.dark .bg-stone-200, .dark .bg-slate-200 { background-color: var(--secondary) !important; }
+.dark .bg-white\/50, .dark .bg-white\/60, .dark .bg-white\/70, .dark .bg-white\/80, .dark .bg-white\/90 { background-color: color-mix(in srgb, var(--card) 70%, transparent) !important; }
+.dark .bg-slate-50\/30, .dark .bg-slate-50\/50, .dark .bg-stone-50\/50, .dark .bg-stone-100\/50 { background-color: color-mix(in srgb, var(--secondary) 50%, transparent) !important; }
+
+/* Text colors that assume light bg */
+.dark .text-stone-900, .dark .text-slate-900, .dark .text-stone-950, .dark .text-slate-950 { color: var(--foreground) !important; }
+.dark .text-stone-800, .dark .text-slate-800, .dark .text-stone-700, .dark .text-slate-700 { color: var(--foreground) !important; }
+.dark .text-stone-600, .dark .text-slate-600, .dark .text-stone-500, .dark .text-slate-500 { color: var(--muted-foreground) !important; }
+.dark .text-stone-400, .dark .text-slate-400 { color: var(--muted-foreground) !important; }
+
+/* Borders that assume light bg */
+.dark .border-stone-200, .dark .border-slate-200 { border-color: var(--border) !important; }
+.dark .border-stone-300, .dark .border-slate-300 { border-color: var(--border) !important; }
+
+/* Hover states using stone/slate */
+.dark .hover\:bg-stone-50:hover, .dark .hover\:bg-slate-50:hover { background-color: var(--secondary) !important; }
+.dark .hover\:bg-stone-100:hover, .dark .hover\:bg-slate-100:hover { background-color: var(--accent) !important; opacity: 0.5; }
+.dark .hover\:bg-stone-200:hover, .dark .hover\:bg-slate-200:hover { background-color: var(--accent) !important; }
