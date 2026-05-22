@@ -25,11 +25,20 @@ mcp = FastMCP("vn_stock")
 
 VND_PRICE_URL = "https://finfo-api.vndirect.com.vn/v4/stock_prices"
 VND_INFO_URL = "https://finfo-api.vndirect.com.vn/v4/stocks"
+# Fallback: TCBS public API (no auth)
+TCBS_PRICE_URL = "https://apipubaws.tcbs.com.vn/stock-insight/v1/intraday/{symbol}/his/paging"
 
-HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Accept": "application/json",
+}
+
+import urllib.request
+import json
 
 
 def _fetch_latest_price(symbol: str) -> dict[str, Any] | None:
+    """Try VNDirect first, fallback to TCBS."""
     today = date.today()
     week_ago = today - timedelta(days=7)
     params = {
@@ -38,18 +47,43 @@ def _fetch_latest_price(symbol: str) -> dict[str, Any] | None:
         "page": 1,
         "q": f"code:{symbol.upper()}~date:gte:{week_ago.isoformat()}~date:lte:{today.isoformat()}",
     }
+    # Try VNDirect
     try:
-        with httpx.Client(timeout=10.0, headers=HEADERS) as client:
+        with httpx.Client(timeout=15.0, headers=HEADERS, follow_redirects=True) as client:
             r = client.get(VND_PRICE_URL, params=params)
             r.raise_for_status()
         data = r.json()
+        items = data.get("data") or []
+        if items:
+            return items[0]
     except Exception as exc:
-        logger.warning("VND price fetch failed for %s: %s", symbol, exc)
-        return None
-    items = data.get("data") or []
-    if not items:
-        return None
-    return items[0]
+        logger.info("VND price fetch failed for %s: %s", symbol, exc)
+
+    # Fallback: TCBS
+    try:
+        tcbs_url = TCBS_PRICE_URL.format(symbol=symbol.upper())
+        req = urllib.request.Request(tcbs_url, headers=HEADERS)
+        resp = urllib.request.urlopen(req, timeout=15)
+        data = json.loads(resp.read().decode())
+        items = data.get("data") or []
+        if items:
+            last = items[0]
+            return {
+                "close": last.get("price", 0),
+                "change": last.get("change", 0),
+                "pctChange": last.get("pctChange", 0),
+                "open": last.get("open", 0),
+                "high": last.get("high", 0),
+                "low": last.get("low", 0),
+                "nmVolume": last.get("totalVol", 0),
+                "nmValue": last.get("totalVal", 0),
+                "floor": last.get("exchange", "N/A"),
+                "date": last.get("tradingDate", str(today)),
+            }
+    except Exception as exc:
+        logger.info("TCBS fallback also failed for %s: %s", symbol, exc)
+
+    return None
 
 
 def _fetch_info(symbol: str) -> dict[str, Any] | None:

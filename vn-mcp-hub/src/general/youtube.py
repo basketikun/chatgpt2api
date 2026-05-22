@@ -48,9 +48,37 @@ def get_transcript(video: str, languages: str = "vi,en") -> str:
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
         langs = [s.strip() for s in languages.split(",") if s.strip()]
-        items = YouTubeTranscriptApi.get_transcript(vid, languages=langs)
-    except Exception as exc:
-        return f"Không lấy được transcript cho video {vid}: {exc}"
+        # youtube-transcript-api >=0.6: API changed, try multiple patterns
+        items = None
+        errors = []
+        # Pattern 1: new API (0.6+) — instance method
+        try:
+            yt = YouTubeTranscriptApi()
+            items = yt.fetch(vid, languages=langs)
+        except (TypeError, AttributeError) as e:
+            errors.append(f"fetch: {e}")
+        except Exception as e:
+            errors.append(f"fetch: {e}")
+        # Pattern 2: old API — class method with get_transcript
+        if items is None:
+            try:
+                items = YouTubeTranscriptApi.get_transcript(vid, languages=langs)
+            except (TypeError, AttributeError) as e:
+                errors.append(f"get_transcript: {e}")
+            except Exception as e:
+                errors.append(f"get_transcript: {e}")
+        # Pattern 3: direct list_transcripts + fetch
+        if items is None:
+            try:
+                transcript_list = YouTubeTranscriptApi.list_transcripts(vid)
+                t = transcript_list.find_transcript(langs)
+                items = t.fetch()
+            except Exception as e:
+                errors.append(f"list_transcripts: {e}")
+        if items is None:
+            return f"Không lấy được transcript cho video {vid}: {'; '.join(errors)}"
+    except ImportError:
+        return "Thiếu thư viện youtube-transcript-api."
 
     text_parts = [it.get("text", "").strip() for it in items if it.get("text")]
     full = " ".join(text_parts)
