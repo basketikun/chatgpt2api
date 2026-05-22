@@ -21,7 +21,6 @@ DEFAULTS = {
     "api_base_url": "http://chatgpt2api:3030/v1",
     "ai_model": "cx/auto",
     "api_key": "AnhNhi@0610",
-    "cloudflare_tunnel_token": "",    # Cloudflare Tunnel token (auto-start if set)
     "telegram_bot_token": "",         # Telegram Bot token for 2-way chat
     "telegram_chat_ids": [],          # Allowed Telegram chat IDs (empty=allow all)
     "telegram_ai_model": "",          # AI model for Telegram (empty=use default)

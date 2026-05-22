@@ -81,13 +81,6 @@ async def lifespan(app: FastAPI):
             _scheduler_stop = start_scheduler()
         except Exception as exc:
             logger.warning("Scheduler failed to start: %s", exc)
-        # Start Cloudflare Tunnel if token configured
-        try:
-            from src.rag.cloudflare_tunnel import start_tunnel, start_monitor
-            start_tunnel()
-            start_monitor()
-        except Exception as exc:
-            logger.warning("Cloudflare Tunnel setup failed: %s", exc)
         # Register Telegram webhook if token configured
         try:
             from src.rag.telegram_bot import register_webhook
@@ -97,12 +90,6 @@ async def lifespan(app: FastAPI):
         yield
         if _scheduler_stop is not None:
             _scheduler_stop.set()
-        # Stop tunnel on shutdown
-        try:
-            from src.rag.cloudflare_tunnel import stop_tunnel
-            stop_tunnel()
-        except Exception:
-            pass
     logger.info("Shutting down VN MCP Hub")
 
 
@@ -681,24 +668,6 @@ def create_app() -> FastAPI:
     async def studio_delete_kb(name: str):
         from src.studio import delete_kb as _delete
         return _delete(name)
-
-    # ── Cloudflare Tunnel endpoints ───────────────────────────────────────
-    @app.get("/api/tunnel/status")
-    async def tunnel_status():
-        from src.rag.cloudflare_tunnel import is_running, get_token
-        return {"running": is_running(), "token_configured": bool(get_token())}
-
-    @app.post("/api/tunnel/start")
-    async def tunnel_start():
-        from src.rag.cloudflare_tunnel import start_tunnel
-        ok = start_tunnel()
-        return {"ok": ok}
-
-    @app.post("/api/tunnel/restart")
-    async def tunnel_restart():
-        from src.rag.cloudflare_tunnel import restart_tunnel
-        ok = restart_tunnel()
-        return {"ok": ok}
 
     # ── Telegram webhook endpoint ─────────────────────────────────────────
     @app.post("/telegram/webhook")
