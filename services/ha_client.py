@@ -133,35 +133,71 @@ _MAX_PER_DOMAIN = 20
 
 
 def format_states_context() -> str:
-    """Format ALL HA entities with name + entity_id — cached with scheduled refresh.
+    """Return cached device registry. NEVER blocks on HA API call.
 
-    Shows every device so AI can directly control by name without searching.
-    Context auto-refreshes at scheduled times (e.g., '00:30', '06:00') or
-    after refresh_interval expires.
+    The registry is refreshed by a background thread on schedule.
+    Chat requests always get instant cached data (no latency added).
     """
-    global _context_cache, _context_cache_ts
-    ttl = _get_cache_ttl()
-    now = time.time()
-
-    # Check if scheduled refresh is due
-    refresh_times = _get_refresh_times()
-    if refresh_times and _context_cache_ts > 0:
-        from datetime import datetime
-        current_time = datetime.now().strftime("%H:%M")
-        last_refresh_day = datetime.fromtimestamp(_context_cache_ts).strftime("%Y-%m-%d")
-        today = datetime.now().strftime("%Y-%m-%d")
-        for rt in refresh_times:
-            if current_time >= rt and last_refresh_day != today:
-                _context_cache = ""  # Force refresh
-                break
-
-    if _context_cache and (now - _context_cache_ts) < ttl:
+    global _context_cache
+    _ensure_scheduler_running()
+    if _context_cache:
         return _context_cache
+    # First call: build cache synchronously (cold start only)
+    _refresh_context()
+    return _context_cache
 
-    states = get_states(use_cache=False)
-    if not states:
-        return ""
 
+def _refresh_context() -> None:
+    """Background: fetch states and rebuild context string."""
+    global _context_cache, _context_cache_ts
+    try:
+        states = get_states(use_cache=False)
+        if not states:
+            return
+        _context_cache = _build_context(states)
+        _context_cache_ts = time.time()
+        logger.info({"event": "ha_context_refreshed", "devices": len(states)})
+    except Exception as exc:
+        logger.warning({"event": "ha_context_refresh_failed", "error": str(exc)})
+
+
+def _ensure_scheduler_running() -> None:
+    """Start background refresh scheduler (idempotent)."""
+    global _scheduler_started
+    if _scheduler_started:
+        return
+    _scheduler_started = True
+    t = threading.Thread(target=_scheduler_loop, daemon=True, name="ha-scheduler")
+    t.start()
+    logger.info({"event": "ha_scheduler_started"})
+
+
+def _scheduler_loop() -> None:
+    """Background loop: refresh at scheduled times or after interval."""
+    from datetime import datetime
+    while True:
+        time.sleep(30)  # Check every 30s
+        try:
+            ttl = _get_cache_ttl()
+            refresh_times = _get_refresh_times()
+            now = time.time()
+            # Refresh if TTL expired
+            if (now - _context_cache_ts) >= ttl:
+                _refresh_context()
+                continue
+            # Refresh if scheduled time just passed
+            if refresh_times:
+                current_time = datetime.now().strftime("%H:%M")
+                last_ts = datetime.fromtimestamp(_context_cache_ts).strftime("%Y-%m-%d %H:%M") if _context_cache_ts else ""
+                for rt in refresh_times:
+                    if current_time == rt and not last_ts.endswith(rt):
+                        _refresh_context()
+                        break
+        except Exception:
+            pass
+
+def _build_context(states: list[dict]) -> str:
+    """Build context string from state list. Pure computation, no I/O."""
     # Group by domain
     by_domain: dict[str, list[dict]] = {}
     for s in states:
