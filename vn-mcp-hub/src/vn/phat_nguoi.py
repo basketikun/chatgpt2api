@@ -65,9 +65,13 @@ def _lookup_phatnguoi_vn(plate: str, vtype: int) -> tuple[list[dict] | None, str
             except Exception:
                 pass
 
-            # Click submit and wait for Turnstile to auto-solve
-            page.click("button[type=submit]")
-            page.wait_for_timeout(8000)  # Wait for Turnstile + result
+            # Click submit button inside the tracuu form
+            try:
+                page.click("#tracuu button[type=submit]")
+            except Exception:
+                # Fallback: try any visible submit button
+                page.click("button[type=submit]:visible")
+            page.wait_for_timeout(10000)  # Wait for Turnstile + result
 
             html = page.content()
             browser.close()
