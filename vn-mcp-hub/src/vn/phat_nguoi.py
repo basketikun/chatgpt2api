@@ -43,44 +43,66 @@ def _normalise_plate(plate: str) -> str:
 
 
 def _lookup_phatnguoi_vn(plate: str, vtype: int) -> tuple[list[dict] | None, str]:
-    """Gọi api.phatnguoi.vn — đơn giản, không captcha."""
-    import requests
-    url = PHATNGUOI_API.format(plate=plate.replace("-", ""), vtype=vtype)
-    status_msgs = []
-    for attempt in range(1, RETRY_LIMIT + 1):
-        try:
-            ua = BROWSERS[attempt % len(BROWSERS)]
-            r = requests.get(url, headers={"User-Agent": ua}, timeout=15)
-            if r.status_code == 429:
-                delay = BASE_DELAY * (attempt + 1)
-                status_msgs.append(f"[{attempt}/{RETRY_LIMIT}] Rate limit — đợi {delay}s...")
-                time.sleep(delay)
-                continue
-            if r.status_code != 200:
-                status_msgs.append(f"[{attempt}/{RETRY_LIMIT}] HTTP {r.status_code}")
-                time.sleep(BASE_DELAY)
-                continue
-            data = json.loads(r.text)
-            msg = str(data.get("message", "")).lower()
-            if not data.get("status"):
-                if "quá tải" in msg or "qua tai" in msg:
-                    delay = BASE_DELAY * (attempt + 1)
-                    status_msgs.append(f"[{attempt}/{RETRY_LIMIT}] Hệ thống quá tải — đợi {delay}s...")
-                    time.sleep(delay)
-                    continue
-                # status=false but not overloaded → API nói không có vi phạm
-                if "thành công" in msg or "success" in msg or isinstance(data.get("data"), list):
-                    return [], "; ".join(status_msgs) if status_msgs else ""
-            if isinstance(data.get("data"), list) and len(data["data"]) > 0:
-                violations = [v for v in data["data"] if isinstance(v, dict)]
-                if violations:
-                    return violations, "; ".join(status_msgs) if status_msgs else ""
-            # Empty data = no violations
-            return [], "; ".join(status_msgs) if status_msgs else ""
-        except Exception as e:
-            status_msgs.append(f"[{attempt}/{RETRY_LIMIT}] Lỗi: {e}")
-            time.sleep(BASE_DELAY)
-    return None, "; ".join(status_msgs)
+    """Gọi phatnguoi.vn qua playwright (headless browser) để vượt Turnstile."""
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        return None, "playwright chưa được cài"
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.goto("https://phatnguoi.vn/", timeout=30000, wait_until="domcontentloaded")
+
+            # Fill form
+            page.fill("input[name=BienKS]", plate.replace("-", ""))
+            # Select vehicle type radio
+            vtype_map = {1: "xe-1", 2: "xe-2", 3: "xe-3"}
+            radio_id = vtype_map.get(vtype, "xe-1")
+            try:
+                page.check(f"#{radio_id}")
+            except Exception:
+                pass
+
+            # Click submit and wait for Turnstile to auto-solve
+            page.click("button[type=submit]")
+            page.wait_for_timeout(8000)  # Wait for Turnstile + result
+
+            html = page.content()
+            browser.close()
+
+            # Parse result
+            soup = BeautifulSoup(html, "html.parser")
+            title_el = soup.select_one(".pn-result__title")
+            notice_el = soup.select_one(".pn-result__notice")
+            title = title_el.get_text(strip=True) if title_el else ""
+            notice = notice_el.get_text(strip=True) if notice_el else ""
+
+            if "captcha" in notice.lower() or "xác minh" in notice.lower():
+                return None, "Turnstile không vượt qua được"
+
+            # Parse violations from result items
+            violations = []
+            items = soup.select(".pn-result__item")
+            for item in items:
+                v = {}
+                for el in item.select(".pn-result__row"):
+                    label_el = el.select_one(".pn-result__label")
+                    value_el = el.select_one(".pn-result__value")
+                    if label_el and value_el:
+                        v[label_el.get_text(strip=True).rstrip(":")] = value_el.get_text(strip=True)
+                if v:
+                    violations.append(v)
+
+            if violations:
+                return violations, ""
+            if "không có" in title.lower() or "không tìm thấy" in title.lower():
+                return [], title
+            return None, f"Không parse được kết quả: {title}"
+    except Exception as e:
+        logger.warning("phatnguoi playwright: %s", e)
+        return None, str(e)[:100]
 
 
 def _lookup_csgt(plate: str, vtype_code: str) -> tuple[list[dict] | None, str]:
@@ -212,26 +234,21 @@ def check_traffic_violation(plate: str, vehicle_type: str = "oto") -> str:
     if not vt:
         return f"❌ Loại xe '{vehicle_type}' không hợp lệ.\nChọn: ô tô, xe máy."
     code, vt_label = vt
-
-    # ── 1. phatnguoi.vn (ưu tiên: đơn giản, không captcha) ──
     vtype_map = {"1": 1, "2": 2}
+
+    # ── phatnguoi.vn với playwright (vượt Turnstile) ──
     violations, status = _lookup_phatnguoi_vn(norm_plate, vtype_map.get(code, 1))
     if violations is not None:
         return _format(violations, norm_plate, vt_label, "phatnguoi.vn", status)
 
-    # ── 2. csgt.bocongan.gov.vn (chính thức, cần reCAPTCHA) ──
-    violations, err = _lookup_csgt(norm_plate, code)
-    if violations is not None:
-        return _format(violations, norm_plate, vt_label, "Cục CSGT", "")
-
-    # ── 3. Cả 2 đều thất bại ──
+    # ── Thất bại ──
     return (
         f"**Tra cứu phạt nguội cho {vt_label} biển số {norm_plate}:**\n\n"
-        f"❌ **Tra cứu thất bại sau {RETRY_LIMIT} lần thử.**\n\n"
-        f"{err or status or 'Không rõ nguyên nhân'}\n\n"
+        f"❌ **Tra cứu thất bại.**\n\n"
+        f"{status or 'Không rõ nguyên nhân'}\n\n"
         f"📋 **Tra cứu thủ công:**\n"
-        f"- {PAGE_URL} (CSGT chính thức)\n"
-        f"- https://phatnguoi.vn\n\n"
+        f"- https://phatnguoi.vn\n"
+        f"- {PAGE_URL}\n\n"
         f"1. Chọn loại phương tiện: **{vt_label}**\n"
         f"2. Nhập biển số: `{norm_plate}`\n"
         f"3. Giải CAPTCHA → bấm Tra cứu"
