@@ -484,35 +484,57 @@ def _execute_mcp_tools_in_response(
             "tool_calls": mcp_calls,
         })
 
-        # Execute ALL server-side tool calls and collect results
+        # Execute ALL server-side tool calls IN PARALLEL for speed
         is_action_only = len(mcp_calls) > 0 and all(tc.get("function", {}).get("name") == "ha_call_service" for tc in mcp_calls) and not native_calls
 
-        for tc in mcp_calls:
-            args_str = tc.get("function", {}).get("arguments", "{}")
-            try:
-                args = json.loads(args_str) if isinstance(args_str, str) else args_str
-            except Exception:
-                args = {}
-            tool_name = tc.get("function", {}).get("name", "")
-            tool_id = tc.get("id", f"mcp_{iteration}")
+        if len(mcp_calls) > 1:
+            # Parallel execution for multiple tool calls
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(mcp_calls)) as pool:
+                future_map = {}
+                for tc in mcp_calls:
+                    args_str = tc.get("function", {}).get("arguments", "{}")
+                    try:
+                        args = json.loads(args_str) if isinstance(args_str, str) else args_str
+                    except Exception:
+                        args = {}
+                    tool_name = tc.get("function", {}).get("name", "")
+                    logger.info({"event": "mcp_tool_exec_parallel", "tool": tool_name})
+                    future_map[pool.submit(_execute_mcp_tool, tool_name, args)] = tc
 
-            logger.info({
-                "event": "mcp_tool_exec",
-                "tool": tool_name,
-                "args": str(args)[:200],
-                "iteration": iteration,
-            })
-
-            mcp_result = _execute_mcp_tool(tool_name, args)
-            if mcp_result is None:
-                mcp_result = f"Tool '{tool_name}' returned no result."
-
-            current_messages.append({
-                "role": "tool",
-                "tool_call_id": tool_id,
-                "name": tool_name,
-                "content": mcp_result[:3000],
-            })
+                # Collect results and append to messages
+                for future in concurrent.futures.as_completed(future_map, timeout=30):
+                    tc = future_map[future]
+                    tool_name = tc.get("function", {}).get("name", "")
+                    tool_id = tc.get("id", f"mcp_{iteration}")
+                    try:
+                        mcp_result = future.result()
+                    except Exception as exc:
+                        mcp_result = f"Tool error: {exc}"
+                    if mcp_result is None:
+                        mcp_result = f"Tool '{tool_name}' returned no result."
+                    current_messages.append({
+                        "role": "tool", "tool_call_id": tool_id,
+                        "name": tool_name, "content": mcp_result[:3000],
+                    })
+        else:
+            # Single tool call — sequential is fine
+            for tc in mcp_calls:
+                args_str = tc.get("function", {}).get("arguments", "{}")
+                try:
+                    args = json.loads(args_str) if isinstance(args_str, str) else args_str
+                except Exception:
+                    args = {}
+                tool_name = tc.get("function", {}).get("name", "")
+                tool_id = tc.get("id", f"mcp_{iteration}")
+                logger.info({"event": "mcp_tool_exec", "tool": tool_name, "iteration": iteration})
+                mcp_result = _execute_mcp_tool(tool_name, args)
+                if mcp_result is None:
+                    mcp_result = f"Tool '{tool_name}' returned no result."
+                current_messages.append({
+                    "role": "tool", "tool_call_id": tool_id,
+                    "name": tool_name, "content": mcp_result[:3000],
+                })
 
         if is_action_only:
             logger.info({"event": "ha_fast_short_circuit"})
