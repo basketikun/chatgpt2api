@@ -188,6 +188,11 @@ def _ensure_scheduler_running() -> None:
     if _scheduler_started:
         return
     _scheduler_started = True
+    # Initial fetch immediately
+    try:
+        _refresh_context()
+    except Exception:
+        pass
     t = threading.Thread(target=_scheduler_loop, daemon=True, name="ha-scheduler")
     t.start()
     logger.info({"event": "ha_scheduler_started"})
