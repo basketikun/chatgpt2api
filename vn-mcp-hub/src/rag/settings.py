@@ -23,7 +23,10 @@ DEFAULTS = {
     "api_key": "AnhNhi@0610",
     "cloudflare_tunnel_token": "",    # Cloudflare Tunnel token (auto-start if set)
     "telegram_bot_token": "",         # Telegram Bot token for 2-way chat
-    "telegram_chat_ids": [],          # Allowed Telegram chat IDs
+    "telegram_chat_ids": [],          # Allowed Telegram chat IDs (empty=allow all)
+    "telegram_ai_model": "",          # AI model for Telegram (empty=use default)
+    "telegram_webhook_url": "",       # Public webhook URL for Telegram
+    "telegram_system_prompt": "",     # Custom system prompt for Telegram bot
 }
 
 

@@ -707,6 +707,31 @@ def create_app() -> FastAPI:
         from src.rag.telegram_bot import handle_webhook
         return await handle_webhook(request)
 
+    @app.get("/api/telegram/status")
+    async def telegram_status():
+        """Get Telegram bot status."""
+        from src.rag.telegram_bot import _get_settings
+        s = _get_settings()
+        return {
+            "configured": bool(s["bot_token"]),
+            "webhook_url": s["webhook_url"],
+            "model": s["ai_model"],
+            "chat_ids_count": len(s["chat_ids"]),
+        }
+
+    @app.post("/api/telegram/test")
+    async def telegram_test(request: Request):
+        """Send a test message to the first allowed chat_id."""
+        body = await request.json()
+        msg = str(body.get("message", "Test từ chatgpt2api"))
+        from src.rag.telegram_bot import _get_settings, send_message
+        s = _get_settings()
+        ids = s["chat_ids"]
+        if not ids:
+            return {"ok": False, "error": "Chưa cấu hình chat_ids"}
+        result = send_message(ids[0], msg)
+        return {"ok": result.get("ok", False)}
+
     _mount_mcps(app)
     _mount_dynamic_mcps(app)
     return app
