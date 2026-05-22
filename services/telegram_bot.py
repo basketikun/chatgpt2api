@@ -115,7 +115,7 @@ async def handle_webhook(request) -> dict:
         _conversations[key] = [_conversations[key][0]] + _conversations[key][-(MAX_HISTORY - 1):]
 
     # Call AI
-    base_url = str(config.get().get("api_base_url", "http://127.0.0.1:3030/v1")).rstrip("/")
+    base_url = str(config.get().get("api_base_url", "http://127.0.0.1:80/v1")).rstrip("/")
     api_key = str(config.get().get("api_key", ""))
     payload = {"model": _tg_model(), "messages": _conversations[key], "stream": False}
     try:
