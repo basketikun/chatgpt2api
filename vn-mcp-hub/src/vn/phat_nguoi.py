@@ -46,9 +46,17 @@ PLATE_PATTERN = re.compile(r"^\d{2}[A-Z0-9]{1,2}-?\d{4,5}(\.\d{2})?$", re.I)
 
 
 def _normalise_plate(plate: str) -> str:
+    """Chuẩn hóa biển số: 99A40201 → 99A-40201, 34A47645 → 34A-47645"""
     p = plate.strip().upper().replace(" ", "").replace("-", "")
-    m = re.match(r"^(\d{2}[A-Z0-9]{1,2})(\d{4,5})$", p)
-    return f"{m.group(1)}-{m.group(2)}" if m else plate
+    # Car: 2 digits + 1-2 LETTERS + 4-5 digits (e.g. 99A40201, 30A12345, 51F31234)
+    m = re.match(r"^(\d{2})([A-Z]{1,2})(\d{4,5})$", p)
+    if m:
+        return f"{m.group(1)}{m.group(2)}-{m.group(3)}"
+    # Motorbike: 2 digits + 1-2 ALPHANUM + 4-5 digits
+    m = re.match(r"^(\d{2})([A-Z0-9]{1,2})(\d{4,5})$", p)
+    if m:
+        return f"{m.group(1)}{m.group(2)}-{m.group(3)}"
+    return plate
 
 
 @mcp.tool()
@@ -79,12 +87,29 @@ def check_traffic_violation(plate: str, vehicle_type: str = "oto") -> str:
             try:
                 import pytesseract
                 from PIL import Image
+                # Try to identify format - captcha could be PNG, JPEG, or GIF
                 img = Image.open(io.BytesIO(img_data))
+                # Convert to RGB if necessary
+                if img.mode not in ("RGB", "L"):
+                    img = img.convert("RGB")
+                # Enhance for OCR - resize larger
+                w, h = img.size
+                img = img.resize((w * 3, h * 3), Image.LANCZOS)
                 captcha_text = pytesseract.image_to_string(
                     img, config="--psm 7 -c tessedit_char_whitelist=0123456789"
                 ).strip()
             except ImportError:
                 pass
+            except Exception as img_err:
+                logger.info("CAPTCHA image parse failed: %s, trying raw OCR", img_err)
+                # Last resort: try passing bytes directly
+                try:
+                    import pytesseract
+                    captcha_text = pytesseract.image_to_string(
+                        img_data, config="--psm 7 -c tessedit_char_whitelist=0123456789"
+                    ).strip()
+                except Exception:
+                    pass
     except Exception as exc:
         logger.warning("CAPTCHA fetch failed: %s", exc)
 
