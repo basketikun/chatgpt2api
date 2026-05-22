@@ -230,7 +230,7 @@ def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
         else:
             messages_copy = messages
             
-        tools_with_mcp = _inject_mcp_tools(tools, messages_copy)
+        tools_with_mcp = _inject_mcp_tools(tools)
         
         for route in routes:
             try:
@@ -275,7 +275,7 @@ def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
         pass
 
     # Inject MCP tools from enabled presets
-    tools = _inject_mcp_tools(tools, messages)
+    tools = _inject_mcp_tools(tools)
 
     result = _dispatch(route, messages, tools, tool_choice, body)
 
@@ -555,7 +555,7 @@ def _execute_mcp_tools_in_response(
             }
 
         # Re-dispatch with updated messages
-        tools = _inject_mcp_tools(body.get("tools"), current_messages)
+        tools = _inject_mcp_tools(body.get("tools"))
         try:
             current_result = _dispatch(route, current_messages, tools, body.get("tool_choice"), body)
             if not isinstance(current_result, dict):
@@ -1508,33 +1508,18 @@ def _handle_antigravity_chat(
     raise RuntimeError(f"Antigravity error: {last_error}")
 
 
-def _inject_mcp_tools(tools: list[dict[str, Any]] | None, messages: list[dict[str, Any]] | None = None) -> list[dict[str, Any]] | None:
-    """Inject tools from enabled MCP servers + HA into the tools list.
-
-    When `messages` is provided and the latest user message is a smart-home query,
-    skip the 55+ MCP tools entirely and inject only the 3 HA tools. This restores
-    the perf optimization from commit 3f86f63 — reasoning models scan every tool
-    definition before deciding which to call, so 58 tools costs ~5-15s extra
-    thinking per request vs 3 tools.
-    """
+def _inject_mcp_tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
+    """Inject tools from enabled MCP servers + HA into the tools list."""
     logger.info({"event": "mcp_inject_start", "input_tools": len(tools or [])})
     try:
         from services.mcp_client import get_enabled_mcp_tools
-        from services.ha_client import get_ha_tools, _is_ha_query
-
-        # Detect HA query from messages — skip MCP if so
-        is_ha = bool(messages) and _is_ha_query(messages or [])
-
-        if is_ha:
-            mcp_tools = []
-            logger.info({"event": "mcp_inject_skip_ha", "reason": "ha_query_detected"})
-        else:
-            mcp_tools = get_enabled_mcp_tools()
-            logger.info({"event": "mcp_inject_got_tools", "count": len(mcp_tools)})
-
+        from services.ha_client import get_ha_tools
+        mcp_tools = get_enabled_mcp_tools()
+        logger.info({"event": "mcp_inject_got_tools", "count": len(mcp_tools)})
+        
         tools = list(tools or [])
         existing_names = {t.get("function", {}).get("name", "") for t in tools}
-
+        
         client_is_ha = any(name.startswith("Hass") or name == "GetLiveContext" for name in existing_names)
         ha_tools = [] if client_is_ha else get_ha_tools()
 
