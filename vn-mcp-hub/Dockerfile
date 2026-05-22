@@ -27,6 +27,6 @@ COPY data/ ./data/
 RUN mkdir -p /app/chroma_db
 
 EXPOSE 8005
-# Force cache bust 2026-05-22 v5 (cloudscraper)
+# Force cache bust 2026-05-22 v6 (cloudscraper only)
 
 CMD ["python", "-m", "src.main"]
