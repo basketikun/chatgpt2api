@@ -1508,22 +1508,54 @@ def _handle_antigravity_chat(
     raise RuntimeError(f"Antigravity error: {last_error}")
 
 
+def _is_mcp_only_query(messages: list[dict[str, Any]]) -> bool:
+    """Detect queries that clearly target an MCP service (weather, news, stock,
+    fx/gold, traffic fines, lunar calendar, etc.) — used to skip HA tools when
+    the user is obviously not asking about smart home devices."""
+    MCP_KEYWORDS = (
+        # Weather
+        "thời tiết", "dự báo", "weather",
+        # News
+        "tin tức", "tin mới", "báo", "news",
+        # Stock & finance
+        "cổ phiếu", "chứng khoán", "vn-index", "stock",
+        "tỷ giá", "tỉ giá", "usd", "vnd", "eur", "exchange rate",
+        "giá vàng", "vàng sjc", "gold price",
+        # Traffic fines
+        "phạt nguội", "biển số", "vi phạm giao thông",
+        # Lunar / calendar
+        "lịch âm", "âm lịch", "ngày âm", "ngày tốt", "giờ tốt", "tử vi",
+        # YouTube / arxiv / wikipedia
+        "youtube", "youtu.be", "arxiv", "wikipedia",
+        # Vietnamese law
+        "tra cứu luật", "điều luật", "nghị định", "thông tư",
+    )
+    for m in reversed(messages):
+        if m.get("role") == "user":
+            text = str(m.get("content") or "").lower()
+            return any(kw in text for kw in MCP_KEYWORDS)
+    return False
+
+
 def _inject_mcp_tools(tools: list[dict[str, Any]] | None, messages: list[dict[str, Any]] | None = None) -> list[dict[str, Any]] | None:
     """Inject tools from enabled MCP servers + HA into the tools list.
 
-    When `messages` is provided and the latest user message is a smart-home query,
-    skip the 55+ MCP tools entirely and inject only the 3 HA tools. This restores
-    the perf optimization from commit 3f86f63 — reasoning models scan every tool
-    definition before deciding which to call, so 58 tools costs ~5-15s extra
-    thinking per request vs 3 tools.
+    Smart filtering based on detected query intent:
+    - HA-only query (e.g. "tắt đèn") → 3 HA tools, skip 55 MCP tools
+    - MCP-only query (e.g. "thời tiết") → 55 MCP tools, skip 3 HA tools
+    - General query → both (58 tools total)
+
+    Reasoning models scan every tool definition before deciding which to call,
+    so reducing context from 58 → 3 (or 55) saves ~5-15s thinking per request.
     """
     logger.info({"event": "mcp_inject_start", "input_tools": len(tools or [])})
     try:
         from services.mcp_client import get_enabled_mcp_tools
         from services.ha_client import get_ha_tools, _is_ha_query
 
-        # Detect HA query from messages — skip MCP if so
-        is_ha = bool(messages) and _is_ha_query(messages or [])
+        msgs = messages or []
+        is_ha = bool(msgs) and _is_ha_query(msgs)
+        is_mcp_only = bool(msgs) and not is_ha and _is_mcp_only_query(msgs)
 
         if is_ha:
             mcp_tools = []
@@ -1536,7 +1568,14 @@ def _inject_mcp_tools(tools: list[dict[str, Any]] | None, messages: list[dict[st
         existing_names = {t.get("function", {}).get("name", "") for t in tools}
 
         client_is_ha = any(name.startswith("Hass") or name == "GetLiveContext" for name in existing_names)
-        ha_tools = [] if client_is_ha else get_ha_tools()
+        # Skip HA tools when: client already has HA-native tools, OR query is pure MCP
+        if client_is_ha:
+            ha_tools = []
+        elif is_mcp_only:
+            ha_tools = []
+            logger.info({"event": "mcp_inject_skip_ha_tools", "reason": "mcp_only_query"})
+        else:
+            ha_tools = get_ha_tools()
 
         # Only skip MCP for HA-native clients (Hass* tools already in context)
         # For normal chat: include all tools, let the model decide
