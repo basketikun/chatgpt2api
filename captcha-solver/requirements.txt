@@ -1,0 +1,7 @@
+fastapi>=0.115
+uvicorn[standard]>=0.32
+patchright>=1.49
+playwright-recaptcha>=0.5
+pydantic>=2.9
+pydantic-settings>=2.5
+httpx>=0.27

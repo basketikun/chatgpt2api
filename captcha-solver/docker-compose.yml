@@ -1,0 +1,17 @@
+services:
+  captcha-solver:
+    build: .
+    image: captcha-solver:latest
+    container_name: captcha-solver
+    restart: unless-stopped
+    ports:
+      - "8010:8010"   # FastAPI
+      - "6080:6080"   # noVNC web UI
+    environment:
+      CAPTCHA_SOLVER_API_KEY: "${CAPTCHA_SOLVER_API_KEY:-change-me}"
+      CAPTCHA_SOLVER_NOVNC_EXTERNAL_URL: "${CAPTCHA_SOLVER_NOVNC_EXTERNAL_URL:-http://172.16.10.38:6080/vnc.html?host=172.16.10.38&port=6080&autoconnect=1}"
+    volumes:
+      - ./data:/data
+    # Chromium with --disable-dev-shm-usage works, but mounting more shm avoids
+    # tab crashes during heavy JS / WebGL scenes (e.g. Google Flow editor).
+    shm_size: "1gb"
