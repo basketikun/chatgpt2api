@@ -30,6 +30,12 @@ def create_app() -> FastAPI:
         # Fetch latest Karpathy guidelines + start quota watcher (fire-and-forget)
         refresh_guidelines()
         watcher_task = asyncio.create_task(quota_watcher.start())
+        # Pre-load HA client to start background scheduler
+        try:
+            from services.ha_client import format_states_context
+            format_states_context()  # Triggers initial device registry fetch
+        except Exception:
+            pass
         # Start Cloudflare Tunnel if token configured
         try:
             from services.cloudflare_tunnel import start_tunnel, start_monitor
