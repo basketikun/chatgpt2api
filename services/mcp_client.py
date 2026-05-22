@@ -73,9 +73,21 @@ class MCPSession:
             if sid:
                 self.session_id = sid
             raw = e.read().decode()
+            # Try SSE format
             for line in raw.split("\n"):
+                line = line.strip()
                 if line.startswith("data: "):
-                    return json.loads(line[6:])
+                    try:
+                        return json.loads(line[6:])
+                    except json.JSONDecodeError:
+                        pass
+            # Try plain JSON format
+            try:
+                d = json.loads(raw)
+                if isinstance(d, dict):
+                    return d
+            except json.JSONDecodeError:
+                pass
         except Exception as exc:
             logger.warning({"event": "mcp_call_failed", "url": self.url, "error": str(exc)})
         return None
