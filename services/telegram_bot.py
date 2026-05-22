@@ -85,17 +85,121 @@ async def handle_webhook(request) -> dict:
         return {"ok": True}
     chat_id = str(msg.get("chat", {}).get("id", ""))
     text = (msg.get("text") or "").strip()
+    photo = msg.get("photo")
+    document = msg.get("document")
 
     # Process in background thread so webhook returns immediately
     import threading
-    t = threading.Thread(target=_process_message, args=(text, chat_id), daemon=True)
+    t = threading.Thread(target=_process_message, args=(text, chat_id, photo, document), daemon=True)
     t.start()
     return {"ok": True}
 
 
-def _process_message(text: str, chat_id: str) -> None:
+def _download_file(file_id: str) -> bytes | None:
+    """Download a file from Telegram by file_id."""
+    token = _bot_token()
+    if not token:
+        return None
+    try:
+        # Get file path
+        r = _api_call("getFile", {"file_id": file_id})
+        if not r.get("ok") or not r.get("result", {}).get("file_path"):
+            return None
+        file_path = r["result"]["file_path"]
+        url = f"{TELEGRAM_API}/file/bot{token}/{file_path}"
+        req = urllib.request.Request(url)
+        resp = urllib.request.urlopen(req, timeout=30)
+        return resp.read()
+    except Exception as e:
+        logger.warning("File download failed: %s", e)
+        return None
+
+
+def _process_message(text: str, chat_id: str, photo: list | None = None, document: dict | None = None) -> None:
     """Process a Telegram message in background thread."""
-    if text.startswith("/"):
+    # Handle photo
+    if photo:
+        _api_call("sendChatAction", {"chat_id": chat_id, "action": "typing"})
+        # Get largest photo
+        largest = max(photo, key=lambda p: p.get("file_size", 0))
+        file_data = _download_file(largest["file_id"])
+        if file_data:
+            send_message(chat_id, f"📷 Đã nhận ảnh ({len(file_data)//1024}KB). AI vision đang được phát triển.")
+        else:
+            send_message(chat_id, "📷 Không thể tải ảnh.")
+        return
+
+    # Handle document (PDF, etc.)
+    if document:
+        doc_name = document.get("file_name", "document")
+        doc_size = document.get("file_size", 0)
+        mime = document.get("mime_type", "")
+
+        if not doc_name.lower().endswith(".pdf"):
+            send_message(chat_id, f"📎 Chỉ hỗ trợ file PDF. File: {doc_name}")
+            return
+
+        _api_call("sendChatAction", {"chat_id": chat_id, "action": "typing"})
+        send_message(chat_id, f"📄 Đang xử lý PDF: {doc_name} ({doc_size//1024}KB)...")
+
+        file_data = _download_file(document["file_id"])
+        if not file_data:
+            send_message(chat_id, "❌ Không thể tải file.")
+            return
+
+        # Save to temp file and process
+        import tempfile, os
+        import subprocess
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+        tmp.write(file_data)
+        tmp.close()
+
+        try:
+            # Try extracting text with Python
+            text = ""
+            try:
+                from markitdown import MarkItDown
+                md = MarkItDown()
+                result = md.convert(tmp.name)
+                text = result.text_content.strip()
+            except Exception:
+                pass
+
+            # If markitdown fails or returns empty, try pdftotext
+            if not text:
+                try:
+                    result = subprocess.run(["pdftotext", tmp.name, "-"], capture_output=True, text=True, timeout=30)
+                    text = result.stdout.strip()
+                except Exception:
+                    pass
+
+            if not text:
+                send_message(chat_id, "❌ Không thể đọc nội dung PDF (có thể là ảnh chụp).")
+                return
+
+            # Summarize with AI
+            ai_text = text[:8000]
+            base_url = str(config.get().get("api_base_url", "")).strip().rstrip("/") or "http://127.0.0.1/v1"
+            payload = {
+                "model": _tg_model(),
+                "messages": [
+                    {"role": "system", "content": "Tóm tắt nội dung PDF ngắn gọn bằng tiếng Việt. Nêu các điểm chính."},
+                    {"role": "user", "content": f"Tóm tắt PDF này:\n\n{ai_text}"},
+                ],
+                "stream": False,
+            }
+            req = urllib.request.Request(f"{base_url}/chat/completions",
+                data=json.dumps(payload).encode(),
+                headers={"Authorization": f"Bearer {config.auth_key}", "Content-Type": "application/json"})
+            resp = urllib.request.urlopen(req, timeout=120)
+            summary = json.loads(resp.read().decode()).get("choices", [{}])[0].get("message", {}).get("content", "")
+            send_message(chat_id, summary.strip() or "Không tóm tắt được.")
+        except Exception as e:
+            logger.warning("PDF processing error: %s", e)
+            send_message(chat_id, f"❌ Lỗi xử lý PDF: {e}")
+        finally:
+            os.unlink(tmp.name)
+        return
         reply = _cmd(text, chat_id)
         if reply:
             send_message(chat_id, reply)
