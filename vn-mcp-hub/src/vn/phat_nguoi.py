@@ -26,6 +26,7 @@ mcp = FastMCP("vn_phat_nguoi")
 # ── Constants ──
 CSGT_PAGE = "https://csgt.bocongan.gov.vn/tra-cuu-phat-nguoi"
 CSGT_API = "https://csgt.bocongan.gov.vn/tra-cuu-vi-pham-qua-hinh-anh"
+PHATNGUOI_API = "https://api.phatnguoi.vn/tra-cuu/{plate}/{vtype}"  # 1=car, 2=moto, 3=ebike
 SITE_KEY = "6LfcU6MsAAAAAF7XE191a3wa4_8B2pr6WJQoims1"  # Fallback, will scrape from page
 
 
@@ -155,6 +156,23 @@ def _fetch_csrf_token() -> str | None:
 
 # ── Parsing ──
 
+def _lookup_phatnguoi_vn(plate: str, vehicle_type: int) -> dict | None:
+    """Query phatnguoi.vn API — simple GET, no captcha."""
+    url = PHATNGUOI_API.format(plate=plate.replace("-", ""), vtype=vehicle_type)
+    try:
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0", "Accept": "application/json"
+        })
+        resp = urllib.request.urlopen(req, timeout=10)
+        raw = resp.read().decode("utf-8", errors="ignore")
+        data = json.loads(raw)
+        if isinstance(data, dict):
+            return data
+    except Exception as exc:
+        logger.info("phatnguoi.vn failed: %s", exc)
+    return None
+
+
 def _extract_violations(html: str) -> list[dict]:
     """Parse violation cards from HTML response."""
     soup = BeautifulSoup(html, "html.parser")
@@ -212,84 +230,85 @@ def check_traffic_violation(plate: str, vehicle_type: str = "oto") -> str:
             "Định dạng đúng: XX(A-Z)-12345 hoặc 29-K3-1234.56"
         )
 
-    # Get CSRF token
+    # ── Dual API lookup: phatnguoi.vn (no captcha) + CSGT (official) ──
+    lines = [f"**Tra cứu phạt nguội cho {vt_label} biển số {norm_plate}:**", ""]
+    all_violations = []
+    sources = []
+
+    # 1) Try phatnguoi.vn first (simple GET, no captcha)
+    vtype_map = {"car": 1, "motorbike": 2, "electricbike": 3}
+    vtype_num = vtype_map.get(code, 1)
+    pn_result = _lookup_phatnguoi_vn(norm_plate, vtype_num)
+    if pn_result:
+        if pn_result.get("status"):
+            data = pn_result.get("data") or []
+            if isinstance(data, list) and len(data) > 0:
+                for item in data:
+                    if isinstance(item, dict):
+                        all_violations.append(item)
+                        sources.append("phatnguoi.vn")
+        elif "chúc mừng" in str(pn_result).lower() or pn_result.get("message") == "success":
+            pass  # no violations
+
+    # 2) Try CSGT official API (reCAPTCHA required)
     csrf = _fetch_csrf_token()
-    if not csrf:
-        # Fallback: return instructions
-        return (
-            f"**Tra cứu phạt nguội cho {vt_label} biển số {norm_plate}:**\n\n"
-            f"Không lấy được CSRF token. Vui lòng tra cứu thủ công tại:\n"
-            f"{CSGT_PAGE}\n\n"
-            f"Chọn **{vt_label}**, nhập `{norm_plate}`, xác thực reCAPTCHA, bấm Tra cứu."
-        )
+    if csrf:
+        sitekey = _scrape_sitekey()
+        recaptcha = _get_recaptcha_token(sitekey)
+        if recaptcha:
+            form_data = urllib.parse.urlencode({
+                "_token": csrf,
+                "g-recaptcha-response": recaptcha,
+                "vehicle_type": code,
+                "plate_number": norm_plate.replace("-", ""),
+            }).encode()
+            try:
+                req = urllib.request.Request(CSGT_API, data=form_data,
+                    headers={
+                        "User-Agent": "Mozilla/5.0",
+                        "Content-Type": "application/x-www-form-urlencoded",
+                        "X-Requested-With": "XMLHttpRequest",
+                        "Accept": "application/json, text/html",
+                        "Origin": "https://csgt.bocongan.gov.vn",
+                        "Referer": CSGT_PAGE,
+                    })
+                resp = urllib.request.urlopen(req, timeout=15)
+                html = resp.read().decode("utf-8", errors="ignore")
+                csv = _extract_violations(html)
+                if csv:
+                    for v in csv:
+                        all_violations.append(v)
+                        sources.append("CSGT")
+            except Exception as exc:
+                logger.info("CSGT API: %s", exc)
 
-    # Get reCAPTCHA token
-    sitekey = _scrape_sitekey()
-    recaptcha = _get_recaptcha_token(sitekey)
-    if not recaptcha:
-        return (
-            f"**Tra cứu phạt nguội cho {vt_label} biển số {norm_plate}:**\n\n"
-            f"Không thể xác thực reCAPTCHA tự động. Vui lòng tra cứu thủ công tại:\n"
-            f"{CSGT_PAGE}\n\n"
-            f"Chọn **{vt_label}**, nhập `{norm_plate}`, bấm Tra cứu."
-        )
+    # ── Format results ──
+    if not all_violations:
+        if sources:
+            return "\n".join(lines + [
+                f"✅ **Không có vi phạm giao thông nào được ghi nhận.**",
+                f"_Nguồn: {', '.join(sources)} — {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC_"
+            ])
+        return "\n".join(lines + [
+            "⚠️ Không thể tra cứu tự động. Vui lòng tra cứu thủ công tại:",
+            f"- {CSGT_PAGE}",
+            f"- https://phatnguoi.vn",
+        ])
 
-    # POST lookup
-    form_data = urllib.parse.urlencode({
-        "_token": csrf,
-        "g-recaptcha-response": recaptcha,
-        "vehicle_type": code,
-        "plate_number": norm_plate.replace("-", ""),
-    }).encode()
+    vi_count = len(all_violations)
+    lines.append(f"🚨 **Phát hiện {vi_count} vi phạm** từ: {', '.join(set(sources))}")
+    lines.append("")
 
-    try:
-        req = urllib.request.Request(CSGT_API, data=form_data,
-            headers={
-                "User-Agent": "Mozilla/5.0",
-                "Content-Type": "application/x-www-form-urlencoded",
-                "X-Requested-With": "XMLHttpRequest",
-                "Accept": "application/json, text/html",
-                "Origin": "https://csgt.bocongan.gov.vn",
-                "Referer": CSGT_PAGE,
-            })
-        resp = urllib.request.urlopen(req, timeout=15)
-        html = resp.read().decode("utf-8", errors="ignore")
-    except Exception as exc:
-        logger.warning("CSGT API call failed: %s", exc)
-        return (
-            f"**Tra cứu phạt nguội cho {vt_label} biển số {norm_plate}:**\n\n"
-            f"Lỗi kết nối đến máy chủ CSGT. Vui lòng thử lại sau hoặc tra cứu tại:\n"
-            f"{CSGT_PAGE}"
-        )
-
-    # Parse violations
-    violations = _extract_violations(html)
-
-    if not violations:
-        # Check if HTML says no violations
-        if "không có" in html.lower() or "không tìm thấy" in html.lower():
-            return (
-                f"**Tra cứu phạt nguội cho {vt_label} biển số {norm_plate}:**\n\n"
-                f"✅ **Không có vi phạm giao thông nào được ghi nhận.**\n"
-                f"_Nguồn: Cục CSGT — {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC_"
-            )
-        return (
-            f"**Tra cứu phạt nguội cho {vt_label} biển số {norm_plate}:**\n\n"
-            f"⚠️ Không parse được kết quả. Vui lòng tra cứu thủ công tại:\n"
-            f"{CSGT_PAGE}"
-        )
-
-    lines = [
-        f"**Tra cứu phạt nguội cho {vt_label} biển số {norm_plate}:**",
-        "",
-    ]
-    for i, v in enumerate(violations[:10], 1):
-        lines.append(f"### Vi phạm {i}")
+    for i, v in enumerate(all_violations[:20], 1):
+        lines.append(f"### Lỗi {i}")
         for key, val in v.items():
-            lines.append(f"- **{key}**: {val}")
+            if isinstance(val, list):
+                lines.append(f"- **{key}**: {', '.join(str(x) for x in val)}")
+            else:
+                lines.append(f"- **{key}**: {val}")
         lines.append("")
 
-    lines.append(f"_Nguồn: Cục CSGT — {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC_")
+    lines.append(f"_Nguồn: {', '.join(set(sources))} — {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC_")
     return "\n".join(lines)
 
 
