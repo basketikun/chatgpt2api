@@ -9,9 +9,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr \
     tesseract-ocr-vie \
     poppler-utils \
-    libatk-1.0-0t64 \
-    libatk-bridge2.0-0t64 \
-    libcups2t64 \
+    libatk-bridge2.0-0 \
+    libcups2 \
     libdrm2 \
     libxkbcommon0 \
     libxcomposite1 \
@@ -21,8 +20,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgbm1 \
     libpango-1.0-0 \
     libcairo2 \
-    libasound2t64 \
-    libatspi2.0-0t64 \
+    libasound2 \
+    libatspi2.0-0 \
     libwayland-client0 \
     && pip install --no-cache-dir uv \
     && rm -rf /var/lib/apt/lists/*
