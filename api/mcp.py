@@ -172,6 +172,20 @@ def create_router() -> APIRouter:
                 "installed": name in installed,
                 "enabled": bool(info.get("enabled", True)),
             })
-        return {"ok": True, "hub_name": hub_info.get("name", ""), "mcps": mcps}
+        # Auto-update URLs for already installed MCPs
+        updated = 0
+        for name in mcp_names:
+            url = f"{hub_url}/{name}/mcp"
+            if name in installed:
+                old_url = installed[name].get("url", "")
+                if old_url != url:
+                    installed[name]["url"] = url
+                    updated += 1
+        if updated > 0:
+            config.data["mcp_servers"] = installed
+            config._save()
+            logger.info({"event": "mcp_urls_updated", "count": updated, "hub_url": hub_url})
+
+        return {"ok": True, "hub_name": hub_info.get("name", ""), "mcps": mcps, "urls_updated": updated}
 
     return router
