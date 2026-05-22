@@ -386,3 +386,9 @@ def execute_ha_tool(tool_name: str, arguments: dict[str, Any]) -> str | None:
         ok = call_service(domain, service, {"entity_id": entity_id})
         return f"Đã gọi {domain}.{service} cho {entity_id}" if ok else f"Lỗi gọi {domain}.{service}"
     return None
+
+# Start background scheduler on module import
+try:
+    _ensure_scheduler_running()
+except Exception:
+    pass
