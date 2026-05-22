@@ -895,6 +895,21 @@ def _handle_opencode_chat(
     elif model == "auto":
         opencode_model = "auto"
 
+    # Resolve auto using enabled_models order from settings
+    if opencode_model == "auto" or not opencode_model:
+        ms = config.data.get("model_settings") or {}
+        enabled = (ms.get("enabled_models") or {}).get("opencode") if isinstance(ms, dict) else None
+        if isinstance(enabled, list):
+            for m in enabled:
+                m = str(m).strip()
+                if not m or m == "auto":
+                    continue
+                if m.startswith("oc/"):
+                    m = m[3:]
+                if m:
+                    opencode_model = m
+                    break
+
     logger.info({
         "event": "opencode_chat_routed",
         "model": opencode_model,
@@ -1252,9 +1267,26 @@ def _handle_gemini_chat(
             pure_model = model[len(prefix):]
             break
     if not pure_model or pure_model == "auto":
-        # Use user's configured model from settings, fallback to default
-        provider_cfg = (config.data.get("providers") or {}).get("gemini_free") or {}
-        pure_model = str(provider_cfg.get("model") or "") or GEMINI_DEFAULT_MODEL
+        # Try enabled_models order first, then provider config, then default
+        ms = config.data.get("model_settings") or {}
+        enabled = (ms.get("enabled_models") or {}).get("gemini_free") if isinstance(ms, dict) else None
+        chosen = ""
+        if isinstance(enabled, list):
+            for m in enabled:
+                m = str(m).strip()
+                if not m or m == "auto":
+                    continue
+                for prefix in ("gemini/", "gemini_free/"):
+                    if m.startswith(prefix):
+                        m = m[len(prefix):]
+                        break
+                if m:
+                    chosen = m
+                    break
+        if not chosen:
+            provider_cfg = (config.data.get("providers") or {}).get("gemini_free") or {}
+            chosen = str(provider_cfg.get("model") or "") or GEMINI_DEFAULT_MODEL
+        pure_model = chosen
 
     logger.info({"event": "gemini_chat", "model": pure_model})
 
@@ -1410,7 +1442,20 @@ def _handle_antigravity_chat(
 
     pure_model = model[3:] if model.startswith("ag/") else model
     if not pure_model or pure_model == "auto":
-        pure_model = "gemini-3.1-pro-high"
+        ms = config.data.get("model_settings") or {}
+        enabled = (ms.get("enabled_models") or {}).get("antigravity") if isinstance(ms, dict) else None
+        chosen = ""
+        if isinstance(enabled, list):
+            for m in enabled:
+                m = str(m).strip()
+                if not m or m == "auto":
+                    continue
+                if m.startswith("ag/"):
+                    m = m[3:]
+                if m:
+                    chosen = m
+                    break
+        pure_model = chosen or "gemini-3.1-pro-high"
 
     logger.info({
         "event": "antigravity_chat",
