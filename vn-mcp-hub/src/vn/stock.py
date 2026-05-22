@@ -33,11 +33,15 @@ def _get_quote(symbol: str) -> dict[str, Any] | None:
             time_str = datetime.fromtimestamp(int(ts)/1000, tz=timezone.utc).strftime("%H:%M:%S %d/%m/%Y") if ts else ""
             return {
                 "symbol": symbol.upper(),
-                "price": float(row.get("price", 0)),
-                "change": float(row.get("change", 0)) if "change" in row else 0,
-                "pct_change": float(row.get("pct_change", 0)) if "pct_change" in row else 0,
-                "volume": int(row.get("total_volume", row.get("volume", 0))),
+                "price": float(row.get("close_price", 0)),
+                "change": float(row.get("price_change", 0)),
+                "pct_change": float(row.get("percent_change", 0)),
+                "volume": int(row.get("volume_accumulated", 0)),
                 "time": time_str,
+                "open": float(row.get("open_price", 0)),
+                "high": float(row.get("high_price", 0)),
+                "low": float(row.get("low_price", 0)),
+                "exchange": str(row.get("exchange", "N/A")),
             }
     except Exception as exc:
         logger.info("vnstock quote failed for %s: %s", symbol, exc)
@@ -80,9 +84,11 @@ def get_stock_price(symbol: str) -> str:
     arrow = "▲" if change > 0 else ("▼" if change < 0 else "—")
     vol = q["volume"]
     t = q.get("time", "")
+    ex = q.get("exchange", "N/A")
 
     return (
-        f"**{sym}** — {price:,.0f} VND {arrow} {change:+,.0f} ({pct:+.2f}%)\n"
+        f"**{sym}** ({ex}) — {price:,.0f} VND {arrow} {change:+,.0f} ({pct:+.2f}%)\n"
+        f"- Mở: {q.get('open', 0):,.0f} | Cao: {q.get('high', 0):,.0f} | Thấp: {q.get('low', 0):,.0f}\n"
         f"- Khối lượng: {vol:,} cp\n"
         f"- Cập nhật: {t}\n"
         f"_Nguồn: vnstock (TCBS/VCI/SSI/MSN)_"

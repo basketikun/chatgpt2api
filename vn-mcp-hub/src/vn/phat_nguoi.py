@@ -125,69 +125,82 @@ def check_traffic_violation(plate: str, vehicle_type: str = "oto") -> str:
         return f"Loại xe '{vehicle_type}' không hợp lệ. Chọn: ô tô, xe máy, xe đạp điện."
     code, vt_label = vt
 
-    # ── Query CSGT API with retry loop ──
+    # ── Query: try phatnguoi.vn API first (simpler, no captcha) ──
     import requests as req_lib
+    import json
+
+    # 1) Try phatnguoi.vn
+    vtype_map = {"1": 1, "2": 2, "3": 3}
+    pn_url = f"https://api.phatnguoi.vn/tra-cuu/{norm_plate.replace('-', '')}/{vtype_map.get(code, 1)}"
+    try:
+        r = req_lib.get(pn_url, headers=HEADERS, timeout=10)
+        if r.status_code == 200 and len(r.text) > 50:
+            try:
+                data = json.loads(r.text)
+                if data.get("status") and data.get("data"):
+                    violations = []
+                    for item in data["data"]:
+                        if isinstance(item, dict):
+                            v = {}
+                            for k, val in item.items():
+                                v[k] = val
+                            violations.append(v)
+                    if violations:
+                        return _format_violations(violations, norm_plate, vt_label)
+            except json.JSONDecodeError:
+                pass  # Not JSON, try HTML parsing
+    except Exception:
+        pass
+
+    # 2) Fallback: csgt.vn with captcha
     session = req_lib.Session()
     session.headers.update(HEADERS)
 
-    # Warm-up để lấy cookie
     try:
         session.get(RESULTS_URL, timeout=15)
     except Exception:
         pass
 
     violations = None
-    last_error = ""
-
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            # 1) Get CAPTCHA
             r_cap = session.get(CAPTCHA_URL, timeout=15)
-            r_cap.raise_for_status()
+            if len(r_cap.content) < 200 or "html" in r_cap.headers.get("content-type", ""):
+                continue  # Not an image
             captcha_text = _solve_captcha(r_cap.content)
-            logger.info("Attempt %d: captcha OCR = '%s'", attempt, captcha_text)
-
             if not captcha_text or captcha_text == "0000":
                 continue
 
-            # 2) POST form
             form_data = {
-                "BienKS": norm_plate.replace("-", ""),
-                "Xe": code,
-                "captcha": captcha_text,
-                "ipClient": "1.1.1.1",
-                "cUrl": "1",
+                "BienKS": norm_plate.replace("-", ""), "Xe": code,
+                "captcha": captcha_text, "ipClient": "1.1.1.1", "cUrl": "1",
             }
             r_post = session.post(FORM_ENDPOINT, data=form_data,
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
-                timeout=20)
-
+                headers={"Content-Type": "application/x-www-form-urlencoded"}, timeout=20)
             if r_post.text.strip() in ("404", "") or r_post.status_code == 404:
-                continue  # CAPTCHA sai, thử lại
+                continue
 
-            # 3) GET results page
             params = {"LoaiXe": code, "BienKiemSoat": norm_plate.replace("-", "")}
             r_result = session.get(RESULTS_URL, params=params, timeout=20)
-            r_result.raise_for_status()
             r_result.encoding = "utf-8"
-
             violations = _parse_violations(r_result.text)
             break
+        except Exception:
+            pass
 
-        except Exception as exc:
-            last_error = str(exc)
-            logger.info("Attempt %d failed: %s", attempt, exc)
-
-    # ── Format output ──
-    lines = [f"**Tra cứu phạt nguội cho {vt_label} biển số {norm_plate}:**", ""]
-
+    # 3) Format results
     if violations is None:
-        lines.append(f"⚠️ Tra cứu thất bại sau {MAX_RETRIES} lần thử.")
-        lines.append(f"Vui lòng tra cứu thủ công: {BASE_URL}/tra-cuu-phuong-tien-vi-pham.html")
-        if last_error:
-            lines.append(f"_Lỗi: {last_error[:100]}_")
-        return "\n".join(lines)
+        return (
+            f"**Tra cứu phạt nguội cho {vt_label} biển số {norm_plate}:**\n\n"
+            f"⚠️ Tra cứu thất bại sau {MAX_RETRIES} lần thử.\n"
+            f"Vui lòng tra cứu thủ công: {BASE_URL}/tra-cuu-phuong-tien-vi-pham.html"
+        )
 
+    return _format_violations(violations, norm_plate, vt_label)
+
+
+def _format_violations(violations: list, norm_plate: str, vt_label: str) -> str:
+    lines = [f"**Tra cứu phạt nguội cho {vt_label} biển số {norm_plate}:**", ""]
     if not violations:
         lines.append("✅ **Không có vi phạm giao thông nào được ghi nhận.**")
     else:
@@ -196,28 +209,28 @@ def check_traffic_violation(plate: str, vehicle_type: str = "oto") -> str:
         for i, v in enumerate(violations[:20], 1):
             lines.append(f"### Lỗi {i}")
             fields = [
-                ("Biển kiểm soát", "bienKiemSoat"),
-                ("Màu biển", "mauBien"),
-                ("Loại phương tiện", "loaiPhuongTien"),
-                ("Thời gian vi phạm", "thoiGianViPham"),
-                ("Địa điểm vi phạm", "diaDiemViPham"),
-                ("Hành vi vi phạm", "hanhViViPham"),
-                ("Trạng thái", "trangThai"),
-                ("Đơn vị phát hiện", "donViPhatHien"),
+                ("Biển kiểm soát", "bienKiemSoat", "licensePlate"),
+                ("Màu biển", "mauBien", "plateColor"),
+                ("Loại phương tiện", "loaiPhuongTien", "vehicleType"),
+                ("Thời gian vi phạm", "thoiGianViPham", "violationTime"),
+                ("Địa điểm vi phạm", "diaDiemViPham", "violationLocation"),
+                ("Hành vi vi phạm", "hanhViViPham", "violationBehavior"),
+                ("Trạng thái", "trangThai", "status"),
+                ("Đơn vị phát hiện", "donViPhatHien", "detectionUnit"),
             ]
-            for label, key in fields:
-                val = v.get(key, "")
+            for label, key_vn, key_en in fields:
+                val = v.get(key_vn, "") or v.get(key_en, "")
                 if val:
                     lines.append(f"- **{label}**: {val}")
             places = v.get("noiGiaiQuyet", [])
             if places:
                 lines.append(f"- **Nơi giải quyết**:")
                 for p in places:
-                    lines.append(f"  - {p.get('ten', '')}")
-                    if p.get("diaChi"):
-                        lines.append(f"    Địa chỉ: {p['diaChi']}")
+                    lines.append(f"  - {p.get('ten', p.get('name', ''))}")
+                    addr = p.get('diaChi', p.get('address', ''))
+                    if addr:
+                        lines.append(f"    Địa chỉ: {addr}")
             lines.append("")
-
     lines.append(f"_Nguồn: Cục CSGT — {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC_")
     return "\n".join(lines)
 
