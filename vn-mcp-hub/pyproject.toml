@@ -20,6 +20,7 @@ dependencies = [
     "markitdown[pdf]>=0.0.1",
     "pytesseract>=0.3.0",
     "pdf2image>=1.17.0",
+    "vnstock3>=0.2.0",
 ]
 
 [build-system]

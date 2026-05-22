@@ -1,8 +1,7 @@
-"""vn_stock — giá cổ phiếu Việt Nam (HOSE/HNX) qua VNDirect public API.
+"""vn_stock — giá cổ phiếu Việt Nam qua vnstock3.
 
-VNDirect cung cấp endpoint công khai (không cần API key):
-- finfo-api.vndirect.com.vn/v4/stocks → metadata
-- finfo-api.vndirect.com.vn/v4/stock_prices → giá lịch sử
+vnstock3 tự động failover giữa các nguồn: TCBS, VCI (Vietcap), SSI, MSN.
+Không cần API key. Hỗ trợ giá intraday realtime.
 
 Tools:
 - get_stock_price(symbol): giá hiện tại + thay đổi
@@ -13,126 +12,78 @@ Tools:
 from __future__ import annotations
 
 import logging
-from datetime import date, timedelta
 from typing import Any
 
-import httpx
 from fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 
 mcp = FastMCP("vn_stock")
 
-VND_PRICE_URL = "https://finfo-api.vndirect.com.vn/v4/stock_prices"
-VND_INFO_URL = "https://finfo-api.vndirect.com.vn/v4/stocks"
-# Fallback: AlphaVantage free API (rate-limited: 5 calls/min, 500/day)
-AV_URL = "https://www.alphavantage.co/query"
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    "Accept": "application/json",
-}
-
-import urllib.request
-import urllib.parse
-import json
-import os
-
-
-def _fetch_latest_price(symbol: str) -> dict[str, Any] | None:
-    """Try VNDirect first, fallback to AlphaVantage free API."""
-    today = date.today()
-    week_ago = today - timedelta(days=7)
-    params = {
-        "sort": "date",
-        "size": 5,
-        "page": 1,
-        "q": f"code:{symbol.upper()}~date:gte:{week_ago.isoformat()}~date:lte:{today.isoformat()}",
-    }
-    # Try VNDirect
+def _get_quote(symbol: str) -> dict[str, Any] | None:
+    """Lấy quote intraday từ vnstock3. Tự failover giữa các nguồn."""
     try:
-        with httpx.Client(timeout=15.0, headers=HEADERS, follow_redirects=True) as client:
-            r = client.get(VND_PRICE_URL, params=params)
-            r.raise_for_status()
-        data = r.json()
-        items = data.get("data") or []
-        if items:
-            return items[0]
-    except Exception as exc:
-        logger.info("VNDirect failed for %s: %s", symbol, exc)
-
-    # Fallback: AlphaVantage free API
-    av_key = os.environ.get("ALPHA_VANTAGE_KEY", "demo")
-    try:
-        av_params = {
-            "function": "GLOBAL_QUOTE",
-            "symbol": symbol.upper(),
-            "apikey": av_key,
-        }
-        url = AV_URL + "?" + urllib.parse.urlencode(av_params)
-        req = urllib.request.Request(url, headers=HEADERS)
-        resp = urllib.request.urlopen(req, timeout=15)
-        data = json.loads(resp.read().decode())
-        quote = (data.get("Global Quote") or {})
-        if quote and quote.get("05. price"):
-            price = float(quote.get("05. price", 0))
-            change = float(quote.get("09. change", 0))
-            change_pct = quote.get("10. change percent", "0%").replace("%", "")
+        from vnstock3 import Market
+        df = Market().quote.intraday(symbol=symbol.upper(), show_log=False)
+        if df is not None and not df.empty:
+            row = df.iloc[-1] if len(df) > 1 else df.iloc[0]
             return {
-                "close": price,
-                "change": change,
-                "pctChange": float(change_pct) if change_pct else 0,
-                "open": float(quote.get("02. open", price)),
-                "high": float(quote.get("03. high", price)),
-                "low": float(quote.get("04. low", price)),
-                "nmVolume": int(quote.get("06. volume", 0)),
-                "nmValue": 0,
-                "floor": quote.get("08. previous close", "N/A"),
-                "date": str(today),
+                "symbol": symbol.upper(),
+                "price": float(row.get("price", 0)),
+                "change": float(row.get("change", 0)) if "change" in row else 0,
+                "pct_change": float(row.get("pct_change", 0)) if "pct_change" in row else 0,
+                "volume": int(row.get("volume", 0)) if "volume" in row else 0,
+                "time": str(row.get("time", "")) if "time" in row else "",
+                "raw": row.to_dict(),
             }
     except Exception as exc:
-        logger.info("AlphaVantage fallback also failed for %s: %s", symbol, exc)
-
+        logger.info("vnstock3 quote failed for %s: %s", symbol, exc)
     return None
 
 
-def _fetch_info(symbol: str) -> dict[str, Any] | None:
-    params = {"q": f"code:{symbol.upper()}"}
+def _get_company_info(symbol: str) -> dict[str, Any] | None:
+    """Lấy thông tin công ty từ vnstock3."""
     try:
-        with httpx.Client(timeout=10.0, headers=HEADERS) as client:
-            r = client.get(VND_INFO_URL, params=params)
-            r.raise_for_status()
-        data = r.json()
+        from vnstock3 import Market
+        df = Market().symbols.overview(symbol=symbol.upper(), show_log=False)
+        if df is not None and not df.empty:
+            return df.iloc[0].to_dict()
     except Exception as exc:
-        logger.warning("VND info fetch failed for %s: %s", symbol, exc)
-        return None
-    items = data.get("data") or []
-    return items[0] if items else None
+        logger.info("vnstock3 info failed for %s: %s", symbol, exc)
+    return None
 
 
 @mcp.tool()
 def get_stock_price(symbol: str) -> str:
-    """Lấy giá cổ phiếu Việt Nam mới nhất từ VNDirect.
+    """Lấy giá cổ phiếu Việt Nam realtime qua vnstock3.
+
+    Hỗ trợ tất cả mã HOSE/HNX/UPCOM (vd: VCB, FPT, HPG, VIC).
+    Tự động failover giữa TCBS, VCI, SSI, MSN.
 
     Args:
-        symbol: Mã cổ phiếu HOSE/HNX/UPCOM (vd: VNM, FPT, HPG, VIC).
+        symbol: Mã cổ phiếu (vd: VCB, FPT, HPG).
 
     Returns:
-        Giá đóng cửa, % thay đổi, khối lượng giao dịch.
+        Giá hiện tại, thay đổi, khối lượng.
     """
     sym = symbol.upper().strip()
-    p = _fetch_latest_price(sym)
-    if not p:
+    q = _get_quote(sym)
+    if not q:
         return f"Không lấy được giá cổ phiếu '{sym}'. Mã không tồn tại hoặc API lỗi."
-    change = p.get("change") or 0
-    pct = p.get("pctChange") or 0
+
+    price = q["price"]
+    change = q["change"]
+    pct = q["pct_change"]
     arrow = "▲" if change > 0 else ("▼" if change < 0 else "—")
+    vol = q["volume"]
+    t = q.get("time", "")
+
     return (
-        f"**{sym}** (sàn {p.get('floor', 'N/A')}) — phiên {p.get('date')}\n"
-        f"- Đóng cửa: {p.get('close', 0):,.0f} VND {arrow} {change:+,.0f} ({pct:+.2f}%)\n"
-        f"- Mở cửa: {p.get('open', 0):,.0f} | Cao nhất: {p.get('high', 0):,.0f} | Thấp nhất: {p.get('low', 0):,.0f}\n"
-        f"- Khối lượng: {p.get('nmVolume', 0):,} cp\n"
-        f"- Giá trị: {p.get('nmValue', 0):,.0f} VND"
+        f"**{sym}** — {price:,.0f} VND {arrow} {change:+,.0f} ({pct:+.2f}%)\n"
+        f"- Khối lượng: {vol:,} cp\n"
+        f"- Cập nhật: {t}\n"
+        f"_Nguồn: vnstock3 (TCBS/VCI/SSI/MSN)_"
     )
 
 
@@ -141,22 +92,44 @@ def get_stock_info(symbol: str) -> str:
     """Lấy thông tin công ty niêm yết Việt Nam.
 
     Args:
-        symbol: Mã cổ phiếu (vd: VNM, FPT).
+        symbol: Mã cổ phiếu (vd: VCB, FPT).
 
     Returns:
-        Tên công ty, sàn niêm yết, ngành, vốn hóa nếu có.
+        Tên công ty, sàn, ngành, vốn hóa.
     """
     sym = symbol.upper().strip()
-    info = _fetch_info(sym)
+    info = _get_company_info(sym)
     if not info:
         return f"Không lấy được thông tin '{sym}'."
-    lines = [f"**{sym} — {info.get('companyName', 'N/A')}**"]
-    if info.get("companyNameEng"):
-        lines.append(f"- Tên Anh: {info['companyNameEng']}")
+
+    lines = [f"**{sym} — {info.get('organ_name', info.get('company_name', 'N/A'))}**"]
+    if info.get("organ_short_name"):
+        lines.append(f"- Tên viết tắt: {info['organ_short_name']}")
     lines.extend([
-        f"- Sàn: {info.get('floor', 'N/A')}",
-        f"- Ngành: {info.get('industryName', 'N/A')}",
-        f"- Loại: {info.get('type', 'N/A')}",
-        f"- Trạng thái: {info.get('status', 'N/A')}",
+        f"- Sàn: {info.get('exchange', info.get('floor', 'N/A'))}",
+        f"- Ngành: {info.get('icb_name', info.get('industry', 'N/A'))}",
+        f"- Vốn hóa: {info.get('market_cap', 'N/A')}",
     ])
     return "\n".join(lines)
+
+
+@mcp.tool()
+def get_market_overview() -> str:
+    """Lấy tổng quan thị trường: VN-Index, top tăng/giảm."""
+    try:
+        from vnstock3 import Market
+        df = Market().quote.intraday(symbol="VNINDEX", show_log=False)
+        if df is not None and not df.empty:
+            row = df.iloc[-1]
+            price = float(row.get("price", 0))
+            change = float(row.get("change", 0)) if "change" in row else 0
+            pct = float(row.get("pct_change", 0)) if "pct_change" in row else 0
+            arrow = "▲" if change > 0 else ("▼" if change < 0 else "—")
+            return (
+                f"**VN-Index**: {price:,.0f} {arrow} {change:+,.0f} ({pct:+.2f}%)\n"
+                f"_Nguồn: vnstock3 (TCBS/VCI/SSI/MSN)_"
+            )
+    except Exception as exc:
+        logger.info("vnstock3 market overview failed: %s", exc)
+
+    return "Không lấy được tổng quan thị trường."
