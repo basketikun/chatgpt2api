@@ -1463,6 +1463,23 @@ def _handle_antigravity_chat(
     raise RuntimeError(f"Antigravity error: {last_error}")
 
 
+def _looks_like_ha_request(messages: list[dict[str, Any]]) -> bool:
+    """Detect if the user request is about smart home control/status."""
+    ha_keywords = [
+        "bật", "tắt", "mở", "đóng", "đèn", "quạt", "máy lạnh", "điều hòa",
+        "nhiệt độ", "độ ẩm", "cửa", "rèm", "cảm biến", "trạng thái",
+        "phòng khách", "phòng ngủ", "nhà tắm", "nhà bếp", "bếp",
+        "sáng", "tối", "nóng", "lạnh", "ổ cắm", "công tắc",
+        "sensor", "climate", "light", "switch", "cover", "lock",
+        "đang bật", "đang tắt", "có đang", "bao nhiêu độ",
+    ]
+    for m in messages[-2:]:  # Check last 2 messages
+        text = str(m.get("content", "")).lower()
+        if any(kw in text for kw in ha_keywords):
+            return True
+    return False
+
+
 def _inject_mcp_tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
     """Inject tools from enabled MCP servers + HA into the tools list."""
     logger.info({"event": "mcp_inject_start", "input_tools": len(tools or [])})
@@ -1478,8 +1495,9 @@ def _inject_mcp_tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]
         client_is_ha = any(name.startswith("Hass") or name == "GetLiveContext" for name in existing_names)
         ha_tools = [] if client_is_ha else get_ha_tools()
 
-        # Fast path for HA: skip MCP tools (80+ tools useless for simple commands)
-        if client_is_ha:
+        # Fast path: skip 77 MCP tools for HA-like requests (control + status queries)
+        is_ha_request = client_is_ha or _looks_like_ha_request(messages) if messages else False
+        if is_ha_request:
             mcp_tools = []
         
         all_new_tools = mcp_tools + ha_tools
