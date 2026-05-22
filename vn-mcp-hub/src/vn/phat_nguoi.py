@@ -1,17 +1,16 @@
 """vn_phat_nguoi — tra cứu phạt nguội Việt Nam.
 
-Cập nhật 2026: Dùng reCAPTCHA v3 token generation để tra cứu tự động.
-Tham khảo từ script của luuquangvu.
-
-API endpoint cũ (csgt.vn) vẫn còn hoạt động cho POST dù GET redirect sang
-csgt.bocongan.gov.vn. Sitekey lấy từ trang mới.
+API chính thức của CSGT (csgt.vn):
+1. GET captcha ảnh → OCR bằng Tesseract
+2. POST form tra cứu
+3. Parse kết quả từ HTML
 """
 
 from __future__ import annotations
 
 import logging
 import re
-import json
+import io
 import urllib.request
 import urllib.parse
 from datetime import datetime, timezone
@@ -24,304 +23,233 @@ logger = logging.getLogger(__name__)
 mcp = FastMCP("vn_phat_nguoi")
 
 # ── Constants ──
-CSGT_PAGE = "https://csgt.bocongan.gov.vn/tra-cuu-phat-nguoi"
-CSGT_API = "https://csgt.bocongan.gov.vn/tra-cuu-vi-pham-qua-hinh-anh"
-PHATNGUOI_API = "https://api.phatnguoi.vn/tra-cuu/{plate}/{vtype}"  # 1=car, 2=moto, 3=ebike
-SITE_KEY = "6LfcU6MsAAAAAF7XE191a3wa4_8B2pr6WJQoims1"  # Fallback, will scrape from page
-
-
-def _scrape_sitekey() -> str:
-    """Lấy sitekey từ trang CSGT."""
-    try:
-        req = urllib.request.Request(CSGT_PAGE,
-            headers={"User-Agent": "Mozilla/5.0", "Accept": "text/html"})
-        resp = urllib.request.urlopen(req, timeout=10)
-        html = resp.read().decode("utf-8", errors="ignore")
-        for p in [
-            r'sitekey\s*[:=]\s*"([^"]+)"',
-            r"sitekey\s*[:=]\s*'([^']+)'",
-            r'data-sitekey="([^"]+)"',
-        ]:
-            m = re.search(p, html, re.I)
-            if m:
-                return m.group(1)
-    except Exception:
-        pass
-    return SITE_KEY
+BASE_URL = "https://www.csgt.vn"
+CAPTCHA_URL = f"{BASE_URL}/lib/captcha/captcha.class.php"
+POST_URL = f"{BASE_URL}/?mod=contact&task=tracuu_post&ajax"
+RESULTS_URL = f"{BASE_URL}/tra-cuu-phuong-tien-vi-pham.html"
 
 VEHICLE_TYPES = {
-    "oto": ("car", "Ô tô"), "ô tô": ("car", "Ô tô"), "car": ("car", "Ô tô"),
-    "xemay": ("motorbike", "Xe máy"), "xe máy": ("motorbike", "Xe máy"),
-    "motorbike": ("motorbike", "Xe máy"),
-    "xedien": ("electricbike", "Xe đạp điện"),
-    "xe đạp điện": ("electricbike", "Xe đạp điện"),
-    "electricbike": ("electricbike", "Xe đạp điện"),
+    "oto": ("1", "Ô tô"), "ô tô": ("1", "Ô tô"), "car": ("1", "Ô tô"),
+    "xemay": ("2", "Xe máy"), "xe máy": ("2", "Xe máy"),
+    "motorbike": ("2", "Xe máy"),
+    "xedien": ("3", "Xe đạp điện"),
+    "xe đạp điện": ("3", "Xe đạp điện"),
+    "electricbike": ("3", "Xe đạp điện"),
 }
 
-PLATE_PATTERNS = {
-    "car": re.compile(r"^\d{2}[A-Z]{1,2}\d{4,5}$"),
-    "motorbike": re.compile(r"^\d{2}[A-Z0-9]{1,2}\d{4,5}$"),
-    "electricbike": re.compile(r"^\d{2}[A-Z0-9]{1,2}\d{4,5}$"),
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
+
+PLATE_PATTERN = re.compile(r"^\d{2}[A-Z0-9]{1,2}-?\d{4,5}(\.\d{2})?$", re.I)
 
 
 def _normalise_plate(plate: str) -> str:
-    """Chuẩn hóa biển số: 34A47645 → 34A-47645"""
     p = plate.strip().upper().replace(" ", "").replace("-", "")
-    if len(p) >= 7:
-        # Insert dash: 2 digits + 1-2 letters + rest
-        m = re.match(r"^(\d{2}[A-Z]{1,2})(\d{4,5})$", p)
-        if m:
-            p = f"{m.group(1)}-{m.group(2)}"
-    return p
+    m = re.match(r"^(\d{2}[A-Z0-9]{1,2})(\d{4,5})$", p)
+    return f"{m.group(1)}-{m.group(2)}" if m else plate
 
-
-def _is_valid_plate(plate: str, vehicle_type: str = "car") -> bool:
-    p = plate.replace("-", "")
-    pat = PLATE_PATTERNS.get(vehicle_type, PLATE_PATTERNS["car"])
-    return bool(pat.match(p))
-
-
-# ── reCAPTCHA v3 Token Generation ──
-
-def _get_recaptcha_token(sitekey: str) -> str | None:
-    """Generate reCAPTCHA v3 token for CSGT lookup."""
-    try:
-        # Step 1: Get reCAPTCHA JS version
-        js_url = f"https://www.google.com/recaptcha/api.js?render={sitekey}"
-        req = urllib.request.Request(js_url, headers={"User-Agent": "Mozilla/5.0"})
-        resp = urllib.request.urlopen(req, timeout=10)
-        js_text = resp.read().decode("utf-8", errors="ignore")
-        ver = re.search(r"release/([A-Za-z0-9_-]+)", js_text)
-        version = ver.group(1) if ver else "4Xgct4UibNX93Vrm5g7t5h8F"
-
-        # Step 2: Get anchor token (reCAPTCHA v3 uses anchor too)
-        co_b64 = "aHR0cHM6Ly9jc2d0LmJvY29uZ2FuLmdvdi52bjo0NDM"
-        anchor_url = (
-            f"https://www.google.com/recaptcha/api2/anchor?"
-            f"ar=1&k={sitekey}&co={co_b64}&hl=vi&size=invisible&cb=1&v={version}"
-        )
-        req = urllib.request.Request(anchor_url, headers={"User-Agent": "Mozilla/5.0"})
-        resp = urllib.request.urlopen(req, timeout=10)
-        anchor_html = resp.read().decode("utf-8", errors="ignore")
-        anchor_token = re.search(r'"recaptcha-token"\s+value="([^"]+)"', anchor_html)
-        if not anchor_token:
-            # Try v3-specific pattern
-            anchor_token = re.search(r'id="recaptcha-token"[^>]*value="([^"]+)"', anchor_html)
-        if not anchor_token:
-            logger.warning("reCAPTCHA: couldn't find anchor token")
-            return None
-        token = anchor_token.group(1)
-
-        # Step 3: Reload to get final response token
-        reload_url = f"https://www.google.com/recaptcha/api2/reload?k={sitekey}"
-        reload_data = urllib.parse.urlencode({
-            "c": token, "v": version, "reason": "q", "k": sitekey,
-        }).encode()
-        req = urllib.request.Request(reload_url, data=reload_data,
-            headers={"User-Agent": "Mozilla/5.0", "Content-Type": "application/x-www-form-urlencoded"})
-        resp = urllib.request.urlopen(req, timeout=10)
-        raw = resp.read().decode("utf-8", errors="ignore")
-        raw = re.sub(r"^\)\]}'\s*", "", raw.strip())
-        data = json.loads(raw)
-        # Flexible parsing
-        if isinstance(data, list) and len(data) > 1:
-            second = data[1]
-            if isinstance(second, str) and len(second) > 100:
-                return second
-            elif isinstance(second, list) and len(second) >= 2:
-                return second[1]
-        logger.warning("reCAPTCHA: unexpected response: %s", str(data)[:200])
-    except Exception as exc:
-        logger.warning("reCAPTCHA failed: %s", exc)
-    return None
-
-
-# ── CSRF Token ──
-
-def _fetch_csrf_token() -> str | None:
-    """Lấy CSRF token từ trang tra cứu."""
-    try:
-        req = urllib.request.Request(CSGT_PAGE,
-            headers={"User-Agent": "Mozilla/5.0", "Accept": "text/html"})
-        resp = urllib.request.urlopen(req, timeout=10)
-        html = resp.read().decode("utf-8", errors="ignore")
-        m = re.search(r'name="_token"\s+value="([^"]+)"', html)
-        if m:
-            return m.group(1)
-    except Exception as exc:
-        logger.warning("CSRF fetch failed: %s", exc)
-    return None
-
-
-# ── Parsing ──
-
-def _lookup_phatnguoi_vn(plate: str, vehicle_type: int) -> dict | None:
-    """Query phatnguoi.vn API — simple GET, no captcha."""
-    url = PHATNGUOI_API.format(plate=plate.replace("-", ""), vtype=vehicle_type)
-    try:
-        req = urllib.request.Request(url, headers={
-            "User-Agent": "Mozilla/5.0", "Accept": "application/json"
-        })
-        resp = urllib.request.urlopen(req, timeout=10)
-        raw = resp.read().decode("utf-8", errors="ignore")
-        data = json.loads(raw)
-        if isinstance(data, dict):
-            return data
-    except Exception as exc:
-        logger.info("phatnguoi.vn failed: %s", exc)
-    return None
-
-
-def _extract_violations(html: str) -> list[dict]:
-    """Parse violation cards from HTML response."""
-    soup = BeautifulSoup(html, "html.parser")
-    cards = soup.find_all("div", class_="violation-card")
-    if not cards:
-        return []
-
-    violations = []
-    for card in cards:
-        v = {}
-        title_el = card.find("div", class_="violation-title")
-        if title_el:
-            v["title"] = title_el.get_text(strip=True)
-
-        status_el = card.find("span", class_=re.compile(r"status"))
-        if status_el:
-            v["status"] = status_el.get_text(strip=True)
-
-        info_groups = card.find_all("div", class_="info-group")
-        for group in info_groups:
-            label_el = group.find("span", class_="label")
-            value_el = group.find("span", class_="value")
-            if label_el and value_el:
-                v[label_el.get_text(strip=True)] = value_el.get_text(strip=True)
-
-        if v:
-            violations.append(v)
-    return violations
-
-
-# ── Main Tool ──
 
 @mcp.tool()
 def check_traffic_violation(plate: str, vehicle_type: str = "oto") -> str:
-    """Tra cứu phạt nguội xe tại Việt Nam (tự động qua reCAPTCHA v3).
+    """Tra cứu phạt nguội xe tại Việt Nam qua CSGT.
 
     Args:
-        plate: Biển số xe (vd: "30A-12345", "34A47645").
+        plate: Biển số xe (vd: "34A47645", "99A40201").
         vehicle_type: 'oto' / 'xe máy' / 'xe đạp điện'. Mặc định oto.
 
     Returns:
         Kết quả tra cứu: danh sách vi phạm hoặc thông báo không có.
     """
     norm_plate = _normalise_plate(plate)
-
     vt_key = vehicle_type.lower().strip()
     vt = VEHICLE_TYPES.get(vt_key)
     if not vt:
         return f"Loại xe '{vehicle_type}' không hợp lệ. Chọn: ô tô, xe máy, xe đạp điện."
     code, vt_label = vt
 
-    if not _is_valid_plate(norm_plate, code):
+    # 1) Get CAPTCHA image + OCR
+    captcha_text = ""
+    try:
+        req = urllib.request.Request(CAPTCHA_URL, headers=HEADERS)
+        resp = urllib.request.urlopen(req, timeout=10)
+        img_data = resp.read()
+        if img_data and len(img_data) > 100:
+            try:
+                import pytesseract
+                from PIL import Image
+                img = Image.open(io.BytesIO(img_data))
+                captcha_text = pytesseract.image_to_string(
+                    img, config="--psm 7 -c tessedit_char_whitelist=0123456789"
+                ).strip()
+            except ImportError:
+                pass
+    except Exception as exc:
+        logger.warning("CAPTCHA fetch failed: %s", exc)
+
+    if not captcha_text:
+        captcha_text = "0000"  # Fallback
+
+    # 2) POST form
+    form_data = urllib.parse.urlencode({
+        "BienKS": norm_plate.replace("-", ""),
+        "Xe": code,
+        "captcha": captcha_text,
+        "ipClient": "9.9.9.91",
+        "cUrl": "1",
+    }).encode()
+
+    try:
+        req = urllib.request.Request(POST_URL, data=form_data, headers={
+            **HEADERS, "Content-Type": "application/x-www-form-urlencoded",
+        })
+        resp = urllib.request.urlopen(req, timeout=15)
+        post_result = resp.read().decode("utf-8", errors="ignore")
+    except Exception as exc:
         return (
-            f"Biển số '{plate}' không đúng định dạng VN.\n"
-            "Định dạng đúng: XX(A-Z)-12345 hoặc 29-K3-1234.56"
+            f"**Tra cứu phạt nguội cho {vt_label} biển số {norm_plate}:**\n\n"
+            f"Lỗi kết nối CSGT: {exc}"
         )
 
-    # ── Dual API lookup: phatnguoi.vn (no captcha) + CSGT (official) ──
-    lines = [f"**Tra cứu phạt nguội cho {vt_label} biển số {norm_plate}:**", ""]
-    all_violations = []
-    sources = []
-
-    # 1) Try phatnguoi.vn first (simple GET, no captcha)
-    vtype_map = {"car": 1, "motorbike": 2, "electricbike": 3}
-    vtype_num = vtype_map.get(code, 1)
-    pn_result = _lookup_phatnguoi_vn(norm_plate, vtype_num)
-    if pn_result:
-        if pn_result.get("status"):
-            data = pn_result.get("data") or []
-            if isinstance(data, list) and len(data) > 0:
-                for item in data:
-                    if isinstance(item, dict):
-                        all_violations.append(item)
-                        sources.append("phatnguoi.vn")
-        elif "chúc mừng" in str(pn_result).lower() or pn_result.get("message") == "success":
-            pass  # no violations
-
-    # 2) Try CSGT official API (reCAPTCHA required)
-    csrf = _fetch_csrf_token()
-    if csrf:
-        sitekey = _scrape_sitekey()
-        recaptcha = _get_recaptcha_token(sitekey)
-        if recaptcha:
+    # CAPTCHA sai → retry 1 lần
+    if post_result.strip() == "404":
+        logger.info("CAPTCHA wrong, retrying...")
+        try:
+            req = urllib.request.Request(CAPTCHA_URL, headers=HEADERS)
+            resp = urllib.request.urlopen(req, timeout=10)
+            img_data = resp.read()
+            import pytesseract
+            from PIL import Image
+            img = Image.open(io.BytesIO(img_data))
+            captcha_text = pytesseract.image_to_string(
+                img, config="--psm 7 -c tessedit_char_whitelist=0123456789"
+            ).strip()
             form_data = urllib.parse.urlencode({
-                "_token": csrf,
-                "g-recaptcha-response": recaptcha,
-                "vehicle_type": code,
-                "plate_number": norm_plate.replace("-", ""),
+                "BienKS": norm_plate.replace("-", ""),
+                "Xe": code,
+                "captcha": captcha_text,
+                "ipClient": "9.9.9.91",
+                "cUrl": "1",
             }).encode()
-            try:
-                req = urllib.request.Request(CSGT_API, data=form_data,
-                    headers={
-                        "User-Agent": "Mozilla/5.0",
-                        "Content-Type": "application/x-www-form-urlencoded",
-                        "X-Requested-With": "XMLHttpRequest",
-                        "Accept": "application/json, text/html",
-                        "Origin": "https://csgt.bocongan.gov.vn",
-                        "Referer": CSGT_PAGE,
-                    })
-                resp = urllib.request.urlopen(req, timeout=15)
-                html = resp.read().decode("utf-8", errors="ignore")
-                csv = _extract_violations(html)
-                if csv:
-                    for v in csv:
-                        all_violations.append(v)
-                        sources.append("CSGT")
-            except Exception as exc:
-                logger.info("CSGT API: %s", exc)
+            req = urllib.request.Request(POST_URL, data=form_data, headers={
+                **HEADERS, "Content-Type": "application/x-www-form-urlencoded",
+            })
+            resp = urllib.request.urlopen(req, timeout=15)
+            post_result = resp.read().decode("utf-8", errors="ignore")
+        except Exception:
+            pass
 
-    # ── Format results ──
-    if not all_violations:
-        if sources:
-            return "\n".join(lines + [
-                f"✅ **Không có vi phạm giao thông nào được ghi nhận.**",
-                f"_Nguồn: {', '.join(sources)} — {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC_"
-            ])
-        return "\n".join(lines + [
-            "⚠️ Không thể tra cứu tự động. Vui lòng tra cứu thủ công tại:",
-            f"- {CSGT_PAGE}",
-            f"- https://phatnguoi.vn",
-        ])
+    if post_result.strip() == "404":
+        return (
+            f"**Tra cứu phạt nguội cho {vt_label} biển số {norm_plate}:**\n\n"
+            f"⚠️ CAPTCHA không đúng sau 2 lần thử. Vui lòng tra cứu thủ công tại:\n"
+            f"{BASE_URL}/tra-cuu-phuong-tien-vi-pham.html"
+        )
 
-    vi_count = len(all_violations)
-    lines.append(f"🚨 **Phát hiện {vi_count} vi phạm** từ: {', '.join(set(sources))}")
-    lines.append("")
+    # 3) Fetch results page
+    try:
+        params = urllib.parse.urlencode({"LoaiXe": code, "BienKiemSoat": norm_plate.replace("-", "")})
+        req = urllib.request.Request(f"{RESULTS_URL}?{params}", headers=HEADERS)
+        resp = urllib.request.urlopen(req, timeout=10)
+        html = resp.read().decode("utf-8", errors="ignore")
+    except Exception as exc:
+        return f"Lỗi lấy kết quả: {exc}"
 
-    for i, v in enumerate(all_violations[:20], 1):
-        lines.append(f"### Lỗi {i}")
-        for key, val in v.items():
-            if isinstance(val, list):
-                lines.append(f"- **{key}**: {', '.join(str(x) for x in val)}")
-            else:
-                lines.append(f"- **{key}**: {val}")
+    # 4) Parse violations
+    violations = _parse_violations(html)
+
+    lines = [f"**Tra cứu phạt nguội cho {vt_label} biển số {norm_plate}:**", ""]
+
+    if not violations:
+        lines.append("✅ **Không có vi phạm giao thông nào được ghi nhận.**")
+    else:
+        lines.append(f"🚨 **Phát hiện {len(violations)} vi phạm:**")
         lines.append("")
+        for i, v in enumerate(violations[:20], 1):
+            lines.append(f"### Lỗi {i}")
+            for key, val in v.items():
+                if isinstance(val, list):
+                    lines.append(f"- **{key}**:")
+                    for item in val:
+                        lines.append(f"  - {item.get('name', '')}: {item.get('address', '')}")
+                else:
+                    lines.append(f"- **{key}**: {val}")
+            lines.append("")
 
-    lines.append(f"_Nguồn: {', '.join(set(sources))} — {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC_")
+    lines.append(f"_Nguồn: Cục CSGT — {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC_")
     return "\n".join(lines)
+
+
+def _parse_violations(html: str) -> list[dict]:
+    """Parse violation data from CSGT results page HTML."""
+    soup = BeautifulSoup(html, "html.parser")
+    groups = soup.find_all("div", class_="form-group")
+    if not groups:
+        return []
+
+    violations = []
+    current = {}
+    places = []
+
+    label_map = {
+        "Biển kiểm soát": "licensePlate", "Màu biển": "plateColor",
+        "Loại phương tiện": "vehicleType", "Thời gian vi phạm": "violationTime",
+        "Địa điểm vi phạm": "violationLocation", "Hành vi vi phạm": "violationBehavior",
+        "Trạng thái": "status", "Đơn vị phát hiện vi phạm": "detectionUnit",
+    }
+
+    for el in groups:
+        # Check if this is a record boundary (<hr>)
+        is_boundary = el.find_next("hr") is not None or el.find_previous("hr") is not None
+
+        label_el = el.find("label")
+        if not label_el:
+            continue
+
+        span = label_el.find("span")
+        label_text = span.get_text(strip=True).rstrip(":") if span else label_el.get_text(strip=True).rstrip(":")
+
+        value_el = el.find("div", class_="col-md-9")
+        value_text = value_el.get_text(" ", strip=True) if value_el else ""
+
+        # Resolution places (start with "1." or "2.")
+        if re.match(r"^\d+\.", label_text.strip()):
+            place = {"name": label_text.strip()}
+            if "Địa chỉ" in value_text:
+                place["address"] = value_text.replace("Địa chỉ:", "").strip()
+            places.append(place)
+            continue
+
+        # Check if start of new record
+        if is_boundary and current:
+            if places:
+                current["resolutionPlaces"] = places
+            violations.append(current)
+            current = {}
+            places = []
+
+        key = label_map.get(label_text)
+        if key and value_text:
+            current[key] = value_text
+
+    # Last record
+    if current:
+        if places:
+            current["resolutionPlaces"] = places
+        violations.append(current)
+
+    return violations
 
 
 @mcp.tool()
 def list_vehicle_types() -> str:
     """Liệt kê các loại xe được hỗ trợ tra cứu phạt nguội."""
     seen = set()
-    out = ["**Loại xe hỗ trợ tra cứu phạt nguội:**", ""]
+    out = ["**Loại xe hỗ trợ:**", ""]
     for key, (code, label) in VEHICLE_TYPES.items():
         if label in seen:
             continue
         seen.add(label)
-        out.append(f"- {label}")
-    out.append("")
-    out.append(f"📌 Nguồn: {CSGT_PAGE}")
+        out.append(f"- {label} (mã {code})")
     return "\n".join(out)
