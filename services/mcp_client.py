@@ -168,10 +168,8 @@ def get_enabled_mcp_tools() -> list[dict[str, Any]]:
     """Collect OpenAI-format tools from all enabled MCP servers in config."""
     installed = config.data.get("mcp_servers") or []
     if isinstance(installed, dict):
-        installed = installed.values()
-    if not isinstance(installed, list):
-        return []
-    installed = [i for i in installed if isinstance(i, dict)]
+        installed = list(installed.values())
+    if not isinstance(installed, list) or not installed:
 
     logger.info({"event": "mcp_debug_v2", "total": len(installed),
                  "enabled_count": sum(1 for i in installed if i.get("enabled", True)),
