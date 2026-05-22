@@ -73,6 +73,66 @@ def send_message(chat_id: int | str, text: str) -> dict:
         "link_preview_options": {"is_disabled": True},
     })
 
+def send_photo(chat_id: int | str, photo_bytes: bytes, caption: str = "") -> dict:
+    """Gửi ảnh qua Telegram."""
+    import io, uuid
+    token = _bot_token()
+    if not token:
+        return {"ok": False}
+    try:
+        boundary = f"bot{token[:8]}{uuid.uuid4().hex[:8]}"
+        body = io.BytesIO()
+        body.write(f"--{boundary}\r\n".encode())
+        body.write(f'Content-Disposition: form-data; name="chat_id"\r\n\r\n{chat_id}\r\n'.encode())
+        body.write(f"--{boundary}\r\n".encode())
+        if caption:
+            body.write(f'Content-Disposition: form-data; name="caption"\r\n\r\n{caption}\r\n'.encode())
+            body.write(f"--{boundary}\r\n".encode())
+        body.write(f'Content-Disposition: form-data; name="photo"; filename="image.png"\r\n'.encode())
+        body.write(f'Content-Type: image/png\r\n\r\n'.encode())
+        body.write(photo_bytes)
+        body.write(f"\r\n--{boundary}--\r\n".encode())
+        body.seek(0)
+
+        url = f"{TELEGRAM_API}/bot{token}/sendPhoto"
+        req = urllib.request.Request(url, data=body.getvalue(),
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+        resp = urllib.request.urlopen(req, timeout=30)
+        return json.loads(resp.read().decode())
+    except Exception as e:
+        logger.warning("sendPhoto failed: %s", e)
+        return {"ok": False}
+
+def send_document(chat_id: int | str, doc_bytes: bytes, filename: str, caption: str = "") -> dict:
+    """Gửi file/document qua Telegram."""
+    import io, uuid
+    token = _bot_token()
+    if not token:
+        return {"ok": False}
+    try:
+        boundary = f"bot{token[:8]}{uuid.uuid4().hex[:8]}"
+        body = io.BytesIO()
+        body.write(f"--{boundary}\r\n".encode())
+        body.write(f'Content-Disposition: form-data; name="chat_id"\r\n\r\n{chat_id}\r\n'.encode())
+        body.write(f"--{boundary}\r\n".encode())
+        if caption:
+            body.write(f'Content-Disposition: form-data; name="caption"\r\n\r\n{caption}\r\n'.encode())
+            body.write(f"--{boundary}\r\n".encode())
+        body.write(f'Content-Disposition: form-data; name="document"; filename="{filename}"\r\n'.encode())
+        body.write(f'Content-Type: application/octet-stream\r\n\r\n'.encode())
+        body.write(doc_bytes)
+        body.write(f"\r\n--{boundary}--\r\n".encode())
+        body.seek(0)
+
+        url = f"{TELEGRAM_API}/bot{token}/sendDocument"
+        req = urllib.request.Request(url, data=body.getvalue(),
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+        resp = urllib.request.urlopen(req, timeout=30)
+        return json.loads(resp.read().decode())
+    except Exception as e:
+        logger.warning("sendDocument failed: %s", e)
+        return {"ok": False}
+
 
 async def handle_webhook(request) -> dict:
     """Handle incoming Telegram webhook POST. Returns immediately, processes AI in background."""
@@ -120,11 +180,23 @@ def _process_message(text: str, chat_id: str, photo: list | None = None, documen
     # Handle photo
     if photo:
         _api_call("sendChatAction", {"chat_id": chat_id, "action": "typing"})
-        # Get largest photo
         largest = max(photo, key=lambda p: p.get("file_size", 0))
         file_data = _download_file(largest["file_id"])
         if file_data:
-            send_message(chat_id, f"📷 Đã nhận ảnh ({len(file_data)//1024}KB). AI vision đang được phát triển.")
+            # Try OCR on image
+            text = ""
+            try:
+                import pytesseract
+                from PIL import Image
+                import io
+                img = Image.open(io.BytesIO(file_data))
+                text = pytesseract.image_to_string(img, lang="vie+eng").strip()
+            except Exception:
+                pass
+            if text:
+                send_message(chat_id, f"📷 OCR:\n{text[:2000]}")
+            else:
+                send_message(chat_id, f"📷 Đã nhận ảnh ({len(file_data)//1024}KB).")
         else:
             send_message(chat_id, "📷 Không thể tải ảnh.")
         return
