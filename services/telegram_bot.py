@@ -75,6 +75,7 @@ def send_message(chat_id: int | str, text: str) -> dict:
 
 
 async def handle_webhook(request) -> dict:
+    """Handle incoming Telegram webhook POST. Returns immediately, processes AI in background."""
     try:
         body = await request.json()
     except Exception:
@@ -85,21 +86,29 @@ async def handle_webhook(request) -> dict:
     chat_id = str(msg.get("chat", {}).get("id", ""))
     text = (msg.get("text") or "").strip()
 
-    # Commands
+    # Process in background thread so webhook returns immediately
+    import threading
+    t = threading.Thread(target=_process_message, args=(text, chat_id), daemon=True)
+    t.start()
+    return {"ok": True}
+
+
+def _process_message(text: str, chat_id: str) -> None:
+    """Process a Telegram message in background thread."""
     if text.startswith("/"):
         reply = _cmd(text, chat_id)
         if reply:
             send_message(chat_id, reply)
-            return {"ok": True}
+            return
 
     if not text or not chat_id:
-        return {"ok": True}
+        return
 
     # Whitelist
     allowed = [str(c) for c in _chat_ids()]
     if allowed and chat_id not in allowed:
         send_message(chat_id, "⛔ Không được phép.")
-        return {"ok": False}
+        return
 
     _api_call("sendChatAction", {"chat_id": chat_id, "action": "typing"})
 
@@ -116,14 +125,13 @@ async def handle_webhook(request) -> dict:
 
     # Call AI
     base_url = str(config.get().get("api_base_url", "")).strip().rstrip("/") or "http://127.0.0.1/v1"
-    api_key = str(config.get().get("api_key", "")).strip() or str(config.get().get("auth-key", "")).strip()
-    auth_header = config.auth_key  # Use system auth key for internal calls
+    auth_header = config.auth_key
     payload = {"model": _tg_model(), "messages": _conversations[key], "stream": False}
     try:
         req = urllib.request.Request(f"{base_url}/chat/completions",
             data=json.dumps(payload).encode(),
             headers={"Authorization": f"Bearer {auth_header}", "Content-Type": "application/json"})
-        resp = urllib.request.urlopen(req, timeout=180)
+        resp = urllib.request.urlopen(req, timeout=300)
         reply = json.loads(resp.read().decode()).get("choices", [{}])[0].get("message", {}).get("content", "")
         reply = reply.strip() or "..."
     except Exception as exc:
@@ -135,7 +143,6 @@ async def handle_webhook(request) -> dict:
         _conversations[key] = [_conversations[key][0]] + _conversations[key][-(MAX_HISTORY - 1):]
 
     send_message(chat_id, reply)
-    return {"ok": True}
 
 
 def _cmd(text: str, chat_id: str) -> str | None:
