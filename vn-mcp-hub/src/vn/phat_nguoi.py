@@ -25,7 +25,7 @@ mcp = FastMCP("vn_phat_nguoi")
 
 # ── Constants ──
 CSGT_PAGE = "https://csgt.bocongan.gov.vn/tra-cuu-phat-nguoi"
-CSGT_API = "https://www.csgt.vn/tra-cuu-vi-pham-qua-hinh-anh"
+CSGT_API = "https://csgt.bocongan.gov.vn/tra-cuu-vi-pham-qua-hinh-anh"
 SITE_KEY = "6LfcU6MsAAAAAF7XE191a3wa4_8B2pr6WJQoims1"  # Fallback, will scrape from page
 
 
@@ -83,28 +83,30 @@ def _is_valid_plate(plate: str, vehicle_type: str = "car") -> bool:
 
 # ── reCAPTCHA v3 Token Generation ──
 
-def _get_recaptcha_token() -> str | None:
-    """Generate reCAPTCHA v3 token (3-step Google API flow)."""
+def _get_recaptcha_token(sitekey: str) -> str | None:
+    """Generate reCAPTCHA v3 token for CSGT lookup."""
     try:
-        sitekey = _scrape_sitekey()
         # Step 1: Get reCAPTCHA JS version
         js_url = f"https://www.google.com/recaptcha/api.js?render={sitekey}"
         req = urllib.request.Request(js_url, headers={"User-Agent": "Mozilla/5.0"})
         resp = urllib.request.urlopen(req, timeout=10)
         js_text = resp.read().decode("utf-8", errors="ignore")
         ver = re.search(r"release/([A-Za-z0-9_-]+)", js_text)
-        version = ver.group(1) if ver else "WvcoNfCzFCGqWkMh3gXs4M1Q"
+        version = ver.group(1) if ver else "4Xgct4UibNX93Vrm5g7t5h8F"
 
-        # Step 2: Get anchor token (don't encode co - it's already base64)
+        # Step 2: Get anchor token (reCAPTCHA v3 uses anchor too)
         co_b64 = "aHR0cHM6Ly9jc2d0LmJvY29uZ2FuLmdvdi52bjo0NDM"
         anchor_url = (
             f"https://www.google.com/recaptcha/api2/anchor?"
-            f"ar=1&k={sitekey}&co={co_b64}&hl=vi&size=invisible&cb=1"
+            f"ar=1&k={sitekey}&co={co_b64}&hl=vi&size=invisible&cb=1&v={version}"
         )
         req = urllib.request.Request(anchor_url, headers={"User-Agent": "Mozilla/5.0"})
         resp = urllib.request.urlopen(req, timeout=10)
         anchor_html = resp.read().decode("utf-8", errors="ignore")
         anchor_token = re.search(r'"recaptcha-token"\s+value="([^"]+)"', anchor_html)
+        if not anchor_token:
+            # Try v3-specific pattern
+            anchor_token = re.search(r'id="recaptcha-token"[^>]*value="([^"]+)"', anchor_html)
         if not anchor_token:
             logger.warning("reCAPTCHA: couldn't find anchor token")
             return None
@@ -119,23 +121,18 @@ def _get_recaptcha_token() -> str | None:
             headers={"User-Agent": "Mozilla/5.0", "Content-Type": "application/x-www-form-urlencoded"})
         resp = urllib.request.urlopen(req, timeout=10)
         raw = resp.read().decode("utf-8", errors="ignore")
-        # Response format: )]}'<JSON array>
         raw = re.sub(r"^\)\]}'\s*", "", raw.strip())
         data = json.loads(raw)
-        # Flexible parsing: token can be data[1] (string) or data[1][1] (nested)
-        recaptcha_token = None
+        # Flexible parsing
         if isinstance(data, list) and len(data) > 1:
             second = data[1]
             if isinstance(second, str) and len(second) > 100:
-                recaptcha_token = second
+                return second
             elif isinstance(second, list) and len(second) >= 2:
-                recaptcha_token = second[1]
-        if not recaptcha_token:
-            logger.warning("reCAPTCHA: unexpected reload response: %s", str(data)[:200])
-            return None
-        return recaptcha_token
+                return second[1]
+        logger.warning("reCAPTCHA: unexpected response: %s", str(data)[:200])
     except Exception as exc:
-        logger.warning("reCAPTCHA token generation failed: %s", exc)
+        logger.warning("reCAPTCHA failed: %s", exc)
     return None
 
 
@@ -227,7 +224,8 @@ def check_traffic_violation(plate: str, vehicle_type: str = "oto") -> str:
         )
 
     # Get reCAPTCHA token
-    recaptcha = _get_recaptcha_token()
+    sitekey = _scrape_sitekey()
+    recaptcha = _get_recaptcha_token(sitekey)
     if not recaptcha:
         return (
             f"**Tra cứu phạt nguội cho {vt_label} biển số {norm_plate}:**\n\n"
