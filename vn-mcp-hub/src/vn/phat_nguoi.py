@@ -39,17 +39,24 @@ def _normalise_plate(plate: str) -> str:
 
 
 def _fetch_page() -> tuple[str | None, str | None]:
-    """Get CSRF token + sitekey from page."""
-    try:
-        import requests
-        r = requests.get(PAGE_URL, headers=HEADERS, timeout=15)
-        html = r.text
-        csrf = re.search(r'name="_token"\s+value="([^"]+)"', html)
-        sk = re.search(r'data-sitekey="([^"]+)"', html) or re.search(r'sitekey\s*[:=]\s*"([^"]+)"', html)
-        return (csrf.group(1) if csrf else None), (sk.group(1) if sk else None)
-    except Exception as e:
-        logger.warning("Page fetch: %s", e)
-        return None, None
+    """Get CSRF token + sitekey from page (with retry)."""
+    import requests, time
+    for attempt in range(3):
+        try:
+            r = requests.get(PAGE_URL, headers={
+                **HEADERS, "Accept": "text/html", "Accept-Language": "vi-VN,vi;q=0.9",
+            }, timeout=15)
+            html = r.text
+            csrf = re.search(r'name="_token"\s+value="([^"]+)"', html)
+            sk = re.search(r'data-sitekey="([^"]+)"', html) or re.search(r'sitekey\s*[:=]\s*"([^"]+)"', html)
+            if csrf and sk:
+                return csrf.group(1), sk.group(1)
+            logger.info("Page fetch attempt %d: csrf=%s sitekey=%s", attempt+1, bool(csrf), bool(sk))
+            time.sleep(1 + attempt)
+        except Exception as e:
+            logger.warning("Page fetch attempt %d: %s", attempt+1, e)
+            time.sleep(2)
+    return None, None
 
 
 def _get_recaptcha_token(sitekey: str) -> str | None:
@@ -144,7 +151,25 @@ def check_traffic_violation(plate: str, vehicle_type: str = "oto") -> str:
 
     csrf, sitekey = _fetch_page()
     if not csrf or not sitekey:
-        return f"**Tra cứu phạt nguội cho {vt_label} biển số {norm_plate}:**\n\n⚠️ Không lấy được dữ liệu trang CSGT."
+        # Fallback: try phatnguoi.vn API (simpler, no captcha)
+        import requests as req_lib, json as _json
+        vtype_map = {"1": 1, "2": 2}
+        pn_url = f"https://api.phatnguoi.vn/tra-cuu/{norm_plate.replace('-', '')}/{vtype_map.get(code, 1)}"
+        try:
+            r = req_lib.get(pn_url, headers=HEADERS, timeout=10)
+            if r.status_code == 200:
+                data = _json.loads(r.text)
+                if data.get("status") and isinstance(data.get("data"), list):
+                    v_list = [v for v in data["data"] if isinstance(v, dict)]
+                    if v_list:
+                        return _format(v_list, norm_plate, vt_label, "phatnguoi.vn")
+                msg = str(data.get("message", "")).lower()
+                if "thành công" in msg or "success" in msg:
+                    return _format([], norm_plate, vt_label, "phatnguoi.vn")
+        except Exception:
+            pass
+        return (f"**Tra cứu phạt nguội cho {vt_label} biển số {norm_plate}:**\n\n"
+                f"⚠️ CSGT đang chặn IP. Vui lòng thử lại sau hoặc tra cứu thủ công:\n{PAGE_URL}")
 
     recaptcha = _get_recaptcha_token(sitekey)
     if not recaptcha:
