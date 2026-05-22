@@ -149,7 +149,7 @@ export default function ChatPage() {
         {messages.map((m, i) => (
           <div key={i} className={`flex flex-col ${m.role === "user" ? "items-end" : "items-start"}`}>
             <div className={`max-w-[80%] px-4 py-2 rounded-xl whitespace-pre-wrap ${
-              m.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"
+              m.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
             }`}>
               {m.content || (streaming && i === messages.length - 1 ? "▊" : "")}
             </div>
