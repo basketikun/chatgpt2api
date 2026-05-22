@@ -36,6 +36,11 @@ _TOOL_CALL_TIMEOUT = 30  # actual tool execution — user-visible work, allow lo
 # Circuit breaker: after a failed init, skip this MCP for this long.
 _FAILURE_COOLDOWN = 60.0
 
+# After this many consecutive failures, lengthen the cooldown exponentially so
+# permanently dead servers stop costing us a probe every minute.
+_MAX_FAST_RETRIES = 3
+_LONG_COOLDOWN = 1800.0  # 30 min
+
 
 class MCPSession:
     """One connected MCP server session. Auto-reconnects on expiry."""
@@ -114,27 +119,34 @@ class MCPSession:
             logger.warning({"event": "mcp_call_failed", "url": self.url, "error": str(exc)})
         return None
 
+    def _current_cooldown(self) -> float:
+        """Cooldown grows after repeated failures so a permanently dead MCP
+        only costs us a probe every 30 min instead of every minute."""
+        if self._failure_count >= _MAX_FAST_RETRIES:
+            return _LONG_COOLDOWN
+        return _FAILURE_COOLDOWN
+
     def ensure_connected(self) -> bool:
         """Initialize session if not connected. Returns True on success.
 
         Circuit-breaker: if a previous init failed within the cooldown window,
         return False immediately so a single dead MCP can't add 15s × N to
-        every chat request.
+        every chat request. Repeated failures lengthen the cooldown.
         """
         now = time.time()
         # Fast path check for session validity (5 min TTL)
         if self.session_id and (now - self._last_init) < 300:
             return True
 
-        # Circuit breaker: don't retry a dead MCP for _FAILURE_COOLDOWN seconds
-        if self._last_failure and (now - self._last_failure) < _FAILURE_COOLDOWN:
+        # Circuit breaker: don't retry a dead MCP within current cooldown
+        if self._last_failure and (now - self._last_failure) < self._current_cooldown():
             return False
 
         with self._lock:
             now = time.time()
             if self.session_id and (now - self._last_init) < 300:
                 return True
-            if self._last_failure and (now - self._last_failure) < _FAILURE_COOLDOWN:
+            if self._last_failure and (now - self._last_failure) < self._current_cooldown():
                 return False
 
             init = self._call("initialize", {

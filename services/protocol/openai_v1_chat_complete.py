@@ -267,15 +267,22 @@ def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
     if search_service.is_enabled:
         messages = search_service.process_messages(messages)
 
-    # Inject HA smart home context (Long-Lived Token)
+    # Inject HA smart home context (Long-Lived Token). Returns a flag so we
+    # can suppress the ha_search_entities tool when the full device registry
+    # has already been added to the prompt — otherwise the LLM wastes an
+    # entire round-trip calling ha_search_entities even though every entity
+    # is already visible in the system context.
+    ha_context_injected = False
     try:
         from services.ha_client import inject_ha_context
+        before_len = len(messages)
         messages = inject_ha_context(messages)
+        ha_context_injected = len(messages) > before_len
     except Exception:
         pass
 
     # Inject MCP tools from enabled presets
-    tools = _inject_mcp_tools(tools)
+    tools = _inject_mcp_tools(tools, skip_ha_search=ha_context_injected)
 
     result = _dispatch(route, messages, tools, tool_choice, body)
 
@@ -1508,18 +1515,29 @@ def _handle_antigravity_chat(
     raise RuntimeError(f"Antigravity error: {last_error}")
 
 
-def _inject_mcp_tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
-    """Inject tools from enabled MCP servers + HA into the tools list."""
+def _inject_mcp_tools(
+    tools: list[dict[str, Any]] | None,
+    skip_ha_search: bool = False,
+) -> list[dict[str, Any]] | None:
+    """Inject tools from enabled MCP servers + HA into the tools list.
+
+    Args:
+        skip_ha_search: When True, drop ha_search_entities from the injected
+            HA toolset. Set this when the full HA device registry has already
+            been added to the system prompt — otherwise the LLM calls
+            ha_search_entities purely to re-list devices it can already see,
+            burning a full extra LLM round-trip (~4-5s).
+    """
     logger.info({"event": "mcp_inject_start", "input_tools": len(tools or [])})
     try:
         from services.mcp_client import get_enabled_mcp_tools
         from services.ha_client import get_ha_tools
         mcp_tools = get_enabled_mcp_tools()
         logger.info({"event": "mcp_inject_got_tools", "count": len(mcp_tools)})
-        
+
         tools = list(tools or [])
         existing_names = {t.get("function", {}).get("name", "") for t in tools}
-        
+
         client_is_ha = any(name.startswith("Hass") or name == "GetLiveContext" for name in existing_names)
         ha_tools = [] if client_is_ha else get_ha_tools()
 
@@ -1527,11 +1545,20 @@ def _inject_mcp_tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]
         # For normal chat: include all tools, let the model decide
         if client_is_ha:
             mcp_tools = []
-        
+
+        # Drop ha_search_entities when the registry is already in the prompt.
+        # Keep ha_get_state (real-time status) and ha_call_service (control).
+        if skip_ha_search and ha_tools:
+            ha_tools = [
+                t for t in ha_tools
+                if t.get("function", {}).get("name", "") != "ha_search_entities"
+            ]
+            logger.info({"event": "ha_search_entities_skipped", "reason": "registry_in_context"})
+
         all_new_tools = mcp_tools + ha_tools
         if not all_new_tools:
             return tools if tools else None
-            
+
         for mt in all_new_tools:
             if mt.get("function", {}).get("name", "") not in existing_names:
                 tools.append(mt)

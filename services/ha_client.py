@@ -236,9 +236,12 @@ def _build_context(states: list[dict]) -> str:
 
     # Show ALL devices with name + entity_id
     lines = [
-        "## Smart Home — Device Registry",
+        "## Smart Home — Device Registry (DỮ LIỆU ĐÃ ĐẦY ĐỦ Ở DƯỚI)",
         f"{len(states)} thiết bị. Dùng entity_id để điều khiển/lấy trạng thái.",
         "Không có trạng thái trong này — gọi `ha_get_state` để biết real-time.",
+        "**QUAN TRỌNG: Khi user hỏi 'liệt kê / có những X nào / danh sách X', "
+        "TRẢ LỜI TRỰC TIẾP từ registry bên dưới. KHÔNG được gọi tool tìm kiếm "
+        "thiết bị — registry đã có đủ tên + entity_id.**",
         "",
     ]
 
@@ -269,22 +272,84 @@ def _build_context(states: list[dict]) -> str:
     return "\n".join(lines)
 
 
-# Smart home keywords for detecting HA-relevant queries
-_HA_KEYWORDS = (
-    "đèn", "quạt", "máy lạnh", "điều hòa", "cửa", "khóa", "rèm",
-    "bật", "tắt", "mở", "đóng", "trạng thái", "nhiệt độ", "độ ẩm",
-    "cảm biến", "công tắc", "ổ cắm", "thiết bị", "nhà",
-    "phòng", "bếp", "tắm", "ngủ", "khách", "ban công",
-    "light", "switch", "sensor", "climate", "cover", "lock",
+# Smart-home intent detection.
+#
+# Single ASCII words like "den" or "nha" are too ambiguous to use as triggers
+# ("đen" = black, "nhà" can be a particle), so we match only multi-word
+# phrases or unambiguous tokens. Each pattern requires either a strong noun
+# ("home assistant", "thiết bị / thiet bi") or a verb+noun pair that only
+# makes sense in a smart-home context (e.g. "bật đèn", "liet ke quat",
+# "trang thai cua"). Patterns run against both the original lowercased text
+# and a diacritic-folded copy so queries with or without dấu both register.
+import re as _re
+
+# Device / room nouns (will be paired with action/listing verbs below).
+_HA_NOUNS = (
+    r"den|đèn|quat|quạt|may\s*lanh|máy\s*lạnh|dieu\s*hoa|điều\s*hòa|"
+    r"cua|cửa|khoa|khóa|rem|rèm|cong\s*tac|công\s*tắc|o\s*cam|ổ\s*cắm|"
+    r"cam\s*bien|cảm\s*biến|nhiet\s*do|nhiệt\s*độ|do\s*am|độ\s*ẩm|"
+    r"thiet\s*bi|thiết\s*bị|fan|light|switch|sensor|climate|cover|lock|"
+    r"outlet|plug|curtain|blind|thermostat|smart\s*plug"
 )
+
+# Verbs that, paired with a device noun, are unambiguous HA intents.
+_HA_VERBS = (
+    r"bat|bật|tat|tắt|mo|mở|dong|đóng|kiem\s*tra|kiểm\s*tra|"
+    r"dieu\s*khien|điều\s*khiển|on|off|toggle|turn(?:\s*on|\s*off)?"
+)
+
+# Listing / status verbs (also unambiguous when paired with a device noun).
+_HA_LISTING = (
+    r"liet\s*ke|liệt\s*kê|danh\s*sach|danh\s*sách|co\s*nhung|có\s*những|"
+    r"trang\s*thai|trạng\s*thái|tinh\s*trang|tình\s*trạng|"
+    r"list|show|status|state|enumerate"
+)
+
+# Strong standalone tokens — these alone are enough to flag HA intent.
+_HA_STRONG = (
+    r"home\s*assistant|smart\s*home|smarthome|"
+    r"entity_id|ha_(?:get_state|search_entities|call_service)"
+)
+
+_HA_INTENT_PATTERNS = [
+    _re.compile(rf"\b(?:{_HA_STRONG})\b", _re.IGNORECASE),
+    _re.compile(rf"\b(?:{_HA_VERBS})\s+(?:cac\s+|các\s+|tat\s+ca\s+|tất\s+cả\s+)?(?:{_HA_NOUNS})\b", _re.IGNORECASE),
+    _re.compile(rf"\b(?:{_HA_LISTING})\s+(?:cac\s+|các\s+|tat\s+ca\s+|tất\s+cả\s+|hết\s+|het\s+)?(?:{_HA_NOUNS})\b", _re.IGNORECASE),
+    # "trạng thái nhà / status of the house" — house-level status
+    _re.compile(rf"\b(?:{_HA_LISTING})\s+(?:nha|nhà|house|home)\b", _re.IGNORECASE),
+    # Direct mention of a room paired with a device noun
+    _re.compile(
+        rf"\b(?:{_HA_NOUNS})\s+(?:phong|phòng|bep|bếp|tam|tắm|ngu|ngủ|khach|khách|"
+        r"ban\s*cong|ban\s*công|room|bedroom|kitchen|bathroom|living)\b",
+        _re.IGNORECASE,
+    ),
+]
+
+
+def _fold_diacritics(text: str) -> str:
+    """Lowercase + strip Vietnamese diacritics for keyword matching."""
+    import unicodedata
+    nfkd = unicodedata.normalize("NFKD", text.lower())
+    return "".join(c for c in nfkd if not unicodedata.combining(c))
 
 
 def _is_ha_query(messages: list[dict[str, Any]]) -> bool:
-    """Heuristic: is the last user message asking about smart home devices?"""
+    """Heuristic: is the last user message asking about smart home devices?
+
+    Requires an unambiguous phrase (verb+device, listing+device, strong token,
+    or device+room) so generic words like "đen" / "den" / "nhà" alone do not
+    trigger HA injection. Checks both the lowercased original text and a
+    diacritic-folded copy so input with or without dấu both register.
+    """
     for m in reversed(messages):
-        if m.get("role") == "user":
-            text = str(m.get("content") or "").lower()
-            return any(kw in text for kw in _HA_KEYWORDS)
+        if m.get("role") != "user":
+            continue
+        raw = str(m.get("content") or "").lower()
+        folded = _fold_diacritics(raw)
+        for pat in _HA_INTENT_PATTERNS:
+            if pat.search(raw) or pat.search(folded):
+                return True
+        return False
     return False
 
 
