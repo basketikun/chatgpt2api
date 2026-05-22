@@ -61,6 +61,9 @@ def _get_services() -> dict[str, list[str]]:
     except Exception as exc:
         logger.warning({"event": "ha_services_failed", "error": str(exc)})
         return {}
+
+
+def _get_refresh_times() -> list[str]:
     """Get scheduled refresh times (e.g., ['00:30', '06:00'])."""
     try:
         times = _get_ha_settings().get("refresh_times", [])
@@ -262,10 +265,6 @@ def _build_context(states: list[dict]) -> str:
             lines.append(f"  {domain}: {', '.join(svc_list[:10])}")
     lines.append("")
     lines.append(f"Dùng `ha_get_state` để lấy trạng thái real-time. `ha_call_service` để điều khiển.")
-
-    _context_cache = "\n".join(lines)
-    _context_cache_ts = now
-    return _context_cache
 
     return "\n".join(lines)
 
