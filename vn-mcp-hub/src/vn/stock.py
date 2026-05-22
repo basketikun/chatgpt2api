@@ -1,6 +1,6 @@
-"""vn_stock — giá cổ phiếu Việt Nam qua vnstock3.
+"""vn_stock — giá cổ phiếu Việt Nam qua vnstock.
 
-vnstock3 tự động failover giữa các nguồn: TCBS, VCI (Vietcap), SSI, MSN.
+vnstock tự động failover giữa các nguồn: TCBS, VCI (Vietcap), SSI, MSN.
 Không cần API key. Hỗ trợ giá intraday realtime.
 
 Tools:
@@ -22,9 +22,9 @@ mcp = FastMCP("vn_stock")
 
 
 def _get_quote(symbol: str) -> dict[str, Any] | None:
-    """Lấy quote intraday từ vnstock3. Tự failover giữa các nguồn."""
+    """Lấy quote intraday từ vnstock. Tự failover giữa các nguồn."""
     try:
-        from vnstock3 import Market
+        from vnstock import Market
         df = Market().quote.intraday(symbol=symbol.upper(), show_log=False)
         if df is not None and not df.empty:
             row = df.iloc[-1] if len(df) > 1 else df.iloc[0]
@@ -38,25 +38,25 @@ def _get_quote(symbol: str) -> dict[str, Any] | None:
                 "raw": row.to_dict(),
             }
     except Exception as exc:
-        logger.info("vnstock3 quote failed for %s: %s", symbol, exc)
+        logger.info("vnstock quote failed for %s: %s", symbol, exc)
     return None
 
 
 def _get_company_info(symbol: str) -> dict[str, Any] | None:
-    """Lấy thông tin công ty từ vnstock3."""
+    """Lấy thông tin công ty từ vnstock."""
     try:
-        from vnstock3 import Market
+        from vnstock import Market
         df = Market().symbols.overview(symbol=symbol.upper(), show_log=False)
         if df is not None and not df.empty:
             return df.iloc[0].to_dict()
     except Exception as exc:
-        logger.info("vnstock3 info failed for %s: %s", symbol, exc)
+        logger.info("vnstock info failed for %s: %s", symbol, exc)
     return None
 
 
 @mcp.tool()
 def get_stock_price(symbol: str) -> str:
-    """Lấy giá cổ phiếu Việt Nam realtime qua vnstock3.
+    """Lấy giá cổ phiếu Việt Nam realtime qua vnstock.
 
     Hỗ trợ tất cả mã HOSE/HNX/UPCOM (vd: VCB, FPT, HPG, VIC).
     Tự động failover giữa TCBS, VCI, SSI, MSN.
@@ -83,7 +83,7 @@ def get_stock_price(symbol: str) -> str:
         f"**{sym}** — {price:,.0f} VND {arrow} {change:+,.0f} ({pct:+.2f}%)\n"
         f"- Khối lượng: {vol:,} cp\n"
         f"- Cập nhật: {t}\n"
-        f"_Nguồn: vnstock3 (TCBS/VCI/SSI/MSN)_"
+        f"_Nguồn: vnstock (TCBS/VCI/SSI/MSN)_"
     )
 
 
@@ -117,7 +117,7 @@ def get_stock_info(symbol: str) -> str:
 def get_market_overview() -> str:
     """Lấy tổng quan thị trường: VN-Index, top tăng/giảm."""
     try:
-        from vnstock3 import Market
+        from vnstock import Market
         df = Market().quote.intraday(symbol="VNINDEX", show_log=False)
         if df is not None and not df.empty:
             row = df.iloc[-1]
@@ -127,9 +127,9 @@ def get_market_overview() -> str:
             arrow = "▲" if change > 0 else ("▼" if change < 0 else "—")
             return (
                 f"**VN-Index**: {price:,.0f} {arrow} {change:+,.0f} ({pct:+.2f}%)\n"
-                f"_Nguồn: vnstock3 (TCBS/VCI/SSI/MSN)_"
+                f"_Nguồn: vnstock (TCBS/VCI/SSI/MSN)_"
             )
     except Exception as exc:
-        logger.info("vnstock3 market overview failed: %s", exc)
+        logger.info("vnstock market overview failed: %s", exc)
 
     return "Không lấy được tổng quan thị trường."
