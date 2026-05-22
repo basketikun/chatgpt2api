@@ -1,100 +1,269 @@
-"""vn_phat_nguoi — tra cứu phạt nguội Việt Nam qua csgt.bocongan.gov.vn.
+"""vn_phat_nguoi — tra cứu phạt nguội Việt Nam.
 
-Trang chính thức của Cục CSGT (Bộ Công An):
-  https://csgt.bocongan.gov.vn/tra-cuu-phat-nguoi
+Cập nhật 2026: Dùng reCAPTCHA v3 token generation để tra cứu tự động.
+Tham khảo từ script của luuquangvu.
 
-Domain cũ csgt.vn đã redirect 302 sang bocongan.gov.vn (không còn dùng).
-
-Form yêu cầu:
-- Loại phương tiện: Xe ô tô / Xe máy / Xe đạp điện
-- Biển số xe
-- Google reCAPTCHA — điểm tắc nghẽn cho tra cứu tự động
-
-Do reCAPTCHA, tool này best-effort: cung cấp link form + hướng dẫn chi tiết.
+API endpoint cũ (csgt.vn) vẫn còn hoạt động cho POST dù GET redirect sang
+csgt.bocongan.gov.vn. Sitekey lấy từ trang mới.
 """
 
 from __future__ import annotations
 
 import logging
 import re
+import json
+import urllib.request
+import urllib.parse
+from datetime import datetime, timezone
 
+from bs4 import BeautifulSoup
 from fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 
 mcp = FastMCP("vn_phat_nguoi")
 
+# ── Constants ──
 CSGT_PAGE = "https://csgt.bocongan.gov.vn/tra-cuu-phat-nguoi"
+CSGT_API = "https://www.csgt.vn/tra-cuu-vi-pham-qua-hinh-anh"
+SITE_KEY = "15w2WinoPkHGHmmUaYiQWsebMNOJfXOLxC434YgH"
 
 VEHICLE_TYPES = {
-    "oto": ("Ô tô"),
-    "ô tô": ("Ô tô"),
-    "car": ("Ô tô"),
-    "xemay": ("Xe máy"),
-    "xe máy": ("Xe máy"),
-    "motorbike": ("Xe máy"),
-    "xedien": ("Xe đạp điện"),
-    "xe đạp điện": ("Xe đạp điện"),
-    "electricbike": ("Xe đạp điện"),
+    "oto": ("car", "Ô tô"), "ô tô": ("car", "Ô tô"), "car": ("car", "Ô tô"),
+    "xemay": ("motorbike", "Xe máy"), "xe máy": ("motorbike", "Xe máy"),
+    "motorbike": ("motorbike", "Xe máy"),
+    "xedien": ("electricbike", "Xe đạp điện"),
+    "xe đạp điện": ("electricbike", "Xe đạp điện"),
+    "electricbike": ("electricbike", "Xe đạp điện"),
 }
 
-# Biển số VN: 2 số + 1-2 chữ + - + 4-5 số
-# Ví dụ hợp lệ: 30A-12345, 29K3-1234, 51-F3-1234.56
-PLATE_PATTERN = re.compile(
-    r"^\d{2}[A-Z]{1,2}-?\d{4,5}(\.\d{2})?$", re.IGNORECASE
-)
+PLATE_PATTERNS = {
+    "car": re.compile(r"^\d{2}[A-Z]{1,2}\d{4,5}$"),
+    "motorbike": re.compile(r"^\d{2}[A-Z0-9]{1,2}\d{4,5}$"),
+    "electricbike": re.compile(r"^\d{2}[A-Z0-9]{1,2}\d{4,5}$"),
+}
 
 
 def _normalise_plate(plate: str) -> str:
-    p = plate.strip().upper().replace(" ", "")
-    if "-" not in p and len(p) >= 7:
-        p = f"{p[:3]}-{p[3:]}"
+    """Chuẩn hóa biển số: 34A47645 → 34A-47645"""
+    p = plate.strip().upper().replace(" ", "").replace("-", "")
+    if len(p) >= 7:
+        # Insert dash: 2 digits + 1-2 letters + rest
+        m = re.match(r"^(\d{2}[A-Z]{1,2})(\d{4,5})$", p)
+        if m:
+            p = f"{m.group(1)}-{m.group(2)}"
     return p
 
 
-def _is_valid_plate(plate: str) -> bool:
-    return bool(PLATE_PATTERN.match(plate))
+def _is_valid_plate(plate: str, vehicle_type: str = "car") -> bool:
+    p = plate.replace("-", "")
+    pat = PLATE_PATTERNS.get(vehicle_type, PLATE_PATTERNS["car"])
+    return bool(pat.match(p))
 
+
+# ── reCAPTCHA v3 Token Generation ──
+
+def _get_recaptcha_token() -> str | None:
+    """Generate reCAPTCHA v3 token (3-step Google API flow)."""
+    try:
+        # Step 1: Get reCAPTCHA JS version
+        js_url = f"https://www.google.com/recaptcha/api.js?render={SITE_KEY}"
+        req = urllib.request.Request(js_url, headers={"User-Agent": "Mozilla/5.0"})
+        resp = urllib.request.urlopen(req, timeout=10)
+        js_text = resp.read().decode("utf-8", errors="ignore")
+        ver = re.search(r"release/([A-Za-z0-9_-]+)", js_text)
+        version = ver.group(1) if ver else "WvcoNfCzFCGqWkMh3gXs4M1Q"
+
+        # Step 2: Get anchor token
+        co_b64 = urllib.parse.quote_plus("aHR0cHM6Ly9jc2d0LmJvY29uZ2FuLmdvdi52bg==")
+        anchor_url = (
+            f"https://www.google.com/recaptcha/api2/anchor?"
+            f"ar=1&k={SITE_KEY}&co={co_b64}&hl=vi&v={version}&size=invisible&cb=123456"
+        )
+        req = urllib.request.Request(anchor_url, headers={"User-Agent": "Mozilla/5.0"})
+        resp = urllib.request.urlopen(req, timeout=10)
+        anchor_html = resp.read().decode("utf-8", errors="ignore")
+        anchor_token = re.search(r'"recaptcha-token"\s+value="([^"]+)"', anchor_html)
+        if not anchor_token:
+            logger.warning("reCAPTCHA: couldn't find anchor token")
+            return None
+        token = anchor_token.group(1)
+
+        # Step 3: Reload to get final response token
+        reload_url = f"https://www.google.com/recaptcha/api2/reload?k={SITE_KEY}"
+        reload_data = urllib.parse.urlencode({
+            "c": token, "v": version, "reason": "q", "k": SITE_KEY,
+        }).encode()
+        req = urllib.request.Request(reload_url, data=reload_data,
+            headers={"User-Agent": "Mozilla/5.0", "Content-Type": "application/x-www-form-urlencoded"})
+        resp = urllib.request.urlopen(req, timeout=10)
+        raw = resp.read().decode("utf-8", errors="ignore")
+        # Response format: )]}'<JSON>
+        raw = re.sub(r"^\)\]}'\s*", "", raw.strip())
+        data = json.loads(raw)
+        rresp = data[1] if isinstance(data, list) and len(data) > 1 else None
+        if rresp and isinstance(rresp, list) and len(rresp) > 1:
+            return rresp[1]
+        logger.warning("reCAPTCHA: unexpected reload response: %s", str(data)[:200])
+    except Exception as exc:
+        logger.warning("reCAPTCHA token generation failed: %s", exc)
+    return None
+
+
+# ── CSRF Token ──
+
+def _fetch_csrf_token() -> str | None:
+    """Lấy CSRF token từ trang tra cứu."""
+    try:
+        req = urllib.request.Request(CSGT_PAGE,
+            headers={"User-Agent": "Mozilla/5.0", "Accept": "text/html"})
+        resp = urllib.request.urlopen(req, timeout=10)
+        html = resp.read().decode("utf-8", errors="ignore")
+        m = re.search(r'name="_token"\s+value="([^"]+)"', html)
+        if m:
+            return m.group(1)
+    except Exception as exc:
+        logger.warning("CSRF fetch failed: %s", exc)
+    return None
+
+
+# ── Parsing ──
+
+def _extract_violations(html: str) -> list[dict]:
+    """Parse violation cards from HTML response."""
+    soup = BeautifulSoup(html, "html.parser")
+    cards = soup.find_all("div", class_="violation-card")
+    if not cards:
+        return []
+
+    violations = []
+    for card in cards:
+        v = {}
+        title_el = card.find("div", class_="violation-title")
+        if title_el:
+            v["title"] = title_el.get_text(strip=True)
+
+        status_el = card.find("span", class_=re.compile(r"status"))
+        if status_el:
+            v["status"] = status_el.get_text(strip=True)
+
+        info_groups = card.find_all("div", class_="info-group")
+        for group in info_groups:
+            label_el = group.find("span", class_="label")
+            value_el = group.find("span", class_="value")
+            if label_el and value_el:
+                v[label_el.get_text(strip=True)] = value_el.get_text(strip=True)
+
+        if v:
+            violations.append(v)
+    return violations
+
+
+# ── Main Tool ──
 
 @mcp.tool()
 def check_traffic_violation(plate: str, vehicle_type: str = "oto") -> str:
-    """Tra cứu phạt nguội xe tại Việt Nam.
-
-    Trang chính thức của Cục CSGT (Bộ Công An) yêu cầu xác thực reCAPTCHA
-    nên không thể tra cứu hoàn toàn tự động. Tool cung cấp link + hướng dẫn.
+    """Tra cứu phạt nguội xe tại Việt Nam (tự động qua reCAPTCHA v3).
 
     Args:
         plate: Biển số xe (vd: "30A-12345", "34A47645").
         vehicle_type: 'oto' / 'xe máy' / 'xe đạp điện'. Mặc định oto.
 
     Returns:
-        Hướng dẫn tra cứu kèm URL trực tiếp đến form chính phủ.
+        Kết quả tra cứu: danh sách vi phạm hoặc thông báo không có.
     """
     norm_plate = _normalise_plate(plate)
-    if not _is_valid_plate(norm_plate):
+
+    vt_key = vehicle_type.lower().strip()
+    vt = VEHICLE_TYPES.get(vt_key)
+    if not vt:
+        return f"Loại xe '{vehicle_type}' không hợp lệ. Chọn: ô tô, xe máy, xe đạp điện."
+    code, vt_label = vt
+
+    if not _is_valid_plate(norm_plate, code):
         return (
             f"Biển số '{plate}' không đúng định dạng VN.\n"
             "Định dạng đúng: XX(A-Z)-12345 hoặc 29-K3-1234.56"
         )
 
-    vt_key = vehicle_type.lower().strip()
-    vt_label = VEHICLE_TYPES.get(vt_key)
-    if not vt_label:
+    # Get CSRF token
+    csrf = _fetch_csrf_token()
+    if not csrf:
+        # Fallback: return instructions
         return (
-            f"Loại xe '{vehicle_type}' không hợp lệ. "
-            f"Chọn: ô tô, xe máy, xe đạp điện."
+            f"**Tra cứu phạt nguội cho {vt_label} biển số {norm_plate}:**\n\n"
+            f"Không lấy được CSRF token. Vui lòng tra cứu thủ công tại:\n"
+            f"{CSGT_PAGE}\n\n"
+            f"Chọn **{vt_label}**, nhập `{norm_plate}`, xác thực reCAPTCHA, bấm Tra cứu."
         )
 
-    return (
-        f"**Tra cứu phạt nguội cho {vt_label} biển số {norm_plate}:**\n\n"
-        f"1. Mở trang: {CSGT_PAGE}\n"
-        f"2. Chọn loại phương tiện: **{vt_label}**\n"
-        f"3. Nhập biển số: `{norm_plate}`\n"
-        f"4. Xác thực reCAPTCHA (bắt buộc)\n"
-        f"5. Bấm **Tra cứu**\n\n"
-        f"⚠️ Trang yêu cầu reCAPTCHA nên không thể tra cứu tự động.\n"
-        f"📌 Nguồn: Cục Cảnh sát Giao thông — csgt.bocongan.gov.vn"
-    )
+    # Get reCAPTCHA token
+    recaptcha = _get_recaptcha_token()
+    if not recaptcha:
+        return (
+            f"**Tra cứu phạt nguội cho {vt_label} biển số {norm_plate}:**\n\n"
+            f"Không thể xác thực reCAPTCHA tự động. Vui lòng tra cứu thủ công tại:\n"
+            f"{CSGT_PAGE}\n\n"
+            f"Chọn **{vt_label}**, nhập `{norm_plate}`, bấm Tra cứu."
+        )
+
+    # POST lookup
+    form_data = urllib.parse.urlencode({
+        "_token": csrf,
+        "g-recaptcha-response": recaptcha,
+        "vehicle_type": code,
+        "plate_number": norm_plate.replace("-", ""),
+    }).encode()
+
+    try:
+        req = urllib.request.Request(CSGT_API, data=form_data,
+            headers={
+                "User-Agent": "Mozilla/5.0",
+                "Content-Type": "application/x-www-form-urlencoded",
+                "X-Requested-With": "XMLHttpRequest",
+                "Accept": "application/json, text/html",
+                "Origin": "https://csgt.bocongan.gov.vn",
+                "Referer": CSGT_PAGE,
+            })
+        resp = urllib.request.urlopen(req, timeout=15)
+        html = resp.read().decode("utf-8", errors="ignore")
+    except Exception as exc:
+        logger.warning("CSGT API call failed: %s", exc)
+        return (
+            f"**Tra cứu phạt nguội cho {vt_label} biển số {norm_plate}:**\n\n"
+            f"Lỗi kết nối đến máy chủ CSGT. Vui lòng thử lại sau hoặc tra cứu tại:\n"
+            f"{CSGT_PAGE}"
+        )
+
+    # Parse violations
+    violations = _extract_violations(html)
+
+    if not violations:
+        # Check if HTML says no violations
+        if "không có" in html.lower() or "không tìm thấy" in html.lower():
+            return (
+                f"**Tra cứu phạt nguội cho {vt_label} biển số {norm_plate}:**\n\n"
+                f"✅ **Không có vi phạm giao thông nào được ghi nhận.**\n"
+                f"_Nguồn: Cục CSGT — {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC_"
+            )
+        return (
+            f"**Tra cứu phạt nguội cho {vt_label} biển số {norm_plate}:**\n\n"
+            f"⚠️ Không parse được kết quả. Vui lòng tra cứu thủ công tại:\n"
+            f"{CSGT_PAGE}"
+        )
+
+    lines = [
+        f"**Tra cứu phạt nguội cho {vt_label} biển số {norm_plate}:**",
+        "",
+    ]
+    for i, v in enumerate(violations[:10], 1):
+        lines.append(f"### Vi phạm {i}")
+        for key, val in v.items():
+            lines.append(f"- **{key}**: {val}")
+        lines.append("")
+
+    lines.append(f"_Nguồn: Cục CSGT — {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC_")
+    return "\n".join(lines)
 
 
 @mcp.tool()
@@ -102,11 +271,11 @@ def list_vehicle_types() -> str:
     """Liệt kê các loại xe được hỗ trợ tra cứu phạt nguội."""
     seen = set()
     out = ["**Loại xe hỗ trợ tra cứu phạt nguội:**", ""]
-    for key, label in VEHICLE_TYPES.items():
+    for key, (code, label) in VEHICLE_TYPES.items():
         if label in seen:
             continue
         seen.add(label)
         out.append(f"- {label}")
     out.append("")
-    out.append(f"📌 Truy cập: {CSGT_PAGE}")
+    out.append(f"📌 Nguồn: {CSGT_PAGE}")
     return "\n".join(out)
