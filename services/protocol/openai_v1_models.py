@@ -274,6 +274,19 @@ def _fetch_codex_models() -> set[str]:
                 slug = str(item.get("id") or "").strip()
                 if slug:
                     models.add(f"cx/{slug}")
+            # Add reasoning effort variants for each Codex model so user can pick
+            # different effort tiers from UI. Suffix is parsed client-side in
+            # openai_oauth.chat_completions to set body["reasoning"]["effort"].
+            base_models = [m for m in list(models) if m.startswith("cx/")]
+            for base in base_models:
+                slug = base[3:]
+                # Skip variants that already have effort/review suffix
+                if any(slug.endswith(f"-{eff}") for eff in ("low", "high", "xhigh", "none", "medium")):
+                    continue
+                if slug.endswith("-review"):
+                    continue
+                for effort in ("low", "high"):
+                    models.add(f"{base}-{effort}")
             logger.info({"event": "list_models_codex_fetched",
                           "api_count": len(models) - len(_apply_fallback("openai_oauth")),
                           "total": len(models)})
