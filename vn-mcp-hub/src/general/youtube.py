@@ -80,7 +80,14 @@ def get_transcript(video: str, languages: str = "vi,en") -> str:
     except ImportError:
         return "Thiếu thư viện youtube-transcript-api."
 
-    text_parts = [it.get("text", "").strip() for it in items if it.get("text")]
+    text_parts = []
+    for it in items:
+        if isinstance(it, dict):
+            t = it.get("text", "").strip()
+        else:
+            t = getattr(it, "text", "").strip()
+        if t:
+            text_parts.append(t)
     full = " ".join(text_parts)
     if len(full) > 8000:
         full = full[:8000] + "\n\n[…đã cắt do quá dài]"
