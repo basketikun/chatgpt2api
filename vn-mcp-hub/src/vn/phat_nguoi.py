@@ -43,70 +43,35 @@ def _normalise_plate(plate: str) -> str:
 
 
 def _lookup_phatnguoi_vn(plate: str, vtype: int) -> tuple[list[dict] | None, str]:
-    """Gọi phatnguoi.vn qua playwright (headless browser) để vượt Turnstile."""
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError:
-        return None, "playwright chưa được cài"
-
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
-            page.goto("https://phatnguoi.vn/", timeout=30000, wait_until="domcontentloaded")
-
-            # Fill form
-            page.fill("input[name=BienKS]", plate.replace("-", ""))
-            # Select vehicle type radio
-            vtype_map = {1: "xe-1", 2: "xe-2", 3: "xe-3"}
-            radio_id = vtype_map.get(vtype, "xe-1")
-            try:
-                page.check(f"#{radio_id}")
-            except Exception:
-                pass
-
-            # Click submit button inside the tracuu form
-            try:
-                page.click("#tracuu button[type=submit]")
-            except Exception:
-                # Fallback: try any visible submit button
-                page.click("button[type=submit]:visible")
-            page.wait_for_timeout(10000)  # Wait for Turnstile + result
-
-            html = page.content()
-            browser.close()
-
-            # Parse result
-            soup = BeautifulSoup(html, "html.parser")
-            title_el = soup.select_one(".pn-result__title")
-            notice_el = soup.select_one(".pn-result__notice")
-            title = title_el.get_text(strip=True) if title_el else ""
-            notice = notice_el.get_text(strip=True) if notice_el else ""
-
-            if "captcha" in notice.lower() or "xác minh" in notice.lower():
-                return None, "Turnstile không vượt qua được"
-
-            # Parse violations from result items
-            violations = []
-            items = soup.select(".pn-result__item")
-            for item in items:
-                v = {}
-                for el in item.select(".pn-result__row"):
-                    label_el = el.select_one(".pn-result__label")
-                    value_el = el.select_one(".pn-result__value")
-                    if label_el and value_el:
-                        v[label_el.get_text(strip=True).rstrip(":")] = value_el.get_text(strip=True)
-                if v:
-                    violations.append(v)
-
-            if violations:
-                return violations, ""
-            if "không có" in title.lower() or "không tìm thấy" in title.lower():
-                return [], title
-            return None, f"Không parse được kết quả: {title}"
-    except Exception as e:
-        logger.warning("phatnguoi playwright: %s", e)
-        return None, str(e)[:100]
+    """Gọi api.phatnguoi.vn với cloudscraper + retry."""
+    import cloudscraper, json as _json, time as _time
+    url = PHATNGUOI_API.format(plate=plate.replace("-", ""), vtype=vtype)
+    scraper = cloudscraper.create_scraper()
+    for attempt in range(1, RETRY_LIMIT + 1):
+        try:
+            r = scraper.get(url, headers={"User-Agent": BROWSERS[attempt % len(BROWSERS)]}, timeout=20)
+            if r.status_code == 429:
+                delay = BASE_DELAY * (attempt + 1)
+                _time.sleep(delay)
+                continue
+            if r.status_code != 200:
+                _time.sleep(BASE_DELAY)
+                continue
+            data = _json.loads(r.text)
+            msg = str(data.get("message", "")).lower()
+            if not data.get("status"):
+                if "quá tải" in msg or "qua tai" in msg:
+                    delay = BASE_DELAY * (attempt + 1)
+                    _time.sleep(delay)
+                    continue
+                if isinstance(data.get("data"), list):
+                    return [], ""
+            if isinstance(data.get("data"), list) and len(data["data"]) > 0:
+                return [v for v in data["data"] if isinstance(v, dict)], ""
+            return [], ""
+        except Exception as e:
+            _time.sleep(BASE_DELAY)
+    return None, f"Thất bại sau {RETRY_LIMIT} lần"
 
 
 def _lookup_csgt(plate: str, vtype_code: str) -> tuple[list[dict] | None, str]:
