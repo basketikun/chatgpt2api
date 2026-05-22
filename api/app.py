@@ -36,6 +36,14 @@ def create_app() -> FastAPI:
             format_states_context()  # Triggers initial device registry fetch
         except Exception:
             pass
+        # Prewarm MCP tools cache in background so the first chat request
+        # doesn't pay the cold-start probe (e.g. a dead remote MCP that
+        # times out at 5s adds latency to whoever asks first).
+        try:
+            from services.mcp_client import prewarm_tools_cache
+            prewarm_tools_cache()
+        except Exception:
+            pass
         # Start Cloudflare Tunnel if token configured
         try:
             from services.cloudflare_tunnel import start_tunnel, start_monitor

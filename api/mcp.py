@@ -91,6 +91,11 @@ def create_router() -> APIRouter:
 
         config.data["mcp_servers"] = installed
         config._save()
+        try:
+            from services.mcp_client import invalidate_tools_cache
+            invalidate_tools_cache()
+        except Exception:
+            pass
         logger.info({"event": "mcp_installed", "id": body.id, "url": url})
         return {"ok": True, "id": body.id}
 
@@ -110,6 +115,11 @@ def create_router() -> APIRouter:
             del installed[preset_id]
             config.data["mcp_servers"] = installed
             config._save()
+            try:
+                from services.mcp_client import invalidate_tools_cache
+                invalidate_tools_cache()
+            except Exception:
+                pass
             logger.info({"event": "mcp_uninstalled", "id": preset_id})
         return {"ok": True, "id": preset_id}
 
@@ -132,6 +142,11 @@ def create_router() -> APIRouter:
         entry["enabled"] = not bool(entry.get("enabled", True))
         config.data["mcp_servers"] = installed
         config._save()
+        try:
+            from services.mcp_client import invalidate_tools_cache
+            invalidate_tools_cache()
+        except Exception:
+            pass
         logger.info({"event": "mcp_toggled", "id": preset_id, "enabled": entry["enabled"]})
         return {"ok": True, "id": preset_id, "enabled": entry["enabled"]}
 
