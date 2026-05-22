@@ -170,6 +170,7 @@ def get_enabled_mcp_tools() -> list[dict[str, Any]]:
     if isinstance(installed, dict):
         installed = list(installed.values())
     if not isinstance(installed, list) or not installed:
+        return []
 
     logger.info({"event": "mcp_debug_v2", "total": len(installed),
                  "enabled_count": sum(1 for i in installed if i.get("enabled", True)),
