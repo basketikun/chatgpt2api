@@ -49,18 +49,25 @@ class MCPSession:
             sid = resp.getheader("mcp-session-id")
             if sid:
                 self.session_id = sid
-            # Read line by line instead of resp.read() to avoid blocking on SSE streams
-            for line_bytes in resp:
-                line = line_bytes.decode('utf-8', errors='ignore').strip()
+            # Read response - FastMCP can return plain JSON or SSE
+            raw = resp.read().decode('utf-8', errors='ignore')
+            # Try SSE format first
+            for line in raw.split("\n"):
+                line = line.strip()
                 if line.startswith("data: "):
                     try:
                         d = json.loads(line[6:])
                         if d.get("id") != "server-error":
-                            resp.close()
                             return d
                     except json.JSONDecodeError:
                         pass
-            resp.close()
+            # Try plain JSON format (FastMCP Streamable HTTP)
+            try:
+                d = json.loads(raw)
+                if isinstance(d, dict) and d.get("id") != "server-error":
+                    return d
+            except json.JSONDecodeError:
+                pass
         except urllib.error.HTTPError as e:
             sid = e.getheader("mcp-session-id")
             if sid:
