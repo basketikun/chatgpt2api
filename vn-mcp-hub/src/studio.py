@@ -75,6 +75,13 @@ def _ingest_kb(name: str) -> int:
     for i in range(0, len(chunks), batch):
         col.upsert(ids=ids[i:i + batch], documents=chunks[i:i + batch], metadatas=metas[i:i + batch])
 
+    # Update metadata
+    try:
+        from src.rag.meta import touch
+        touch(name, chunks=len(chunks), source="studio_ingest")
+    except Exception:
+        pass
+
     return len(chunks)
 
 
@@ -130,6 +137,24 @@ def create_kb(name: str, label: str, markdown_content: str) -> dict[str, Any]:
 
     # Ingest
     chunks = _ingest_kb(name)
+
+    # Create meta.json with default settings
+    from src.rag.meta import write_meta
+    write_meta(name, {
+        "last_updated": datetime.now(timezone.utc).isoformat(),
+        "update_interval_hours": 720,
+        "auto_update": False,
+        "chunks_count": chunks,
+        "sources": ["studio_ingest"],
+    })
+
+    # Trigger R2 sync (if configured)
+    try:
+        from src.rag.cloud import sync_collection_2way
+        sync_collection_2way(name)
+        logger.info("Studio: R2 synced new KB '%s'", name)
+    except Exception as exc:
+        logger.info("Studio: R2 sync skipped for '%s': %s", name, exc)
 
     # Register
     entry = {
