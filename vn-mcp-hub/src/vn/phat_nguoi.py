@@ -95,11 +95,11 @@ def _get_recaptcha_token() -> str | None:
         ver = re.search(r"release/([A-Za-z0-9_-]+)", js_text)
         version = ver.group(1) if ver else "WvcoNfCzFCGqWkMh3gXs4M1Q"
 
-        # Step 2: Get anchor token
-        co_b64 = urllib.parse.quote_plus("aHR0cHM6Ly9jc2d0LmJvY29uZ2FuLmdvdi52bg==")
+        # Step 2: Get anchor token (don't encode co - it's already base64)
+        co_b64 = "aHR0cHM6Ly9jc2d0LmJvY29uZ2FuLmdvdi52bjo0NDM"
         anchor_url = (
             f"https://www.google.com/recaptcha/api2/anchor?"
-            f"ar=1&k={sitekey}&co={co_b64}&hl=vi&v={version}&size=invisible&cb=123456"
+            f"ar=1&k={sitekey}&co={co_b64}&hl=vi&size=invisible&cb=1"
         )
         req = urllib.request.Request(anchor_url, headers={"User-Agent": "Mozilla/5.0"})
         resp = urllib.request.urlopen(req, timeout=10)
