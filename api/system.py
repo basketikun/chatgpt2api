@@ -69,7 +69,58 @@ def create_router(app_version: str) -> APIRouter:
     @router.post("/api/settings")
     async def save_settings(body: SettingsUpdateRequest, authorization: str | None = Header(default=None)):
         require_admin(authorization)
-        return {"config": config.update(body.model_dump(mode="python"))}
+        result = config.update(body.model_dump(mode="python"))
+        # If tunnel token changed, restart tunnel
+        if "cloudflare_tunnel_token" in (body.model_dump() or {}):
+            try:
+                from services.cloudflare_tunnel import restart_tunnel
+                restart_tunnel()
+            except Exception:
+                pass
+        # If telegram token changed, re-register webhook
+        if any(k in (body.model_dump() or {}) for k in ("telegram_bot_token", "telegram_webhook_url")):
+            try:
+                from services.telegram_bot import register_webhook
+                register_webhook()
+            except Exception:
+                pass
+        return {"config": result}
+
+    # ── Cloudflare Tunnel ──
+    @router.get("/api/tunnel/status")
+    async def tunnel_status(authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        from services.cloudflare_tunnel import get_status
+        return get_status()
+
+    @router.post("/api/tunnel/restart")
+    async def tunnel_restart(authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        from services.cloudflare_tunnel import restart_tunnel
+        return {"ok": restart_tunnel()}
+
+    # ── Telegram ──
+    @router.get("/api/telegram/status")
+    async def telegram_status(authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        from services.telegram_bot import get_status
+        return get_status()
+
+    @router.post("/telegram/webhook")
+    async def telegram_webhook(request: Request):
+        """Public endpoint for Telegram to send messages to."""
+        from services.telegram_bot import handle_webhook
+        return await handle_webhook(request)
+
+    @router.post("/api/telegram/test")
+    async def telegram_test(authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        from services.telegram_bot import _chat_ids, send_message
+        ids = _chat_ids()
+        if not ids:
+            raise HTTPException(400, "Chưa cấu hình telegram_chat_ids")
+        r = send_message(ids[0], "✅ Test từ chatgpt2api")
+        return {"ok": r.get("ok", False)}
 
     @router.get("/api/images")
     async def get_images(request: Request, start_date: str = "", end_date: str = "", authorization: str | None = Header(default=None)):

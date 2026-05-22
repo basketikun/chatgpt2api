@@ -29,12 +29,22 @@ WORKDIR /app
 # - git: Git 存储后端需要
 # - libpq-dev: PostgreSQL 客户端库
 # - gcc: 编译 psycopg2-binary 需要
+# - wget: 下载 cloudflared
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     libpq-dev \
     gcc \
     openssl \
+    wget \
     && rm -rf /var/lib/apt/lists/*
+
+# Install cloudflared for Cloudflare Tunnel
+RUN ARCH=$(dpkg --print-architecture) && \
+    case "$ARCH" in \
+      amd64) CF="amd64" ;; arm64) CF="arm64" ;; *) echo "unsupported: $ARCH"; exit 1 ;; \
+    esac && \
+    wget -q "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${CF}.deb" -O /tmp/cf.deb && \
+    dpkg -i /tmp/cf.deb && rm /tmp/cf.deb
 
 RUN pip install --no-cache-dir uv
 

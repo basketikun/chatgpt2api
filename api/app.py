@@ -23,12 +23,30 @@ def create_app() -> FastAPI:
         thread = start_limited_account_watcher(stop_event)
         backup_service.start()
         config.cleanup_old_images()
+        # Start Cloudflare Tunnel if token configured
+        try:
+            from services.cloudflare_tunnel import start_tunnel, start_monitor
+            start_tunnel()
+            start_monitor()
+        except Exception:
+            pass
+        # Register Telegram webhook if token configured
+        try:
+            from services.telegram_bot import register_webhook
+            register_webhook()
+        except Exception:
+            pass
         try:
             yield
         finally:
             stop_event.set()
             thread.join(timeout=1)
             backup_service.stop()
+            try:
+                from services.cloudflare_tunnel import stop_tunnel
+                stop_tunnel()
+            except Exception:
+                pass
 
     app = FastAPI(title="chatgpt2api", version=app_version, lifespan=lifespan)
     app.add_middleware(
