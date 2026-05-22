@@ -373,10 +373,12 @@ def execute_ha_tool(tool_name: str, arguments: dict[str, Any]) -> str | None:
             eid = s.get("entity_id", "").lower()
             name = s.get("attributes", {}).get("friendly_name", "").lower()
             if query in eid or query in name:
-                matches.append(f"- {s.get('attributes', {}).get('friendly_name', '')} ({s.get('entity_id', '')}): {s.get('state', '')}")
+                real_name = s.get("attributes", {}).get("friendly_name", "")
+                label = f"{real_name} | {eid}" if real_name else eid
+                matches.append(label)
         if not matches:
             return f"Không tìm thấy thiết bị nào khớp với '{query}'"
-        return f"Các thiết bị tìm thấy (từ khóa '{query}'):\n" + "\n".join(matches[:20])
+        return f"Thiết bị khớp '{query}' ({len(matches)}):\n" + "\n".join(matches[:30])
     elif tool_name == "ha_call_service":
         domain = arguments.get("domain", "")
         service = arguments.get("service", "")
