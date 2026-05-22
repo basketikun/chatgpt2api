@@ -92,10 +92,15 @@ def call_service(domain: str, service: str, data: dict[str, Any] | None = None) 
         return False
 
 
-# Domains that are actionable and shown to AI
-_CONTEXT_DOMAINS = ["light", "switch", "climate", "cover", "lock", "fan", "media_player"]
+# All domains shown to AI — users interact by friendly_name, not entity_id
+# Limit per domain keeps token count reasonable even for large setups
+_CONTEXT_DOMAINS = [
+    "light", "switch", "climate", "cover", "lock", "fan", "media_player",
+    "sensor", "binary_sensor", "input_boolean", "input_number", "input_select",
+    "scene", "script", "automation", "vacuum", "camera",
+]
 # Max entities per domain shown in context (keep token count low)
-_MAX_PER_DOMAIN = 30
+_MAX_PER_DOMAIN = 20
 
 
 def format_states_context() -> str:
@@ -122,7 +127,8 @@ def format_states_context() -> str:
     lines = [
         "## Smart Home — Live State",
         "Trạng thái bên dưới là DỮ LIỆU THỰC TẾ, KHÔNG cần gọi ha_get_state hay ha_search_entities.",
-        "Chỉ dùng ha_call_service để điều khiển. Chỉ gọi ha_search_entities khi thiết bị KHÔNG có trong danh sách.",
+        "Tìm thiết bị bằng tên (friendly_name) — VD: 'đèn phòng khách', 'máy lạnh', 'cảm biến nhiệt độ'.",
+        "Chỉ dùng ha_call_service để điều khiển. Chỉ gọi ha_search_entities khi tên thiết bị KHÔNG có trong danh sách.",
         "",
     ]
 
