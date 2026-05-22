@@ -423,8 +423,56 @@ def invalidate_models_cache():
         pass
 
 
+def _apply_enabled_filter(data: list[dict]) -> list[dict]:
+    """Filter model list by model_settings.enabled_models. Used for HA /v1/models."""
+    model_settings = config.data.get("model_settings") or {}
+    if not isinstance(model_settings, dict):
+        return data
+    enabled_by_provider = model_settings.get("enabled_models") or {}
+    if not isinstance(enabled_by_provider, dict) or not enabled_by_provider:
+        return data
+
+    all_enabled: set[str] = set()
+    for provider_models in enabled_by_provider.values():
+        if isinstance(provider_models, list):
+            for m in provider_models:
+                if isinstance(m, str) and m.strip():
+                    all_enabled.add(m.strip())
+
+    always_allow = {
+        "cx/auto", "oc/auto", "chatgpt/auto", "gemini_free/auto", "ag/auto",
+    }
+    all_enabled |= always_allow
+
+    combos = config.data.get("combo_models") or {}
+    if isinstance(combos, dict):
+        all_enabled |= set(combos.keys())
+
+    all_enabled |= set(IMAGE_MODELS)
+
+    from services.providers.custom_openai import get_custom_providers, CustomOpenAIProvider
+    custom_providers = get_custom_providers()
+    for cp_id, cp_cfg in custom_providers.items():
+        try:
+            provider = CustomOpenAIProvider(cp_cfg)
+            for m in provider.list_models():
+                mid = str(m.get("id") or "").strip()
+                if mid:
+                    all_enabled.add(mid)
+        except Exception:
+            pass
+
+    before = len(data)
+    filtered = [item for item in data if str(item.get("id") or "").strip() in all_enabled]
+    logger.info({"event": "list_models_filtered", "before": before, "after": len(filtered)})
+    return filtered
+
+
 def list_models(force_refresh: bool = False, apply_filter: bool = False) -> dict[str, Any]:
-    """Return available models — cached to disk. apply_filter=True for HA /v1/models."""
+    """Return available models — cached to disk. apply_filter=True for HA /v1/models.
+    Cache always stores UNFILTERED data; filter is applied at read time so the UI
+    (which needs all models for toggle UI) and HA (which needs only enabled) share
+    the same cache without one polluting the other."""
     global _models_cache, _cache_config_hash
 
     # Load from disk on first access
@@ -438,7 +486,10 @@ def list_models(force_refresh: bool = False, apply_filter: bool = False) -> dict
     # Use cache if: loaded from disk, not forced, and config hasn't changed
     if _models_cache is not None and not force_refresh and not config_changed:
         logger.info({"event": "list_models_cache_hit"})
-        return dict(_models_cache)  # type: ignore[arg-type]
+        cached = dict(_models_cache)  # type: ignore[arg-type]
+        if apply_filter:
+            cached = {"object": "list", "data": _apply_enabled_filter(list(cached.get("data") or []))}
+        return cached
 
     if force_refresh:
         logger.info({"event": "list_models_manual_refresh"})
@@ -562,63 +613,14 @@ def list_models(force_refresh: bool = False, apply_filter: bool = False) -> dict
                         "owned_by": provider_name,
                     })
 
-    # Apply model_settings filter — only if requested (for HA /v1/models, not for UI)
-    if apply_filter:
-        model_settings = config.data.get("model_settings") or {}
-        if isinstance(model_settings, dict):
-            enabled_by_provider = model_settings.get("enabled_models") or {}
-            if isinstance(enabled_by_provider, dict) and enabled_by_provider:
-                # Build a flat set of all explicitly enabled model IDs
-                all_enabled: set[str] = set()
-                for provider_models in enabled_by_provider.values():
-                    if isinstance(provider_models, list):
-                        for m in provider_models:
-                            if isinstance(m, str) and m.strip():
-                                all_enabled.add(m.strip())
-
-                # Also always allow special models: combos, image models, auto variants
-                always_allow = {
-                    "cx/auto", "oc/auto", "chatgpt/auto", "gemini_free/auto", "ag/auto",
-                }
-                all_enabled |= always_allow
-
-                # Add combo model names from config
-                combos = config.data.get("combo_models") or {}
-                if isinstance(combos, dict):
-                    all_enabled |= set(combos.keys())
-
-                # Add image models
-                all_enabled |= set(IMAGE_MODELS)
-
-                # Add custom provider models
-                from services.providers.custom_openai import get_custom_providers, CustomOpenAIProvider
-                custom_providers = get_custom_providers()
-                for cp_id, cp_cfg in custom_providers.items():
-                    try:
-                        provider = CustomOpenAIProvider(cp_cfg)
-                        for m in provider.list_models():
-                            mid = str(m.get("id") or "").strip()
-                            if mid:
-                                all_enabled.add(mid)
-                    except Exception:
-                        pass
-
-                # Filter
-                before = len(data)
-                data = [item for item in data if str(item.get("id") or "").strip() in all_enabled]
-                logger.info({
-                    "event": "list_models_filtered",
-                    "before": before,
-                    "after": len(data),
-                    "enabled_rules": len(enabled_by_provider),
-                })
-
     logger.info({"event": "list_models_done", "total_models": len(data)})
-    # Save to persistent disk cache
+    # Save to persistent disk cache (always UNFILTERED — apply_filter is applied at read time)
     result = {"object": "list", "data": data}
     _models_cache = result
     _cache_config_hash = current_hash
     _save_cache_to_disk(result)
     logger.info({"event": "list_models_cached_to_disk", "total": len(data)})
 
+    if apply_filter:
+        return {"object": "list", "data": _apply_enabled_filter(list(data))}
     return result
