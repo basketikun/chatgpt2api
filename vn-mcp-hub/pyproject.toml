@@ -21,6 +21,8 @@ dependencies = [
     "pytesseract>=0.3.0",
     "pdf2image>=1.17.0",
     "vnstock>=4.0.0",
+    "ddddocr>=1.4.0",
+    "requests>=2.31.0",
 ]
 
 [build-system]
