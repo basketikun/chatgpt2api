@@ -26,7 +26,27 @@ mcp = FastMCP("vn_phat_nguoi")
 # ── Constants ──
 CSGT_PAGE = "https://csgt.bocongan.gov.vn/tra-cuu-phat-nguoi"
 CSGT_API = "https://www.csgt.vn/tra-cuu-vi-pham-qua-hinh-anh"
-SITE_KEY = "15w2WinoPkHGHmmUaYiQWsebMNOJfXOLxC434YgH"
+SITE_KEY = "6LfcU6MsAAAAAF7XE191a3wa4_8B2pr6WJQoims1"  # Fallback, will scrape from page
+
+
+def _scrape_sitekey() -> str:
+    """Lấy sitekey từ trang CSGT."""
+    try:
+        req = urllib.request.Request(CSGT_PAGE,
+            headers={"User-Agent": "Mozilla/5.0", "Accept": "text/html"})
+        resp = urllib.request.urlopen(req, timeout=10)
+        html = resp.read().decode("utf-8", errors="ignore")
+        for p in [
+            r'sitekey\s*[:=]\s*"([^"]+)"',
+            r"sitekey\s*[:=]\s*'([^']+)'",
+            r'data-sitekey="([^"]+)"',
+        ]:
+            m = re.search(p, html, re.I)
+            if m:
+                return m.group(1)
+    except Exception:
+        pass
+    return SITE_KEY
 
 VEHICLE_TYPES = {
     "oto": ("car", "Ô tô"), "ô tô": ("car", "Ô tô"), "car": ("car", "Ô tô"),
@@ -66,8 +86,9 @@ def _is_valid_plate(plate: str, vehicle_type: str = "car") -> bool:
 def _get_recaptcha_token() -> str | None:
     """Generate reCAPTCHA v3 token (3-step Google API flow)."""
     try:
+        sitekey = _scrape_sitekey()
         # Step 1: Get reCAPTCHA JS version
-        js_url = f"https://www.google.com/recaptcha/api.js?render={SITE_KEY}"
+        js_url = f"https://www.google.com/recaptcha/api.js?render={sitekey}"
         req = urllib.request.Request(js_url, headers={"User-Agent": "Mozilla/5.0"})
         resp = urllib.request.urlopen(req, timeout=10)
         js_text = resp.read().decode("utf-8", errors="ignore")
@@ -78,7 +99,7 @@ def _get_recaptcha_token() -> str | None:
         co_b64 = urllib.parse.quote_plus("aHR0cHM6Ly9jc2d0LmJvY29uZ2FuLmdvdi52bg==")
         anchor_url = (
             f"https://www.google.com/recaptcha/api2/anchor?"
-            f"ar=1&k={SITE_KEY}&co={co_b64}&hl=vi&v={version}&size=invisible&cb=123456"
+            f"ar=1&k={sitekey}&co={co_b64}&hl=vi&v={version}&size=invisible&cb=123456"
         )
         req = urllib.request.Request(anchor_url, headers={"User-Agent": "Mozilla/5.0"})
         resp = urllib.request.urlopen(req, timeout=10)
@@ -90,21 +111,29 @@ def _get_recaptcha_token() -> str | None:
         token = anchor_token.group(1)
 
         # Step 3: Reload to get final response token
-        reload_url = f"https://www.google.com/recaptcha/api2/reload?k={SITE_KEY}"
+        reload_url = f"https://www.google.com/recaptcha/api2/reload?k={sitekey}"
         reload_data = urllib.parse.urlencode({
-            "c": token, "v": version, "reason": "q", "k": SITE_KEY,
+            "c": token, "v": version, "reason": "q", "k": sitekey,
         }).encode()
         req = urllib.request.Request(reload_url, data=reload_data,
             headers={"User-Agent": "Mozilla/5.0", "Content-Type": "application/x-www-form-urlencoded"})
         resp = urllib.request.urlopen(req, timeout=10)
         raw = resp.read().decode("utf-8", errors="ignore")
-        # Response format: )]}'<JSON>
+        # Response format: )]}'<JSON array>
         raw = re.sub(r"^\)\]}'\s*", "", raw.strip())
         data = json.loads(raw)
-        rresp = data[1] if isinstance(data, list) and len(data) > 1 else None
-        if rresp and isinstance(rresp, list) and len(rresp) > 1:
-            return rresp[1]
-        logger.warning("reCAPTCHA: unexpected reload response: %s", str(data)[:200])
+        # Flexible parsing: token can be data[1] (string) or data[1][1] (nested)
+        recaptcha_token = None
+        if isinstance(data, list) and len(data) > 1:
+            second = data[1]
+            if isinstance(second, str) and len(second) > 100:
+                recaptcha_token = second
+            elif isinstance(second, list) and len(second) >= 2:
+                recaptcha_token = second[1]
+        if not recaptcha_token:
+            logger.warning("reCAPTCHA: unexpected reload response: %s", str(data)[:200])
+            return None
+        return recaptcha_token
     except Exception as exc:
         logger.warning("reCAPTCHA token generation failed: %s", exc)
     return None
