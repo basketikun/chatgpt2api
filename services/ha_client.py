@@ -208,10 +208,8 @@ def _build_context(states: list[dict]) -> str:
     # Show ALL devices with name + entity_id
     lines = [
         "## Smart Home — Device Registry",
-        f"Danh sách {len(states)} thiết bị (tên | entity_id).",
-        "Trạng thái bên dưới là cached — dùng `ha_get_state` để lấy REAL-TIME.",
-        "Điều khiển: dùng `ha_call_service` với entity_id từ danh sách này.",
-        f"Tự động cập nhật danh sách mỗi {ttl}s hoặc vào: {', '.join(refresh_times) if refresh_times else 'không có lịch'}.",
+        f"{len(states)} thiết bị. Dùng entity_id để điều khiển/lấy trạng thái.",
+        "Không có trạng thái trong này — gọi `ha_get_state` để biết real-time.",
         "",
     ]
 
@@ -222,37 +220,15 @@ def _build_context(states: list[dict]) -> str:
         lines.append(f"[{domain}] ({len(entities)})")
         for s in entities[:_MAX_PER_DOMAIN]:
             eid = s.get("entity_id", "")
-            state = s.get("state", "")
             name = s.get("attributes", {}).get("friendly_name", "")
             label = f"{name} | {eid}" if name else eid
-            lines.append(f"  {label}: {state}")
+            lines.append(f"  {label}")
             total_shown += 1
         if len(entities) > _MAX_PER_DOMAIN:
             lines.append(f"  ... còn {len(entities) - _MAX_PER_DOMAIN} thiết bị [{domain}]")
 
     lines.append("")
-    lines.append("## Available Services (per domain)")
-    lines.append("| Domain | Services |")
-    lines.append("|--------|----------|")
-    service_map = {
-        "light": "turn_on, turn_off, toggle",
-        "switch": "turn_on, turn_off, toggle",
-        "climate": "set_temperature, set_hvac_mode, turn_on, turn_off",
-        "cover": "open_cover, close_cover, stop_cover, set_cover_position",
-        "lock": "lock, unlock",
-        "fan": "turn_on, turn_off, set_speed",
-        "media_player": "media_play, media_pause, volume_set, turn_on, turn_off",
-        "scene": "turn_on",
-        "script": "turn_on",
-        "automation": "turn_on, turn_off, trigger",
-        "vacuum": "start, stop, return_to_base",
-        "camera": "snapshot",
-    }
-    for domain, services in service_map.items():
-        if domain in by_domain:
-            lines.append(f"| {domain} | {services} |")
-    lines.append("")
-    lines.append(f"Hiển thị {total_shown}/{len(states)} thiết bị. Dùng `ha_search_entities` nếu chưa thấy.")
+    lines.append(f"Dùng `ha_get_state` để lấy trạng thái real-time. `ha_call_service` để điều khiển.")
 
     _context_cache = "\n".join(lines)
     _context_cache_ts = now
