@@ -192,39 +192,79 @@ def _lookup_phatnguoi_vn(plate: str, vtype: int) -> tuple[list[dict] | None, str
 
 # ── Output formatter ────────────────────────────────────────────────────────
 
+def _is_resolved(v: dict) -> bool:
+    """A violation is treated as resolved (no longer outstanding) when its
+    status field starts with "Đã" — e.g. "Đã xử phạt", "Đã giải quyết".
+    The official phatnguoi.vn UI hides these by default, so we follow that
+    convention to avoid surfacing year-old paid fines as if they were new.
+    """
+    status = str(v.get("trangThai") or "").strip()
+    return status.startswith("Đã") or status.startswith("Đã ")
+
+
+def _render_one(idx: int, v: dict) -> list[str]:
+    out = [f"### Lỗi {idx}"]
+    for vlabel, key in [
+        ("Biển kiểm soát", "bienKiemSoat"),
+        ("Màu biển",       "mauBien"),
+        ("Loại phương tiện", "loaiPhuongTien"),
+        ("Thời gian vi phạm", "thoiGianViPham"),
+        ("Địa điểm vi phạm",  "diaDiemViPham"),
+        ("Hành vi vi phạm",   "hanhViViPham"),
+        ("Trạng thái",        "trangThai"),
+        ("Đơn vị phát hiện",  "donViPhatHien"),
+    ]:
+        if v.get(key):
+            out.append(f"- **{vlabel}**: {v[key]}")
+    for p in v.get("noiGiaiQuyet") or []:
+        if isinstance(p, dict):
+            out.append(f"- **Nơi giải quyết**: {p.get('ten', '')}")
+            if p.get("diaChi"):
+                out.append(f"  📍 {p['diaChi']}")
+        elif isinstance(p, str):
+            out.append(f"- **Nơi giải quyết**: {p}")
+    out.append("")
+    return out
+
+
 def _format_violations(violations: list[dict], plate: str, label: str, sources: list[str]) -> str:
+    """Render results, separating OUTSTANDING (chưa xử phạt) from RESOLVED
+    (đã xử phạt) so users get the same "✓ chưa ghi nhận" experience that
+    the official phatnguoi.vn site gives when only paid records exist."""
     src = ", ".join(sources) if sources else "phatnguoi.vn"
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     lines = [f"**Tra cứu phạt nguội cho {label} biển số {plate}:**", ""]
-    if not violations:
-        # NOTE: caller decides whether this means "confirmed no record" or
-        # "lookup failed"; here we just render the absence.
-        lines.append("✅ **Không có vi phạm giao thông nào được ghi nhận.**")
-    else:
-        lines.append(f"🚨 **Phát hiện {len(violations)} vi phạm:**")
-        lines.append("")
-        for i, v in enumerate(violations[:20], 1):
-            lines.append(f"### Lỗi {i}")
-            for vlabel, key in [
-                ("Biển kiểm soát", "bienKiemSoat"),
-                ("Màu biển",       "mauBien"),
-                ("Loại phương tiện", "loaiPhuongTien"),
-                ("Thời gian vi phạm", "thoiGianViPham"),
-                ("Địa điểm vi phạm",  "diaDiemViPham"),
-                ("Hành vi vi phạm",   "hanhViViPham"),
-                ("Trạng thái",        "trangThai"),
-                ("Đơn vị phát hiện",  "donViPhatHien"),
-            ]:
-                if v.get(key):
-                    lines.append(f"- **{vlabel}**: {v[key]}")
-            for p in v.get("noiGiaiQuyet") or []:
-                if isinstance(p, dict):
-                    lines.append(f"- **Nơi giải quyết**: {p.get('ten', '')}")
-                    if p.get("diaChi"):
-                        lines.append(f"  📍 {p['diaChi']}")
-                elif isinstance(p, str):
-                    lines.append(f"- **Nơi giải quyết**: {p}")
+
+    outstanding = [v for v in violations if not _is_resolved(v)]
+    resolved = [v for v in violations if _is_resolved(v)]
+
+    if not outstanding:
+        # Same wording the official phatnguoi.vn website uses.
+        lines.append("✅ **Chúc mừng, chưa ghi nhận lỗi vi phạm chưa xử lý.**")
+        if resolved:
             lines.append("")
+            lines.append(
+                f"_Lịch sử: có {len(resolved)} vi phạm cũ đã được xử lý "
+                "(không cần xử lý lại). Xem chi tiết bên dưới nếu cần._"
+            )
+            lines.append("")
+            lines.append("<details>")
+            lines.append("<summary>Lịch sử vi phạm đã xử lý</summary>")
+            lines.append("")
+            for i, v in enumerate(resolved[:20], 1):
+                lines.extend(_render_one(i, v))
+            lines.append("</details>")
+    else:
+        lines.append(f"🚨 **Phát hiện {len(outstanding)} vi phạm chưa xử lý:**")
+        lines.append("")
+        for i, v in enumerate(outstanding[:20], 1):
+            lines.extend(_render_one(i, v))
+        if resolved:
+            lines.append(
+                f"_Ngoài ra có {len(resolved)} vi phạm cũ đã được xử lý — bỏ qua._"
+            )
+            lines.append("")
+
     lines.append(f"_Nguồn: {src} — {ts}_")
     return "\n".join(lines)
 
