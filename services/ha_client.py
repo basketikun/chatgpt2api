@@ -131,6 +131,21 @@ _CONTEXT_DOMAINS = [
 # Max entities per domain shown in context (keep token count low)
 _MAX_PER_DOMAIN = 20
 
+# Known services per domain
+_SERVICE_MAP = {
+    "light": ["turn_on", "turn_off", "toggle"],
+    "switch": ["turn_on", "turn_off", "toggle"],
+    "climate": ["set_temperature", "set_hvac_mode", "turn_on", "turn_off"],
+    "cover": ["open_cover", "close_cover", "stop_cover"],
+    "lock": ["lock", "unlock"],
+    "fan": ["turn_on", "turn_off", "set_speed"],
+    "media_player": ["media_play", "media_pause", "volume_set"],
+    "scene": ["turn_on"],
+    "script": ["turn_on"],
+    "automation": ["turn_on", "turn_off", "trigger"],
+    "vacuum": ["start", "stop", "return_to_base"],
+}
+
 
 def format_states_context() -> str:
     """Return cached device registry. NEVER blocks on HA API call.
@@ -227,6 +242,11 @@ def _build_context(states: list[dict]) -> str:
         if len(entities) > _MAX_PER_DOMAIN:
             lines.append(f"  ... còn {len(entities) - _MAX_PER_DOMAIN} thiết bị [{domain}]")
 
+    lines.append("")
+    lines.append("## Available Services")
+    for domain, svc_list in sorted(_SERVICE_MAP.items()):
+        if domain in by_domain:
+            lines.append(f"  {domain}: {', '.join(svc_list)}")
     lines.append("")
     lines.append(f"Dùng `ha_get_state` để lấy trạng thái real-time. `ha_call_service` để điều khiển.")
 
