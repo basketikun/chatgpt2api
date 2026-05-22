@@ -21,15 +21,15 @@ MAX_HISTORY = 20
 
 
 def _bot_token() -> str:
-    return str(config.get("telegram_bot_token", "")).strip()
+    return str(config.get().get("telegram_bot_token", "")).strip()
 
 
 def _tg_model() -> str:
-    return str(config.get("telegram_ai_model", "")).strip() or "cx/auto"
+    return str(config.get().get("telegram_ai_model", "")).strip() or "cx/auto"
 
 
 def _chat_ids() -> list:
-    ids = config.get("telegram_chat_ids", [])
+    ids = config.get().get("telegram_chat_ids", [])
     return ids if isinstance(ids, list) else []
 
 
@@ -53,7 +53,7 @@ def _api_call(method: str, data: dict | None = None) -> dict:
 
 def register_webhook() -> bool:
     token = _bot_token()
-    webhook_url = str(config.get("telegram_webhook_url", "")).strip()
+    webhook_url = str(config.get().get("telegram_webhook_url", "")).strip()
     if not token or not webhook_url:
         return False
     url = f"{webhook_url.rstrip('/')}/telegram/webhook"
@@ -115,8 +115,8 @@ async def handle_webhook(request) -> dict:
         _conversations[key] = [_conversations[key][0]] + _conversations[key][-(MAX_HISTORY - 1):]
 
     # Call AI
-    base_url = str(config.get("api_base_url", "http://127.0.0.1:3030/v1")).rstrip("/")
-    api_key = str(config.get("api_key", ""))
+    base_url = str(config.get().get("api_base_url", "http://127.0.0.1:3030/v1")).rstrip("/")
+    api_key = str(config.get().get("api_key", ""))
     payload = {"model": _tg_model(), "messages": _conversations[key], "stream": False}
     try:
         req = urllib.request.Request(f"{base_url}/chat/completions",
@@ -155,7 +155,7 @@ def _cmd(text: str, chat_id: str) -> str | None:
 def get_status() -> dict:
     return {
         "configured": bool(_bot_token()),
-        "webhook_url": str(config.get("telegram_webhook_url", "")).strip(),
+        "webhook_url": str(config.get().get("telegram_webhook_url", "")).strip(),
         "model": _tg_model(),
         "chat_ids_count": len(_chat_ids()),
     }

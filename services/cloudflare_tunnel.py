@@ -21,7 +21,7 @@ _monitor_started = False
 
 
 def _token() -> str:
-    return str(config.get("cloudflare_tunnel_token", "")).strip()
+    return str(config.get().get("cloudflare_tunnel_token", "")).strip()
 
 
 def is_running() -> bool:
