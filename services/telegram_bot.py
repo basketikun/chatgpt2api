@@ -116,12 +116,13 @@ async def handle_webhook(request) -> dict:
 
     # Call AI
     base_url = str(config.get().get("api_base_url", "")).strip().rstrip("/") or "http://127.0.0.1/v1"
-    api_key = str(config.get().get("api_key", "")).strip()
+    api_key = str(config.get().get("api_key", "")).strip() or str(config.get().get("auth-key", "")).strip()
+    auth_header = config.auth_key  # Use system auth key for internal calls
     payload = {"model": _tg_model(), "messages": _conversations[key], "stream": False}
     try:
         req = urllib.request.Request(f"{base_url}/chat/completions",
             data=json.dumps(payload).encode(),
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"})
+            headers={"Authorization": f"Bearer {auth_header}", "Content-Type": "application/json"})
         resp = urllib.request.urlopen(req, timeout=90)
         reply = json.loads(resp.read().decode()).get("choices", [{}])[0].get("message", {}).get("content", "")
         reply = reply.strip() or "..."
