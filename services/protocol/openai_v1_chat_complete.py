@@ -1477,6 +1477,10 @@ def _inject_mcp_tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]
         
         client_is_ha = any(name.startswith("Hass") or name == "GetLiveContext" for name in existing_names)
         ha_tools = [] if client_is_ha else get_ha_tools()
+
+        # Fast path for HA: skip MCP tools (80+ tools useless for simple commands)
+        if client_is_ha:
+            mcp_tools = []
         
         all_new_tools = mcp_tools + ha_tools
         if not all_new_tools:
