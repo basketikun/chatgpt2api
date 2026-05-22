@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { LoaderCircle, Settings, KeyRound, Cpu, Zap, Link, Archive, Plug } from "lucide-react";
+import { LoaderCircle, Settings, KeyRound, Cpu, Zap, Link, Archive, Plug, MessageCircle } from "lucide-react";
 
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { SettingsSection } from "@/components/settings-section";
 
 import { BackupSettingsCard } from "./components/backup-settings-card";
 import { HACard } from "./components/ha-card";
+import { TelegramCloudflareCard } from "./components/telegram-cloudflare-card";
 import { ConfigCard } from "./components/config-card";
 import { GeminiCard } from "./components/gemini-card";
 import { NvidiaNimCard } from "./components/nvidia-nim-card";
@@ -115,6 +116,14 @@ function SettingsPageContent() {
           icon={<Plug className="size-5" />}
         >
           <Sub2APIConnections />
+        </SettingsSection>
+
+        <SettingsSection
+          title="Telegram & Cloudflare"
+          description="Chat 2 chiều qua Telegram Bot + Cloudflare Tunnel"
+          icon={<MessageCircle className="size-5" />}
+        >
+          <TelegramCloudflareCard />
         </SettingsSection>
 
         <SettingsSection
