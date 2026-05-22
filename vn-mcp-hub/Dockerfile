@@ -6,6 +6,9 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
+    tesseract-ocr \
+    tesseract-ocr-vie \
+    poppler-utils \
     && pip install --no-cache-dir uv \
     && rm -rf /var/lib/apt/lists/*
 
@@ -23,6 +26,6 @@ COPY data/ ./data/
 RUN mkdir -p /app/chroma_db
 
 EXPOSE 8005
-# Force cache bust 2026-05-21 v2
+# Force cache bust 2026-05-22 v3 (fix markitdown pdf dep)
 
 CMD ["python", "-m", "src.main"]

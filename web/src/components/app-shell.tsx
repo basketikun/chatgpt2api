@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Sidebar } from "@/components/sidebar";
 import { useLangStore } from "@/store/lang";
+import { Sun, Moon, Monitor } from "lucide-react";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { lang } = useLangStore();
@@ -32,27 +33,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <div className="flex min-h-screen bg-circles text-stone-900 dark:text-stone-100 font-sans">
+    <div className="flex min-h-screen bg-[var(--background)] text-[var(--foreground)] font-sans transition-colors duration-300">
       <Sidebar
         collapsed={sidebarCollapsed}
         onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
       />
       <main
-        className="flex-1 overflow-x-hidden transition-[padding-left] duration-300 ease-in-out"
+        className="flex-1 overflow-x-hidden transition-[padding-left] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
         style={{
-          paddingLeft: sidebarCollapsed ? "68px" : "16rem",
+          paddingLeft: sidebarCollapsed ? "72px" : "16rem",
         }}
       >
         <div className="mx-auto max-w-[1280px] px-4 py-6 sm:px-6 lg:px-8">
           {children}
         </div>
       </main>
+      {/* Floating theme toggle — micro-interaction */}
       <button
         onClick={toggleDarkMode}
-        className="fixed bottom-4 right-4 z-50 flex size-10 items-center justify-center rounded-full border border-slate-200 bg-white shadow-lg transition-all hover:scale-105 dark:border-slate-700 dark:bg-slate-800"
+        className="group fixed bottom-6 right-6 z-50 flex size-11 items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--card)] shadow-lg transition-all duration-300 hover:scale-110 hover:shadow-xl active:scale-95 backdrop-blur-sm"
         title={darkMode ? "Light mode" : "Dark mode"}
+        aria-label="Toggle theme"
       >
-        {darkMode ? "☀️" : "🌙"}
+        <span className="transition-transform duration-300 group-hover:rotate-12">
+          {darkMode ? <Sun className="size-5 text-amber-400" /> : <Moon className="size-5 text-indigo-500" />}
+        </span>
       </button>
     </div>
   );

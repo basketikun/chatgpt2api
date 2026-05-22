@@ -334,7 +334,11 @@ document.getElementById('ingestAnalyzeForm').onsubmit = async (e) => {
       document.getElementById('ingestMarkdown').value = d.markdown || '';
       document.getElementById('ingestResultCard').style.display = 'block';
       await loadKbDropdown();
-      toast('Phan tich hoan tat!', true);
+      if (d.raw_fallback) {
+        toast(d.warning || 'AI khong the tong hop, tra ve van ban goc.', true);
+      } else {
+        toast('Phan tich hoan tat!', true);
+      }
     } else {
       toast('Loi: ' + (d.error || 'Khong the phan tich'), false);
     }

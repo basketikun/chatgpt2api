@@ -11,6 +11,7 @@ import time
 import threading
 import json
 import urllib.request
+import urllib.error
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
@@ -65,9 +66,9 @@ def _synthesize_with_ai(query: str, raw_text: str) -> str:
     api_key = settings.get("api_key", "AnhNhi@0610")
     ai_model = settings.get("ai_model", "cx/auto")
     base_url = settings.get("api_base_url", "http://chatgpt2api:3030/v1").rstrip("/")
-    
+
     url = f"{base_url}/chat/completions"
-    
+
     prompt = f"""Bạn là một chuyên gia tổng hợp tri thức (Knowledge Base).
 Dựa vào các kết quả tìm kiếm web thô dưới đây, hãy tổng hợp thành một bài viết Markdown chi tiết, mạch lạc, có cấu trúc rõ ràng (dùng Heading 2, 3, bullet points).
 Bài viết cần tập trung vào chủ đề: "{query}".
@@ -78,13 +79,13 @@ CHỈ TRẢ VỀ nội dung bài viết, không thêm lời chào hỏi.
 === THÔNG TIN TÌM KIẾM THÔ ===
 {raw_text}
 """
-    
+
     payload = {
         "model": ai_model,
         "messages": [{"role": "user", "content": prompt}],
         "stream": False,
     }
-    
+
     try:
         req = urllib.request.Request(url, data=json.dumps(payload).encode(), headers={
             "Authorization": f"Bearer {api_key}",
@@ -93,9 +94,25 @@ CHỈ TRẢ VỀ nội dung bài viết, không thêm lời chào hỏi.
         resp = urllib.request.urlopen(req, timeout=120)
         data = json.loads(resp.read().decode())
         content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        if content:
+            logger.info("AI synthesis OK: %d chars for query '%s'", len(content), query[:60])
+        else:
+            logger.warning("AI synthesis returned empty content for query '%s', response keys: %s",
+                         query[:60], list(data.keys()))
         return content.strip()
+    except urllib.error.HTTPError as exc:
+        body = ""
+        try:
+            body = exc.read().decode()[:500]
+        except Exception:
+            pass
+        logger.error("AI synthesis HTTP %d for '%s': %s", exc.code, query[:60], body)
+        return ""
+    except urllib.error.URLError as exc:
+        logger.error("AI synthesis connection failed for '%s': %s", query[:60], exc.reason)
+        return ""
     except Exception as exc:
-        logger.warning("AI synthesis failed: %s", exc)
+        logger.error("AI synthesis unexpected error for '%s': %s (%s)", query[:60], exc, type(exc).__name__)
         return ""
 
 

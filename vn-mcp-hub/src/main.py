@@ -256,94 +256,225 @@ def create_app() -> FastAPI:
     import urllib.request
     import io
 
+
+    def _ocr_pdf(filepath: str, max_pages: int = 0, dpi: int = 150) -> str:
+        """Try OCR on a PDF using pytesseract + pdf2image. Returns empty string on failure.
+
+        max_pages=0 means all pages.
+        """
+        try:
+            from pdf2image import convert_from_path
+            import pytesseract
+        except ImportError:
+            return ""
+
+        try:
+            if max_pages > 0:
+                images = convert_from_path(filepath, first_page=1, last_page=max_pages, dpi=dpi)
+            else:
+                images = convert_from_path(filepath, dpi=dpi)
+        except Exception:
+            return ""
+
+        if not images:
+            return ""
+
+        texts = []
+        for i, img in enumerate(images):
+            try:
+                text = pytesseract.image_to_string(img, lang="vie+eng")
+                if text.strip():
+                    texts.append(f"[Trang {i+1}]\n{text.strip()}")
+            except Exception:
+                pass
+
+        return "\n\n".join(texts)
+
+    def _ocr_pdf_pages(filepath: str, first_page: int, last_page: int, dpi: int = 130) -> str:
+        """OCR a specific page range. Returns text with page markers."""
+        try:
+            from pdf2image import convert_from_path
+            import pytesseract
+        except ImportError:
+            return ""
+
+        try:
+            images = convert_from_path(filepath, first_page=first_page, last_page=last_page, dpi=dpi)
+        except Exception:
+            return ""
+
+        texts = []
+        for i, img in enumerate(images):
+            page_num = first_page + i
+            try:
+                text = pytesseract.image_to_string(img, lang="vie+eng")
+                if text.strip():
+                    texts.append(f"[Trang {page_num}]\n{text.strip()}")
+            except Exception:
+                pass
+        return "\n\n".join(texts)
+
+
     @app.post("/api/studio/analyze_source")
     async def studio_analyze_source(request: Request):
         """Read a file or URL, extract text, and use AI to synthesize it into Markdown for RAG."""
         try:
             try:
                 form = await request.form()
+            except ImportError:
+                return {"ok": False, "error": "Thiếu thư viện python-multipart. Vui lòng rebuild Docker: docker compose up -d --build"}
             except Exception as e:
-                return {"ok": False, "error": f"Lỗi parse form (Cần chạy lại docker-compose build để cài python-multipart): {str(e)}"}
-            
+                return {"ok": False, "error": f"Lỗi parse form data: {str(e)}"}
+
             file = form.get("file")
             url = form.get("url")
-            
+            url_str = str(url) if url else ""
+
             raw_text = ""
             source_type = "unknown"
-            
-            if url:
+            ext = ""
+
+            if url_str and url_str.strip():
                 source_type = "url"
                 try:
                     from bs4 import BeautifulSoup
                 except ImportError:
                     return {"ok": False, "error": "Thiếu thư viện beautifulsoup4. Vui lòng build lại Docker."}
-                
-                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+
+                req = urllib.request.Request(url_str, headers={"User-Agent": "Mozilla/5.0"})
                 resp = urllib.request.urlopen(req, timeout=10)
                 html = resp.read().decode("utf-8", errors="ignore")
                 soup = BeautifulSoup(html, "html.parser")
                 raw_text = soup.get_text(separator="\n", strip=True)
                 if not raw_text.strip():
                     return {"ok": False, "error": "URL cung cấp không chứa nội dung văn bản (có thể là trang web trống, chống bot, hoặc chỉ chứa hình ảnh)."}
-                    
+
             elif file and hasattr(file, "read"):
                 source_type = "file"
                 content = await file.read()
                 if not content:
                     return {"ok": False, "error": "File bạn tải lên rỗng (0 bytes)."}
-                    
-                filename = file.filename.lower()
+
+                filename = (file.filename or "").lower()
+                ext = filename.rsplit(".", 1)[-1] if "." in filename else ""
+
+                import logging
+                logger = logging.getLogger("vn-mcp-hub")
+                logger.info("RAG upload: file=%s size=%d", filename, len(content))
+
                 if filename.endswith((".pdf", ".docx", ".pptx", ".xlsx")):
                     try:
                         from markitdown import MarkItDown
                         import tempfile
-                        import os
+                        import os as _os
                     except ImportError:
                         return {"ok": False, "error": "Thiếu thư viện markitdown. Vui lòng chạy lệnh: docker compose up -d --build"}
-                    
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(filename)[1]) as tmp:
+
+                    suffix = _os.path.splitext(filename)[1]
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
                         tmp.write(content)
                         tmp_path = tmp.name
-                    
+
+                    _used_ocr = False
                     try:
                         md = MarkItDown()
                         result = md.convert(tmp_path)
                         raw_text = result.text_content
                         if not raw_text or not raw_text.strip():
                             raw_text = ""
+                            # Try OCR fallback for scanned/image-based PDFs
                             if filename.endswith(".pdf"):
-                                return {"ok": False, "error": "Đây là file PDF dạng ảnh chụp (scanned) không có lớp văn bản. Hãy dùng tính năng lưu file Word dưới dạng PDF hoặc dùng bản PDF gốc (không phải bản in ra rồi scan lại)."}
+                                logger.info("MarkItDown returned empty text, trying OCR for scanned PDF...")
+                                ocr_text = _ocr_pdf(tmp_path)
+                                if ocr_text and ocr_text.strip():
+                                    raw_text = ocr_text
+                                    _used_ocr = True
+                                    logger.info("OCR extracted %d chars from scanned PDF", len(raw_text))
                     except Exception as e:
-                        return {"ok": False, "error": f"Lỗi phân tích định dạng file: {str(e)} (Có thể cần cài đặt thêm thư viện cho định dạng này)"}
+                        raw_text = ""
+                        if filename.endswith(".pdf"):
+                            logger.warning("MarkItDown failed for PDF (%s), trying OCR fallback", e)
+                            try:
+                                ocr_text = _ocr_pdf(tmp_path)
+                                if ocr_text and ocr_text.strip():
+                                    raw_text = ocr_text
+                                    _used_ocr = True
+                                    logger.info("OCR extracted %d chars from scanned PDF (fallback)", len(raw_text))
+                            except Exception as ocr_e:
+                                logger.warning("OCR also failed: %s", ocr_e)
+                        if not raw_text:
+                            return {"ok": False, "error": f"Lỗi phân tích định dạng file: {str(e)} (Có thể cần cài đặt thêm thư viện cho định dạng này)"}
                     finally:
-                        if os.path.exists(tmp_path):
-                            os.remove(tmp_path)
+                        if _os.path.exists(tmp_path):
+                            _os.remove(tmp_path)
+
+                    if not raw_text or not raw_text.strip():
+                        if filename.endswith(".pdf"):
+                            return {"ok": False, "error": "Đây là file PDF dạng ảnh chụp (scanned) không có lớp văn bản. Hãy dùng tính năng lưu file Word dưới dạng PDF hoặc dùng bản PDF gốc (không phải bản in ra rồi scan lại)."}
+                        return {"ok": False, "error": "Không thể trích xuất văn bản từ file này."}
                 else:
-                    raw_text = content.decode("utf-8", errors="ignore")
+                    try:
+                        raw_text = content.decode("utf-8", errors="ignore")
+                    except Exception:
+                        raw_text = content.decode("latin-1", errors="ignore")
                     if not raw_text.strip():
                         return {"ok": False, "error": "File văn bản không hợp lệ hoặc không có nội dung chữ."}
             else:
                 return {"ok": False, "error": "Không nhận được URL hay File hợp lệ từ trình duyệt."}
-            
+
             if not raw_text.strip():
                 return {"ok": False, "error": "Lỗi không xác định: Không thể trích xuất văn bản từ nguồn."}
-            
+
             from src.rag.scheduler import _synthesize_with_ai
-            title_hint = file.filename if file else url
-            query = f"Phân tích, chắt lọc kiến thức và trình bày lại nội dung từ nguồn ({title_hint}) thành bài viết Markdown chi tiết"
-            
-            raw_text = raw_text[:50000] 
-            
-            import logging
-            logger = logging.getLogger("vn-mcp-hub")
-            logger.info("Analyzing source: %s, extracted length: %d", title_hint, len(raw_text))
-            
-            synthesized = _synthesize_with_ai(query, raw_text)
-            if not synthesized or len(synthesized) < 50:
-                return {"ok": False, "error": "AI khong the tong hop hoac van ban qua ngan."}
-            
-            return {"ok": True, "markdown": synthesized}
+            title_hint = file.filename if (file and hasattr(file, "filename")) else (url_str or "unknown")
+
+            import logging as _logging
+            logger = _logging.getLogger("vn-mcp-hub")
+            logger.info("Analyzing source: %s, extracted length: %d, ocr: %s", title_hint, len(raw_text), _used_ocr)
+
+            # ── Strategy: if OCR with large text → batch process to preserve details ──
+            if _used_ocr and len(raw_text) > 15000:
+                # Split raw text into ~4000 char chunks (roughly 3-5 pages each)
+                chunk_size = 4000
+                chunks = [raw_text[i:i+chunk_size] for i in range(0, len(raw_text), chunk_size)]
+                logger.info("Batch processing %d chunks for large OCR document", len(chunks))
+
+                summaries = []
+                for idx, chunk in enumerate(chunks):
+                    batch_query = (
+                        f"Trích xuất TẤT CẢ các thông tin quan trọng từ đoạn văn bản pháp luật dưới đây (phần {idx+1}/{len(chunks)}). "
+                        f"GIỮ NGUYÊN: số điều, số khoản, số mẫu, tên phụ lục, số tiền, ngày tháng, tên cơ quan. "
+                        f"Định dạng Markdown. Không thêm lời chào."
+                    )
+                    summary = _synthesize_with_ai(batch_query, chunk)
+                    if summary and len(summary) >= 30:
+                        summaries.append(summary)
+                    else:
+                        # AI failed for this chunk, keep raw text
+                        summaries.append(chunk[:2000])
+                    logger.info("Batch %d/%d: %d chars summary", idx+1, len(chunks), len(summaries[-1]) if summaries else 0)
+
+                # Combine: AI overview first, then batch summaries
+                overview_query = f"Tạo mục lục ngắn gọn cho văn bản pháp luật: {title_hint}. Chỉ liệt kê các chương, điều chính."
+                overview = _synthesize_with_ai(overview_query, raw_text[:5000])
+                combined = (overview if overview else f"# {title_hint}") + "\n\n---\n\n" + "\n\n---\n\n".join(summaries)
+                logger.info("Batch processing complete: %d summaries, total %d chars", len(summaries), len(combined))
+                return {"ok": True, "markdown": combined, "source_type": source_type, "raw_fallback": False, "batches": len(summaries)}
+
+            # ── Normal flow (non-OCR or short OCR) ──
+            ai_input = raw_text[:30000]
+            query = f"Phân tích, chắt lọc kiến thức và trình bày lại nội dung từ nguồn ({title_hint}) thành bài viết Markdown chi tiết. GIỮ NGUYÊN các số liệu, điều khoản, tên riêng."
+            synthesized = _synthesize_with_ai(query, ai_input)
+            if synthesized and len(synthesized) >= 50:
+                return {"ok": True, "markdown": synthesized, "source_type": source_type, "raw_fallback": False}
+
+            # Fallback: AI synthesis failed
+            logger.warning("AI synthesis failed for '%s', returning raw text as fallback", title_hint)
+            fallback_md = f"# {title_hint}\n\n{raw_text[:10000]}"
+            return {"ok": True, "markdown": fallback_md, "source_type": source_type, "raw_fallback": True, "warning": "AI tong hop that bai, tra ve van ban goc chua qua xu ly."}
         except Exception as exc:
+            import logging as _logging
+            _logging.getLogger("vn-mcp-hub").exception("analyze_source failed")
             return {"ok": False, "error": str(exc)}
 
     @app.post("/api/rag/curate/{collection}")

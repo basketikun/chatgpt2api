@@ -109,48 +109,118 @@ export default function McpPage() {
     setSaving(null);
   };
 
-  if (loading) return <div className="p-6 text-muted-foreground">Đang tải...</div>;
+  if (loading) return (
+    <div className="p-8 space-y-4">
+      <div className="skeleton h-8 w-48" />
+      <div className="skeleton h-4 w-96" />
+      <div className="grid gap-4 md:grid-cols-2">
+        {[...Array(6)].map((_, i) => (
+          <div key={i} className="skeleton h-36 rounded-xl" />
+        ))}
+      </div>
+    </div>
+  );
 
   return (
-    <div className="space-y-6 p-6">
-      <div>
-        <h1 className="text-2xl font-bold">MCP Servers</h1>
-        <p className="text-muted-foreground text-sm mt-1">
-          Kết nối vn-mcp-hub. Bật/tắt nhóm MCP. Chi tiết từng MCP quản lý tại <a href={`${hubUrl}/studio`} target="_blank" className="text-primary underline">Studio</a>.
+    <div className="space-y-8 p-6">
+      {/* Header with gradient accent */}
+      <div className="animate-fade-slide-up">
+        <h1 className="text-3xl font-bold tracking-tight">
+          <span className="gradient-text">MCP Servers</span>
+        </h1>
+        <p className="text-[var(--muted-foreground)] text-sm mt-2 max-w-xl">
+          Kết nối vn-mcp-hub. Bật/tắt nhóm MCP. Chi tiết từng MCP quản lý tại{" "}
+          <a href={`${hubUrl}/studio`} target="_blank" className="text-[var(--primary)] underline decoration-[var(--primary)]/30 hover:decoration-[var(--primary)] transition-all">
+            Studio
+          </a>.
         </p>
       </div>
 
-      <div className="flex gap-2 items-end">
+      {/* Hub connection bar — glass card */}
+      <div className="glass-card rounded-2xl p-4 flex gap-3 items-end animate-fade-slide-up">
         <div className="flex-1">
-          <Input value={hubUrl} onChange={(e) => setHubUrl(e.target.value)} placeholder="http://vn-mcp-hub:8005" />
+          <label className="text-xs font-medium text-[var(--muted-foreground)] mb-1.5 block">
+            Hub URL
+          </label>
+          <input
+            value={hubUrl}
+            onChange={(e) => setHubUrl(e.target.value)}
+            placeholder="http://vn-mcp-hub:8005"
+            className="w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--ring)] transition-shadow"
+          />
         </div>
-        <Button onClick={connectHub} disabled={connecting}>{connecting ? "..." : "Kết nối Hub"}</Button>
+        <button
+          onClick={connectHub}
+          disabled={connecting}
+          className="btn-primary h-10"
+        >
+          {connecting ? (
+            <span className="flex items-center gap-2">
+              <span className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              Kết nối...
+            </span>
+          ) : "Kết nối Hub"}
+        </button>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2">
-        {groups.map(g => {
+      {/* MCP Groups Grid */}
+      <div className="grid gap-4 md:grid-cols-2">
+        {groups.map((g, idx) => {
           const allOn = g.installedCount === g.totalCount && g.totalCount > 0;
           const partial = g.installedCount > 0 && !allOn;
           return (
-            <div key={g.name}
-              className="p-4 border-2 rounded-lg cursor-pointer hover:border-primary/50 transition-colors"
-              style={{borderColor: allOn ? '#22c55e' : partial ? '#f59e0b' : undefined}}
-              onClick={() => installGroup(g)}>
-              <div className="flex items-center justify-between mb-1">
-                <span className="font-medium text-lg">{g.icon} {g.name}</span>
-                {saving === g.name ? <span className="text-xs text-muted-foreground">Đang lưu...</span> :
-                 <Badge variant="outline" className={allOn ? "border-green-500 text-green-500" : partial ? "border-orange-500 text-orange-500" : ""}>
-                   {g.installedCount}/{g.totalCount}
-                 </Badge>}
+            <div
+              key={g.name}
+              onClick={() => installGroup(g)}
+              className="card-elevated p-5 cursor-pointer group animate-fade-slide-up"
+              style={{
+                animationDelay: `${idx * 60}ms`,
+                borderColor: allOn ? '#22c55e' : partial ? '#f59e0b' : undefined,
+              }}
+            >
+              <div className="flex items-start justify-between mb-3">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-2xl group-hover:scale-110 transition-transform duration-300">
+                    {g.icon}
+                  </span>
+                  <div>
+                    <h3 className="font-semibold text-[var(--foreground)]">{g.name}</h3>
+                    <p className="text-xs text-[var(--muted-foreground)] mt-0.5">{g.description}</p>
+                  </div>
+                </div>
+                {/* Status badge */}
+                <span className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                  allOn ? 'bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/30' :
+                  partial ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30' :
+                  'bg-[var(--muted)] text-[var(--muted-foreground)] border border-[var(--border)]'
+                }`}>
+                  {saving === g.name ? '...' : `${g.installedCount}/${g.totalCount}`}
+                </span>
               </div>
-              <p className="text-sm text-muted-foreground mb-2">{g.description}</p>
-              <div className="flex flex-wrap gap-1">
+              {/* MCP chips */}
+              <div className="flex flex-wrap gap-1.5">
                 {g.mcps.map(m => (
-                  <span key={m.id} className="text-xs px-2 py-0.5 rounded bg-secondary text-secondary-foreground"
-                    style={{opacity: m.url ? 1 : 0.4}}>
+                  <span
+                    key={m.id}
+                    className="text-xs px-2.5 py-1 rounded-lg transition-all duration-200"
+                    style={{
+                      background: m.url ? 'var(--secondary)' : 'var(--muted)',
+                      color: m.url ? 'var(--secondary-foreground)' : 'var(--muted-foreground)',
+                      opacity: m.url ? 1 : 0.5,
+                    }}
+                  >
                     {m.name}{!m.url ? ' (chưa kết nối)' : ''}
                   </span>
                 ))}
+              </div>
+              {/* Hover indicator */}
+              <div className="mt-3 pt-3 border-t border-[var(--border)] flex items-center justify-between text-xs text-[var(--muted-foreground)]">
+                <span>
+                  {allOn ? '✅ Đã cài tất cả' : partial ? '⚠️ Cài một phần' : 'Nhấn để cài tất cả'}
+                </span>
+                <span className="opacity-0 group-hover:opacity-100 transition-opacity text-[var(--primary)]">
+                  {allOn ? 'Gỡ tất cả →' : 'Cài tất cả →'}
+                </span>
               </div>
             </div>
           );
