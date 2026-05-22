@@ -104,16 +104,17 @@ _MAX_PER_DOMAIN = 20
 
 
 def format_states_context() -> str:
-    """Format HA entities as ultra-compact context for LLM.
+    """Format HA entities as compact summary for LLM — dynamic discovery.
 
-    Only actionable domains (light/switch/climate/cover/lock) are shown.
-    State format: `name (entity_id): state` — no extra attributes.
-    This keeps the context under ~1500 tokens even for large setups.
+    Instead of dumping ALL entity states (~12K tokens), provide a compact
+    domain summary. The AI uses ha_search_entities to find specific devices
+    on-demand. This reduces context ~90% (MCP Assist approach).
     """
     states = get_states()
     if not states:
         return ""
 
+    # Count by domain, collect key attributes
     by_domain: dict[str, list[dict]] = {}
     for s in states:
         eid = s.get("entity_id", "")
@@ -124,25 +125,42 @@ def format_states_context() -> str:
     if not by_domain:
         return ""
 
+    # Compact summary: domain counts + key devices only
     lines = [
         "## Smart Home — Live State",
-        "Trạng thái bên dưới là DỮ LIỆU THỰC TẾ, KHÔNG cần gọi ha_get_state hay ha_search_entities.",
-        "Tìm thiết bị bằng tên (friendly_name) — VD: 'đèn phòng khách', 'máy lạnh', 'cảm biến nhiệt độ'.",
-        "Chỉ dùng ha_call_service để điều khiển. Chỉ gọi ha_search_entities khi tên thiết bị KHÔNG có trong danh sách.",
+        f"Tổng: {len(states)} thiết bị. Dùng `ha_search_entities` để tìm thiết bị theo tên.",
+        "Chỉ thiết bị điều khiển được hiển thị bên dưới. Sensor/trạng thái → search.",
         "",
     ]
 
+    actionable_domains = {"light", "switch", "climate", "cover", "lock", "fan", "media_player"}
     for domain in _CONTEXT_DOMAINS:
         entities = by_domain.get(domain)
         if not entities:
             continue
-        lines.append(f"[{domain}]")
-        for s in entities[:_MAX_PER_DOMAIN]:
-            eid = s.get("entity_id", "")
-            state = s.get("state", "")
-            name = s.get("attributes", {}).get("friendly_name", "")
-            label = f"{name} ({eid})" if name else eid
-            lines.append(f"  {label}: {state}")
+        if domain in actionable_domains:
+            # Show actionable devices directly for fast control
+            shown = entities[:_MAX_PER_DOMAIN]
+            lines.append(f"[{domain}] ({len(entities)} total)")
+            for s in shown:
+                eid = s.get("entity_id", "")
+                state = s.get("state", "")
+                name = s.get("attributes", {}).get("friendly_name", "")
+                label = f"{name} ({eid})" if name else eid
+                lines.append(f"  {label}: {state}")
+        else:
+            # Non-actionable: just summary count
+            names = []
+            for s in entities[:_MAX_PER_DOMAIN]:
+                name = s.get("attributes", {}).get("friendly_name", "")
+                if name:
+                    names.append(name)
+            preview = ", ".join(names[:10])
+            lines.append(f"[{domain}] ({len(entities)}): {preview}...")
+
+    lines.append("")
+    lines.append("Dùng `ha_search_entities` để tìm sensor/cảm biến KHÔNG có trong danh sách trên.")
+    return "\n".join(lines)
 
     return "\n".join(lines)
 
