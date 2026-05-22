@@ -176,6 +176,8 @@ def get_enabled_mcp_tools() -> list[dict[str, Any]]:
                  "enabled_count": sum(1 for i in installed if i.get("enabled", True)),
                  "urls": [i.get("url", "")[:60] for i in installed[:3]]})
 
+    # Deduplicate tool names across MCP servers (DeepSeek requires unique names)
+    seen_names = set()
     all_tools: list[dict[str, Any]] = []
     for info in installed:
         if not info.get("enabled", True):
@@ -191,7 +193,11 @@ def get_enabled_mcp_tools() -> list[dict[str, Any]]:
             session = _sessions[key]
         try:
             tools = session.get_tools()
-            all_tools.extend(tools)
+            for t in tools:
+                name = t.get("name", "")
+                if name and name not in seen_names:
+                    seen_names.add(name)
+                    all_tools.append(t)
             logger.info({"event": "mcp_tools_loaded", "name": info.get("name", "unknown"), "count": len(tools)})
         except Exception as exc:
             logger.warning({"event": "mcp_session_failed", "name": info.get("name", "unknown"), "error": str(exc)})
