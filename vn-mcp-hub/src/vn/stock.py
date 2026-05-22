@@ -25,8 +25,8 @@ mcp = FastMCP("vn_stock")
 
 VND_PRICE_URL = "https://finfo-api.vndirect.com.vn/v4/stock_prices"
 VND_INFO_URL = "https://finfo-api.vndirect.com.vn/v4/stocks"
-# Fallback: TCBS public API (no auth)
-TCBS_PRICE_URL = "https://apipubaws.tcbs.com.vn/stock-insight/v1/intraday/{symbol}/his/paging"
+# Fallback: AlphaVantage free API (rate-limited: 5 calls/min, 500/day)
+AV_URL = "https://www.alphavantage.co/query"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -34,11 +34,13 @@ HEADERS = {
 }
 
 import urllib.request
+import urllib.parse
 import json
+import os
 
 
 def _fetch_latest_price(symbol: str) -> dict[str, Any] | None:
-    """Try VNDirect first, fallback to TCBS."""
+    """Try VNDirect first, fallback to AlphaVantage free API."""
     today = date.today()
     week_ago = today - timedelta(days=7)
     params = {
@@ -57,31 +59,39 @@ def _fetch_latest_price(symbol: str) -> dict[str, Any] | None:
         if items:
             return items[0]
     except Exception as exc:
-        logger.info("VND price fetch failed for %s: %s", symbol, exc)
+        logger.info("VNDirect failed for %s: %s", symbol, exc)
 
-    # Fallback: TCBS
+    # Fallback: AlphaVantage free API
+    av_key = os.environ.get("ALPHA_VANTAGE_KEY", "demo")
     try:
-        tcbs_url = TCBS_PRICE_URL.format(symbol=symbol.upper())
-        req = urllib.request.Request(tcbs_url, headers=HEADERS)
+        av_params = {
+            "function": "GLOBAL_QUOTE",
+            "symbol": symbol.upper(),
+            "apikey": av_key,
+        }
+        url = AV_URL + "?" + urllib.parse.urlencode(av_params)
+        req = urllib.request.Request(url, headers=HEADERS)
         resp = urllib.request.urlopen(req, timeout=15)
         data = json.loads(resp.read().decode())
-        items = data.get("data") or []
-        if items:
-            last = items[0]
+        quote = (data.get("Global Quote") or {})
+        if quote and quote.get("05. price"):
+            price = float(quote.get("05. price", 0))
+            change = float(quote.get("09. change", 0))
+            change_pct = quote.get("10. change percent", "0%").replace("%", "")
             return {
-                "close": last.get("price", 0),
-                "change": last.get("change", 0),
-                "pctChange": last.get("pctChange", 0),
-                "open": last.get("open", 0),
-                "high": last.get("high", 0),
-                "low": last.get("low", 0),
-                "nmVolume": last.get("totalVol", 0),
-                "nmValue": last.get("totalVal", 0),
-                "floor": last.get("exchange", "N/A"),
-                "date": last.get("tradingDate", str(today)),
+                "close": price,
+                "change": change,
+                "pctChange": float(change_pct) if change_pct else 0,
+                "open": float(quote.get("02. open", price)),
+                "high": float(quote.get("03. high", price)),
+                "low": float(quote.get("04. low", price)),
+                "nmVolume": int(quote.get("06. volume", 0)),
+                "nmValue": 0,
+                "floor": quote.get("08. previous close", "N/A"),
+                "date": str(today),
             }
     except Exception as exc:
-        logger.info("TCBS fallback also failed for %s: %s", symbol, exc)
+        logger.info("AlphaVantage fallback also failed for %s: %s", symbol, exc)
 
     return None
 
