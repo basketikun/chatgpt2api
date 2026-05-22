@@ -39,7 +39,28 @@ def _get_cache_ttl() -> int:
         return 3600
 
 
-def _get_refresh_times() -> list[str]:
+def _get_services() -> dict[str, list[str]]:
+    """Fetch available services from HA API (real data, not hardcoded)."""
+    cfg = _get_ha_config()
+    if not cfg:
+        return {}
+    try:
+        req = urllib.request.Request(
+            f"{cfg['url']}/api/services",
+            headers={"Authorization": f"Bearer {cfg['token']}", "Content-Type": "application/json"},
+        )
+        data = json.loads(urllib.request.urlopen(req, timeout=10).read())
+        services: dict[str, list[str]] = {}
+        for item in data:
+            domain = item.get("domain", "")
+            svcs = item.get("services", {})
+            names = sorted(svcs.keys()) if isinstance(svcs, dict) else []
+            if names:
+                services[domain] = names
+        return services
+    except Exception as exc:
+        logger.warning({"event": "ha_services_failed", "error": str(exc)})
+        return {}
     """Get scheduled refresh times (e.g., ['00:30', '06:00'])."""
     try:
         times = _get_ha_settings().get("refresh_times", [])
@@ -130,21 +151,6 @@ _CONTEXT_DOMAINS = [
 ]
 # Max entities per domain shown in context (keep token count low)
 _MAX_PER_DOMAIN = 20
-
-# Known services per domain
-_SERVICE_MAP = {
-    "light": ["turn_on", "turn_off", "toggle"],
-    "switch": ["turn_on", "turn_off", "toggle"],
-    "climate": ["set_temperature", "set_hvac_mode", "turn_on", "turn_off"],
-    "cover": ["open_cover", "close_cover", "stop_cover"],
-    "lock": ["lock", "unlock"],
-    "fan": ["turn_on", "turn_off", "set_speed"],
-    "media_player": ["media_play", "media_pause", "volume_set"],
-    "scene": ["turn_on"],
-    "script": ["turn_on"],
-    "automation": ["turn_on", "turn_off", "trigger"],
-    "vacuum": ["start", "stop", "return_to_base"],
-}
 
 
 def format_states_context() -> str:
@@ -244,9 +250,11 @@ def _build_context(states: list[dict]) -> str:
 
     lines.append("")
     lines.append("## Available Services")
-    for domain, svc_list in sorted(_SERVICE_MAP.items()):
-        if domain in by_domain:
-            lines.append(f"  {domain}: {', '.join(svc_list)}")
+    svc = _get_services()
+    for domain in sorted(by_domain.keys()):
+        svc_list = svc.get(domain, [])
+        if svc_list:
+            lines.append(f"  {domain}: {', '.join(svc_list[:10])}")
     lines.append("")
     lines.append(f"Dùng `ha_get_state` để lấy trạng thái real-time. `ha_call_service` để điều khiển.")
 
