@@ -13,11 +13,22 @@ import urllib.request
 from services.config import config
 from utils.log import logger
 
-# ── Module-level state cache (60s TTL) ─────────────────────────────────────
+# ── Module-level state cache ────────────────────────────────────────────────
 _state_cache: list[dict] = []
 _state_cache_ts: float = 0.0
+_context_cache: str = ""          # Pre-computed context string
+_context_cache_ts: float = 0.0
 _state_cache_lock = threading.Lock()
-_CACHE_TTL = 60  # seconds
+_CACHE_TTL = 60  # seconds (configurable via home_assistant.refresh_interval)
+
+
+def _get_cache_ttl() -> int:
+    """Get refresh interval from HA settings, default 60s."""
+    try:
+        ha = config.data.get("home_assistant") or {}
+        return int(ha.get("refresh_interval", 60))
+    except Exception:
+        return 60
 
 
 def _get_ha_config() -> dict[str, str] | None:
@@ -30,10 +41,11 @@ def _get_ha_config() -> dict[str, str] | None:
 
 
 def get_states(use_cache: bool = True) -> list[dict[str, Any]]:
-    """Fetch all entity states from HA. Caches for 60s to avoid redundant calls."""
+    """Fetch all entity states from HA. Cache respects configurable TTL."""
     global _state_cache, _state_cache_ts
+    ttl = _get_cache_ttl()
     now = time.time()
-    if use_cache and _state_cache and (now - _state_cache_ts) < _CACHE_TTL:
+    if use_cache and _state_cache and (now - _state_cache_ts) < ttl:
         return _state_cache
     cfg = _get_ha_config()
     if not cfg:
@@ -104,17 +116,21 @@ _MAX_PER_DOMAIN = 20
 
 
 def format_states_context() -> str:
-    """Format HA entities as compact summary for LLM — dynamic discovery.
+    """Format HA entities as compact summary — cached until TTL expires.
 
-    Instead of dumping ALL entity states (~12K tokens), provide a compact
-    domain summary. The AI uses ha_search_entities to find specific devices
-    on-demand. This reduces context ~90% (MCP Assist approach).
+    First call fetches all states once and pre-computes the context string.
+    Subsequent calls within TTL return cached string instantly (no processing).
     """
-    states = get_states()
+    global _context_cache, _context_cache_ts
+    ttl = _get_cache_ttl()
+    now = time.time()
+    if _context_cache and (now - _context_cache_ts) < ttl:
+        return _context_cache
+
+    states = get_states(use_cache=False)  # Force fresh fetch
     if not states:
         return ""
 
-    # Count by domain, collect key attributes
     by_domain: dict[str, list[dict]] = {}
     for s in states:
         eid = s.get("entity_id", "")
@@ -125,21 +141,19 @@ def format_states_context() -> str:
     if not by_domain:
         return ""
 
-    # Compact summary: domain counts + key devices only
+    actionable_domains = {"light", "switch", "climate", "cover", "lock", "fan", "media_player"}
     lines = [
         "## Smart Home — Live State",
-        f"Tổng: {len(states)} thiết bị. Dùng `ha_search_entities` để tìm thiết bị theo tên.",
-        "Chỉ thiết bị điều khiển được hiển thị bên dưới. Sensor/trạng thái → search.",
+        f"Tổng: {len(states)} thiết bị. Dùng `ha_search_entities` để tìm theo tên.",
+        f"Dữ liệu cập nhật mỗi {ttl}s. Các thiết bị điều khiển:",
         "",
     ]
 
-    actionable_domains = {"light", "switch", "climate", "cover", "lock", "fan", "media_player"}
     for domain in _CONTEXT_DOMAINS:
         entities = by_domain.get(domain)
         if not entities:
             continue
         if domain in actionable_domains:
-            # Show actionable devices directly for fast control
             shown = entities[:_MAX_PER_DOMAIN]
             lines.append(f"[{domain}] ({len(entities)} total)")
             for s in shown:
@@ -149,7 +163,6 @@ def format_states_context() -> str:
                 label = f"{name} ({eid})" if name else eid
                 lines.append(f"  {label}: {state}")
         else:
-            # Non-actionable: just summary count
             names = []
             for s in entities[:_MAX_PER_DOMAIN]:
                 name = s.get("attributes", {}).get("friendly_name", "")
@@ -159,8 +172,11 @@ def format_states_context() -> str:
             lines.append(f"[{domain}] ({len(entities)}): {preview}...")
 
     lines.append("")
-    lines.append("Dùng `ha_search_entities` để tìm sensor/cảm biến KHÔNG có trong danh sách trên.")
-    return "\n".join(lines)
+    lines.append("Dùng `ha_search_entities` để tìm thiết bị KHÔNG có trong danh sách trên.")
+
+    _context_cache = "\n".join(lines)
+    _context_cache_ts = now
+    return _context_cache
 
     return "\n".join(lines)
 
