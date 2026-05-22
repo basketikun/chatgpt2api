@@ -26,12 +26,15 @@ export function ConfigCard() {
   const setImageAccountConcurrency = useSettingsStore((state) => state.setImageAccountConcurrency);
   const setAutoRemoveInvalidAccounts = useSettingsStore((state) => state.setAutoRemoveInvalidAccounts);
   const setAutoRemoveRateLimitedAccounts = useSettingsStore((state) => state.setAutoRemoveRateLimitedAccounts);
+  const setKarpathyMode = useSettingsStore((state) => state.setKarpathyMode);
+  const setAutoRefreshEnabled = useSettingsStore((state) => state.setAutoRefreshEnabled);
   const setLogLevel = useSettingsStore((state) => state.setLogLevel);
   const setProxy = useSettingsStore((state) => state.setProxy);
   const setBaseUrl = useSettingsStore((state) => state.setBaseUrl);
   const setGlobalSystemPrompt = useSettingsStore((state) => state.setGlobalSystemPrompt);
   const setSensitiveWordsText = useSettingsStore((state) => state.setSensitiveWordsText);
   const setAIReviewField = useSettingsStore((state) => state.setAIReviewField);
+  const setField = useSettingsStore((state) => state.setField);
   const saveConfig = useSettingsStore((state) => state.saveConfig);
 
   const handleTestProxy = async () => {
@@ -59,18 +62,22 @@ export function ConfigCard() {
 
   if (isLoadingConfig) {
     return (
-      <Card className="rounded-2xl border-white/80 bg-white/90 shadow-sm">
-        <CardContent className="flex items-center justify-center p-10">
-          <LoaderCircle className="size-5 animate-spin text-stone-400" />
-        </CardContent>
-      </Card>
+      <div className="rounded-[16px] card-main">
+        <div className="flex items-center justify-center p-10">
+          <LoaderCircle className="size-5 animate-spin text-slate-400" />
+        </div>
+      </div>
     );
   }
 
   return (
-    <Card className="rounded-2xl border-white/80 bg-white/90 shadow-sm">
-      <CardContent className="space-y-4 p-6">
-        <div className="rounded-xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm leading-6 text-stone-600">
+    <div className="rounded-[16px] card-main">
+      <div className="border-b border-black/[0.04] bg-slate-50/50 px-6 py-4">
+        <h2 className="text-[15px] font-bold text-slate-900">Cấu hình hệ thống</h2>
+        <p className="text-[13px] text-slate-500 mt-0.5">Proxy, rate limit, tự động xóa tài khoản và kiểm duyệt AI</p>
+      </div>
+      <div className="space-y-4 p-6">
+        <div className="rounded-[10px] border border-indigo-100 bg-indigo-50/50 px-4 py-3 text-[13px] leading-6 text-indigo-700">
           Mã khóa đăng nhập quản trị viên tiếp tục được đọc từ cấu hình triển khai và không còn hiển thị trên trang này; nếu bạn cần phân phối cho người khác, vui lòng tạo mã khóa người dùng bình thường bên dưới.
         </div>
         <div className="grid gap-4 md:grid-cols-2">
@@ -143,16 +150,43 @@ export function ConfigCard() {
             <p className="text-xs text-stone-500">Tự động xóa hình ảnh cục bộ từ bao nhiêu ngày trước.</p>
           </div>
           <div className="space-y-2">
-            <label className="text-sm text-stone-700">Thời gian chờ thăm dò hình ảnh</label>
-            <Input
-              value={String(config?.image_poll_timeout_secs || "")}
-              onChange={(event) => setImagePollTimeoutSecs(event.target.value)}
-              placeholder="120"
-              className="h-10 rounded-xl border-stone-200 bg-white"
-            />
-            <p className="text-xs text-stone-500">Tính bằng giây, thời gian tối đa để chờ kết quả hình ảnh từ thượng nguồn.</p>
+            <label className="text-sm text-stone-700">Kích thước ảnh mặc định</label>
+            <select
+              value={String((config as any)?.default_image_size || "1792x1024")}
+              onChange={(e) => setField("default_image_size", e.target.value)}
+              className="h-10 w-full rounded-xl border border-stone-200 bg-white px-3 text-sm text-stone-700"
+            >
+              <optgroup label="▸ 16:9 (Landscape)">
+                <option value="1792x1024">1792×1024 (16:9) — Mặc định</option>
+                <option value="1344x768">1344×768 (16:9)</option>
+              </optgroup>
+              <optgroup label="▸ 9:16 (Portrait)">
+                <option value="1024x1792">1024×1792 (9:16)</option>
+                <option value="768x1344">768×1344 (9:16)</option>
+              </optgroup>
+              <optgroup label="▸ 1:1 (Square)">
+                <option value="1024x1024">1024×1024 (1:1)</option>
+                <option value="768x768">768×768 (1:1)</option>
+                <option value="512x512">512×512 (1:1)</option>
+                <option value="256x256">256×256 (1:1)</option>
+              </optgroup>
+              <optgroup label="▸ 4:3">
+                <option value="1792x1344">1792×1344 (4:3)</option>
+                <option value="1200x896">1200×896 (4:3)</option>
+              </optgroup>
+              <optgroup label="▸ 3:2">
+                <option value="1536x1024">1536×1024 (3:2)</option>
+                <option value="1264x848">1264×848 (3:2)</option>
+              </optgroup>
+              <optgroup label="▸ Khác">
+                <option value="768x1024">768×1024 (3:4)</option>
+                <option value="1024x768">1024×768 (4:3)</option>
+              </optgroup>
+            </select>
+            <p className="text-xs text-stone-500">Áp dụng cho tất cả model: GPT, Gemini, NVIDIA, SD, FLUX...</p>
           </div>
           <div className="space-y-2">
+            <label className="text-sm text-stone-700">Thời gian chờ thăm dò hình ảnh</label>
             <label className="text-sm text-stone-700">Số luồng hình ảnh trên mỗi tài khoản</label>
             <Input
               value={String(config?.image_account_concurrency || "")}
@@ -176,6 +210,64 @@ export function ConfigCard() {
             />
             Tự động xóa tài khoản bị giới hạn
           </label>
+          <label className="flex items-center gap-3 rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700 cursor-pointer">
+            <Checkbox
+              checked={Boolean((config as any)?.karpathy_mode)}
+              onCheckedChange={(checked) => setKarpathyMode(Boolean(checked))}
+            />
+            <div>
+              <p className="font-medium">Karpathy Mode</p>
+              <p className="text-xs text-stone-500 mt-0.5">
+                AI sẽ suy nghĩ trước khi code, đơn giản hóa, chỉ sửa đúng chỗ cần sửa.
+              </p>
+            </div>
+          </label>
+          <label className="flex items-center gap-3 rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700 cursor-pointer">
+            <Checkbox
+              checked={Boolean((config as any)?.auto_refresh_enabled ?? true)}
+              onCheckedChange={(checked) => setAutoRefreshEnabled(Boolean(checked))}
+            />
+            <div>
+              <p className="font-medium">Tự động làm mới tài khoản</p>
+              <p className="text-xs text-stone-500 mt-0.5">
+                Tự động kiểm tra và làm mới hạn mức token định kỳ mỗi 5 phút (như 9router).
+              </p>
+            </div>
+          </label>
+          <label className="flex items-center gap-3 rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700 cursor-pointer">
+            <Checkbox
+              checked={Boolean((config as any)?.rtk_enabled ?? true)}
+              onCheckedChange={(checked) => setField("rtk_enabled", Boolean(checked))}
+            />
+            <div>
+              <p className="font-medium">RTK - Nén tin nhắn (ChatGPT)</p>
+              <p className="text-xs text-stone-500 mt-0.5">
+                Giảm 60-90% payload cho ChatGPT. Mặc định bật.
+              </p>
+            </div>
+          </label>
+          <label className="flex items-center gap-3 rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700 cursor-pointer">
+            <Checkbox
+              checked={Boolean((config as any)?.rtk_other_enabled ?? false)}
+              onCheckedChange={(checked) => setField("rtk_other_enabled", Boolean(checked))}
+            />
+            <div>
+              <p className="font-medium">RTK - Nén tin nhắn (AI khác)</p>
+              <p className="text-xs text-stone-500 mt-0.5">
+                Áp dụng RTK cho OpenCode, Gemini, Codex, NVIDIA. Mặc định tắt.
+              </p>
+            </div>
+          </label>
+          <div className="space-y-2 rounded-xl border border-stone-200 bg-white px-4 py-3">
+            <label className="text-sm font-medium text-stone-700">Model mặc định cho Web Session (OpenAI API)</label>
+            <p className="text-xs text-stone-500">Dùng khi chatgpt/auto route qua api.openai.com. Ví dụ: gpt-4o, gpt-4.1-mini.</p>
+            <Input
+              value={String((config as any)?.openai_default_model ?? "gpt-4o")}
+              onChange={(e) => setField("openai_default_model", e.target.value)}
+              placeholder="gpt-4o"
+              className="h-10 rounded-xl border-stone-200 bg-white"
+            />
+          </div>
           <div className="space-y-3 rounded-xl border border-stone-200 bg-white px-4 py-3">
             <div>
               <label className="text-sm text-stone-700">Mức độ nhật ký console</label>
@@ -247,7 +339,7 @@ export function ConfigCard() {
 
         <div className="flex justify-end">
           <Button
-            className="h-10 rounded-xl bg-stone-950 px-5 text-white hover:bg-stone-800"
+            className="h-10 rounded-[12px] bg-indigo-600 px-5 text-white hover:bg-indigo-700 shadow-md shadow-indigo-200"
             onClick={() => void saveConfig()}
             disabled={isSavingConfig}
           >
@@ -255,8 +347,8 @@ export function ConfigCard() {
             Lưu
           </Button>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 

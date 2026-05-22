@@ -19,7 +19,7 @@ export function BaseUrlCard() {
   const baseUrl = String(config?.base_url || "");
 
   return (
-    <Card className="rounded-2xl border-white/80 bg-white/90 shadow-sm">
+    <Card className="rounded-2xl card-3d card-tint-slate">
       <CardContent className="space-y-6 p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="flex items-center gap-3">
@@ -28,7 +28,7 @@ export function BaseUrlCard() {
             </div>
             <div>
               <h2 className="text-lg font-semibold tracking-tight">Địa chỉ cơ sở</h2>
-              <p className="text-sm text-stone-500">设置 `CHATGPT2API_BASE_URL` 的本地配置值，Lưu后立即生效。</p>
+              <p className="text-sm text-stone-500">Thiết lập giá trị `CHATGPT2API_BASE_URL`, lưu lại có hiệu lực ngay.</p>
             </div>
           </div>
           <Badge variant={baseUrl.trim() ? "success" : "secondary"} className="w-fit rounded-md px-2.5 py-1">
@@ -38,7 +38,7 @@ export function BaseUrlCard() {
 
         {isLoadingConfig ? (
           <div className="flex items-center justify-center py-10">
-            <LoaderCircle className="size-5 animate-spin text-stone-400" />
+            <LoaderCircle className="size-5 animate-spin text-stone-500" />
           </div>
         ) : (
           <>
@@ -55,12 +55,12 @@ export function BaseUrlCard() {
 
             <div className="flex justify-end">
               <Button
-                className="h-10 rounded-xl bg-stone-950 px-5 text-white hover:bg-stone-800"
+                className="h-10 rounded-xl bg-stone-900 px-5 text-white hover:bg-stone-800"
                 onClick={() => void saveConfig()}
                 disabled={isSavingConfig}
               >
                 {isSavingConfig ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
-                Lưu配置
+                Lưu
               </Button>
             </div>
           </>

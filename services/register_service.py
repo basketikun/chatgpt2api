@@ -116,7 +116,7 @@ class RegisterService:
 
     def _pool_metrics(self) -> dict:
         items = account_service.list_accounts()
-        normal = [item for item in items if item.get("status") == "正常"]
+        normal = [item for item in items if item.get("status") == "active"]
         return {
             "current_quota": sum(int(item.get("quota") or 0) for item in normal if not item.get("image_quota_unknown")),
             "current_available": len(normal),
@@ -128,11 +128,11 @@ class RegisterService:
         self._bump(**metrics)
         if mode == "quota":
             reached = metrics["current_quota"] >= int(cfg.get("target_quota") or 1)
-            self._append_log(f"检查号池：当前正常账号={metrics['current_available']}，当前剩余额度={metrics['current_quota']}，目标额度={cfg.get('target_quota')}，{'跳过注册' if reached else '继续注册'}", "yellow")
+            self._append_log(f"检查号池：当前active账号={metrics['current_available']}，当前剩余额度={metrics['current_quota']}，目标额度={cfg.get('target_quota')}，{'跳过注册' if reached else '继续注册'}", "yellow")
             return reached
         if mode == "available":
             reached = metrics["current_available"] >= int(cfg.get("target_available") or 1)
-            self._append_log(f"检查号池：当前正常账号={metrics['current_available']}，目标账号={cfg.get('target_available')}，当前剩余额度={metrics['current_quota']}，{'跳过注册' if reached else '继续注册'}", "yellow")
+            self._append_log(f"检查号池：当前active账号={metrics['current_available']}，目标账号={cfg.get('target_available')}，当前剩余额度={metrics['current_quota']}，{'跳过注册' if reached else '继续注册'}", "yellow")
             return reached
         return submitted >= int(cfg.get("total") or 1)
 

@@ -47,8 +47,21 @@ export async function getStoredAuthKey() {
   if (typeof window === "undefined") {
     return "";
   }
-  const value = await authStorage.getItem<string>(AUTH_KEY_STORAGE_KEY);
-  return String(value || "").trim();
+  try {
+    const value = await authStorage.getItem<string>(AUTH_KEY_STORAGE_KEY);
+    if (value) {
+      const key = String(value).trim();
+      // Sync to localStorage so chat page can read it
+      try { localStorage.setItem(AUTH_KEY_STORAGE_KEY, key); } catch (e) {}
+      return key;
+    }
+  } catch (e) {}
+  // Fallback: localStorage
+  try {
+    const fallback = localStorage.getItem(AUTH_KEY_STORAGE_KEY);
+    if (fallback) return fallback.trim();
+  } catch (e) {}
+  return "";
 }
 
 export async function getStoredAuthSession() {
@@ -86,6 +99,8 @@ export async function setStoredAuthSession(session: StoredAuthSession) {
     authStorage.setItem(AUTH_KEY_STORAGE_KEY, normalizedSession.key),
     authStorage.setItem(AUTH_SESSION_STORAGE_KEY, normalizedSession),
   ]);
+  // Also save to localStorage
+  try { localStorage.setItem(AUTH_KEY_STORAGE_KEY, normalizedSession.key); } catch (e) {}
 }
 
 export async function setStoredAuthKey(authKey: string) {
@@ -95,6 +110,8 @@ export async function setStoredAuthKey(authKey: string) {
     return;
   }
   await authStorage.setItem(AUTH_KEY_STORAGE_KEY, normalizedAuthKey);
+  // Also save to localStorage for pages that can't access IndexedDB
+  try { localStorage.setItem(AUTH_KEY_STORAGE_KEY, normalizedAuthKey); } catch (e) {}
 }
 
 export async function clearStoredAuthSession() {

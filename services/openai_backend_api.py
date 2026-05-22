@@ -206,13 +206,13 @@ class OpenAIBackendAPI:
         result = {
             "email": me_payload.get("email"),
             "user_id": me_payload.get("id"),
-            "type": plan_type,
+            "plan": plan_type,
             "quota": quota,
             "image_quota_unknown": image_quota_unknown,
             "limits_progress": limits_progress,
             "default_model_slug": init_payload.get("default_model_slug"),
             "restore_at": restore_at,
-            "status": "正常" if image_quota_unknown and plan_type.lower() != "free" else ("限流" if quota == 0 else "正常"),
+            "status": "active" if image_quota_unknown and plan_type.lower() != "free" else ("limited" if quota == 0 else "active"),
         }
         logger.debug({
             "event": "backend_user_info_result",

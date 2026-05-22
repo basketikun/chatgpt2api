@@ -1,17 +1,21 @@
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 from threading import Event
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from api import accounts, ai, image_tasks, register, system
-from api.support import resolve_web_asset, start_limited_account_watcher
+from api import accounts, ai, image_tasks, mcp, register, system
+from api.support import resolve_web_asset, start_limited_account_watcher, require_admin
+from api.veo_video import handle_video_generation
 from services.backup_service import backup_service
 from services.config import config
+from services.karpathy_guidelines import refresh_guidelines
+from services.quota_watcher import quota_watcher
 
 
 def create_app() -> FastAPI:
@@ -23,6 +27,9 @@ def create_app() -> FastAPI:
         thread = start_limited_account_watcher(stop_event)
         backup_service.start()
         config.cleanup_old_images()
+        # Fetch latest Karpathy guidelines + start quota watcher (fire-and-forget)
+        refresh_guidelines()
+        watcher_task = asyncio.create_task(quota_watcher.start())
         # Start Cloudflare Tunnel if token configured
         try:
             from services.cloudflare_tunnel import start_tunnel, start_monitor
@@ -39,6 +46,7 @@ def create_app() -> FastAPI:
         try:
             yield
         finally:
+            await quota_watcher.stop()
             stop_event.set()
             thread.join(timeout=1)
             backup_service.stop()
@@ -59,12 +67,18 @@ def create_app() -> FastAPI:
     app.include_router(ai.create_router())
     app.include_router(accounts.create_router())
     app.include_router(image_tasks.create_router())
+    app.include_router(mcp.create_router())
     app.include_router(register.create_router())
     app.include_router(system.create_router(app_version))
     if config.images_dir.exists():
         app.mount("/images", StaticFiles(directory=str(config.images_dir)), name="images")
 
-    @app.get("/{full_path:path}", include_in_schema=False)
+    # Veo video generation
+    @app.post("/v1/video/generations")
+    async def create_video(body: dict, authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        return await handle_video_generation(body, authorization)
+
     async def serve_web(full_path: str):
         asset = resolve_web_asset(full_path)
         if asset is not None:
@@ -75,5 +89,7 @@ def create_app() -> FastAPI:
         if fallback is None:
             raise HTTPException(status_code=404, detail="Not Found")
         return FileResponse(fallback)
+
+    app.add_api_route("/{full_path:path}", serve_web, methods=["GET", "HEAD"], include_in_schema=False)
 
     return app

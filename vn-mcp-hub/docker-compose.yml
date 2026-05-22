@@ -1,0 +1,25 @@
+services:
+  vn-mcp-hub:
+    build: .
+    container_name: vn-mcp-hub
+    ports:
+      # Format: <host>:<container>. Container fixed at 8005.
+      # Override host port via .env: HOST_PORT=8006 docker compose up
+      - "${HOST_PORT:-8005}:8005"
+    volumes:
+      # Override paths via .env: DATA_DIR=/opt/vn-mcp-hub/data
+      - ${CHROMA_DIR:-vn_mcp_chroma}:/app/chroma_db
+      - ${DATA_DIR:-vn_mcp_data}:/app/data
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8005/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  vn_mcp_chroma:
+  vn_mcp_data:

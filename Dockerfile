@@ -25,16 +25,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# 安装系统依赖
-# - git: Git 存储后端需要
-# - libpq-dev: PostgreSQL 客户端库
-# - gcc: 编译 psycopg2-binary 需要
-# - wget: 下载 cloudflared
+# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     libpq-dev \
     gcc \
+    ca-certificates \
     openssl \
+    libcurl4-openssl-dev \
+    libnss3 \
     wget \
     && rm -rf /var/lib/apt/lists/*
 

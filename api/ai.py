@@ -58,7 +58,7 @@ async def filter_or_log(call: LoggedCall, text: str) -> None:
     try:
         await run_in_threadpool(check_request, text)
     except HTTPException as exc:
-        call.log("调用失败", status="failed", error=str(exc.detail))
+        call.log("Gọi thất bại", status="failed", error=str(exc.detail))
         raise
 
 
@@ -66,10 +66,11 @@ def create_router() -> APIRouter:
     router = APIRouter()
 
     @router.get("/v1/models")
-    async def list_models(authorization: str | None = Header(default=None)):
+    async def list_models(request: Request, authorization: str | None = Header(default=None)):
         require_identity(authorization)
+        force_refresh = request.query_params.get("refresh", "").lower() == "true"
         try:
-            return await run_in_threadpool(openai_v1_models.list_models)
+            return await run_in_threadpool(openai_v1_models.list_models, force_refresh, True)
         except Exception as exc:
             raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
 
@@ -131,7 +132,7 @@ def create_router() -> APIRouter:
         payload = body.model_dump(mode="python")
         model = str(payload.get("model") or "auto")
         request_preview = request_text(payload.get("prompt"), payload.get("messages"))
-        call = LoggedCall(identity, "/v1/chat/completions", model, "文本生成", request_text=request_preview)
+        call = LoggedCall(identity, "/v1/chat/completions", model, "Sinh văn bản", request_text=request_preview)
         await filter_or_log(call, request_preview)
         return await call.run(openai_v1_chat_complete.handle, payload)
 

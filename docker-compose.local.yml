@@ -9,7 +9,6 @@ services:
       - "8000:80"
     volumes:
       - ./data:/app/data
-      - ./config.json:/app/config.json
     environment:
       STORAGE_BACKEND: sqlite
       DATABASE_URL: sqlite:////app/data/accounts.db

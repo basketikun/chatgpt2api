@@ -5,7 +5,7 @@ import json
 import itertools
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -188,50 +188,58 @@ class LoggedCall:
         try:
             result = await run_in_threadpool(handler, *args)
         except ImageGenerationError as exc:
-            self.log("调用失败", status="failed", error=str(exc))
+            self.log("Gọi thất bại", status="failed", error=str(exc))
             return _image_error_response(exc)
         except HTTPException as exc:
-            self.log("调用失败", status="failed", error=str(exc.detail))
+            self.log("Gọi thất bại", status="failed", error=str(exc.detail))
             raise
         except Exception as exc:
-            self.log("调用失败", status="failed", error=str(exc))
+            self.log("Gọi thất bại", status="failed", error=str(exc))
             raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
 
         if isinstance(result, dict):
-            self.log("调用完成", result)
+            self.log("Gọi thành công", result)
             return result
 
         sender = anthropic_sse_stream if sse == "anthropic" else sse_json_stream
         try:
             has_first, first = await run_in_threadpool(_next_item, result)
         except ImageGenerationError as exc:
-            self.log("调用失败", status="failed", error=str(exc))
+            self.log("Gọi thất bại", status="failed", error=str(exc))
             return _image_error_response(exc)
         except HTTPException as exc:
-            self.log("调用失败", status="failed", error=str(exc.detail))
+            self.log("Gọi thất bại", status="failed", error=str(exc.detail))
             raise
         except Exception as exc:
-            self.log("调用失败", status="failed", error=str(exc))
+            self.log("Gọi thất bại", status="failed", error=str(exc))
             raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
         if not has_first:
-            self.log("流式调用结束")
+            self.log("Kết thúc stream")
             return StreamingResponse(sender(()), media_type="text/event-stream")
         return StreamingResponse(sender(self.stream(itertools.chain([first], result))), media_type="text/event-stream")
 
     def stream(self, items):
         urls: list[str] = []
         failed = False
+        self._stream_content_len = 0
         try:
             for item in items:
                 urls.extend(_collect_urls(item))
+                # Collect streaming content length for token estimation
+                if isinstance(item, dict):
+                    choices = item.get("choices") or []
+                    for c in choices:
+                        delta = c.get("delta") or {}
+                        content = delta.get("content") or ""
+                        self._stream_content_len += len(content)
                 yield item
         except Exception as exc:
             failed = True
-            self.log("流式调用失败", status="failed", error=str(exc), urls=urls)
+            self.log("流式Gọi thất bại", status="failed", error=str(exc), urls=urls)
             raise
         finally:
             if not failed:
-                self.log("流式调用结束", urls=urls)
+                self.log("Kết thúc stream", urls=urls)
 
     def log(self, suffix: str, result: object = None, status: str = "success", error: str = "",
             urls: list[str] | None = None) -> None:
@@ -255,3 +263,38 @@ class LoggedCall:
         if collected_urls:
             detail["urls"] = list(dict.fromkeys(collected_urls))
         log_service.add(LOG_TYPE_CALL, f"{self.summary}{suffix}", detail)
+
+        # Also log to usage tracker for dashboard stats
+        try:
+            from services.usage_tracker import log_usage
+            prompt_tokens = 0
+            completion_tokens = 0
+            if isinstance(result, dict):
+                usage = result.get("usage") or {}
+                prompt_tokens = usage.get("prompt_tokens", 0)
+                completion_tokens = usage.get("completion_tokens", 0)
+            # Fallback: use tiktoken for accurate prompt token counting
+            if prompt_tokens == 0 and self.request_text:
+                try:
+                    from services.protocol.conversation import encoding_for_model
+                    enc = encoding_for_model(self.model)
+                    prompt_tokens = max(1, len(enc.encode(self.request_text)))
+                except Exception:
+                    prompt_tokens = max(1, len(self.request_text) // 4)
+            # Completion: estimate from streamed content length
+            if completion_tokens == 0:
+                stream_len = getattr(self, "_stream_content_len", 0)
+                if stream_len > 0:
+                    completion_tokens = max(1, stream_len // 4)
+            log_usage(
+                model=self.model,
+                endpoint=self.endpoint,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                duration_ms=int((time.time() - self.started) * 1000),
+                status=status,
+                error=error,
+                started_at=datetime.fromtimestamp(self.started, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            )
+        except Exception:
+            pass

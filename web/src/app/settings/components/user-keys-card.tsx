@@ -173,7 +173,7 @@ export function UserKeysCard() {
 
   return (
     <>
-      <Card className="rounded-2xl border-white/80 bg-white/90 shadow-sm">
+      <Card className="rounded-2xl card-3d card-tint-rose">
         <CardContent className="space-y-6 p-6">
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-center gap-3">
@@ -182,10 +182,10 @@ export function UserKeysCard() {
               </div>
               <div>
                 <h2 className="text-lg font-semibold tracking-tight">Quản lý khóa người dùng</h2>
-                <p className="text-sm text-stone-500">为普通người dùngTạo专用密钥；普通người dùng只能进入画图页，不能查看设置和号池。</p>
+                <p className="text-sm text-stone-500">Tạo khóa riêng cho người dùng thường; người dùng thường chỉ vào được trang tạo ảnh, không xem được cài đặt và kho tài khoản.</p>
               </div>
             </div>
-            <Button className="h-9 rounded-xl bg-stone-950 px-4 text-white hover:bg-stone-800" onClick={() => setIsDialogOpen(true)}>
+            <Button className="h-9 rounded-xl bg-stone-900 px-4 text-white hover:bg-stone-800" onClick={() => setIsDialogOpen(true)}>
               <Plus className="size-4" />
               Tạo khóa người dùng
             </Button>
@@ -193,8 +193,8 @@ export function UserKeysCard() {
 
           {revealedKey ? (
             <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
-              <div className="font-medium">新密钥仅展示一次，请立即Lưu：</div>
-              <div className="mt-3 flex flex-col gap-3 rounded-lg border border-emerald-200 bg-white/80 p-3 md:flex-row md:items-center md:justify-between">
+              <div className="font-medium">Khóa mới chỉ hiện một lần, hãy lưu lại ngay:</div>
+              <div className="mt-3 flex flex-col gap-3 rounded-lg border border-emerald-200 bg-stone-900/80 p-3 md:flex-row md:items-center md:justify-between">
                 <code className="break-all font-mono text-[13px]">{revealedKey}</code>
                 <Button
                   type="button"
@@ -211,11 +211,11 @@ export function UserKeysCard() {
 
           {isLoading ? (
             <div className="flex items-center justify-center py-10">
-              <LoaderCircle className="size-5 animate-spin text-stone-400" />
+              <LoaderCircle className="size-5 animate-spin text-stone-500" />
             </div>
           ) : items.length === 0 ? (
-            <div className="rounded-xl bg-stone-50 px-6 py-10 text-center text-sm text-stone-500">
-              暂无普通người dùng密钥。点击右上角按钮后即可Tạo并分发给其他人。
+            <div className="rounded-xl bg-stone-100 px-6 py-10 text-center text-sm text-stone-500">
+              Chưa có khóa người dùng nào. Nhấn nút ở góc trên bên phải để tạo và phân phối cho người khác.
             </div>
           ) : (
             <div className="space-y-3">
@@ -227,12 +227,12 @@ export function UserKeysCard() {
                       <div className="flex flex-wrap items-center gap-2">
                         <div className="truncate text-sm font-medium text-stone-800">{item.name}</div>
                         <Badge variant={item.enabled ? "success" : "secondary"} className="rounded-md">
-                          {item.enabled ? "Đã 启用" : "Đã 禁用"}
+                          {item.enabled ? "Đã kích hoạt" : "Đã vô hiệu"}
                         </Badge>
                       </div>
                       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-stone-500">
-                        <span>Tạo时间 {formatDateTime(item.created_at)}</span>
-                        <span>最近使用 {formatDateTime(item.last_used_at)}</span>
+                        <span>Tạo lúc {formatDateTime(item.created_at)}</span>
+                        <span>Dùng gần nhất {formatDateTime(item.last_used_at)}</span>
                       </div>
                     </div>
 
@@ -261,7 +261,7 @@ export function UserKeysCard() {
                         ) : (
                           <CheckCircle2 className="size-4" />
                         )}
-                        {item.enabled ? "禁用" : "启用"}
+                        {item.enabled ? "vô hiệu" : "kích hoạt"}
                       </Button>
                       <Button
                         type="button"
@@ -287,15 +287,15 @@ export function UserKeysCard() {
           <DialogHeader className="gap-2">
             <DialogTitle>Tạo khóa người dùng</DialogTitle>
             <DialogDescription className="text-sm leading-6">
-              tùy chọn填写一个备注Tên，方便区分不同使用者；Tạo后会生成一条只能查看一次的原始密钥。
+              Có thể điền tên ghi chú để dễ phân biệt người dùng. Sau khi tạo, khóa chỉ hiện một lần duy nhất.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <label className="text-sm font-medium text-stone-700">Tên（tùy chọn）</label>
+            <label className="text-sm font-medium text-stone-700">Tên (tùy chọn)</label>
             <Input
               value={name}
               onChange={(event) => setName(event.target.value)}
-              placeholder="例如：设计同学 A、运营临时账号"
+              placeholder="VD: Bạn thiết kế, bạn vận hành..."
               className="h-11 rounded-xl border-stone-200 bg-white"
             />
           </div>
@@ -311,7 +311,7 @@ export function UserKeysCard() {
             </Button>
             <Button
               type="button"
-              className="h-10 rounded-xl bg-stone-950 px-5 text-white hover:bg-stone-800"
+              className="h-10 rounded-xl bg-stone-900 px-5 text-white hover:bg-stone-800"
               onClick={() => void handleCreate()}
               disabled={isCreating}
             >
@@ -325,9 +325,9 @@ export function UserKeysCard() {
       <Dialog open={Boolean(deletingItem)} onOpenChange={(open) => (!open ? setDeletingItem(null) : null)}>
         <DialogContent className="rounded-2xl p-6">
           <DialogHeader className="gap-2">
-            <DialogTitle>Xóangười dùng密钥</DialogTitle>
+            <DialogTitle>Xóa khóa người dùng</DialogTitle>
             <DialogDescription className="text-sm leading-6">
-              确认Xóangười dùng密钥「{deletingItem?.name}」吗？Xóa后该密钥将无法继续调用接口。
+              Xác nhận xóa khóa người dùng 「{deletingItem?.name}」? Sau khi xóa khóa này sẽ không dùng được nữa.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -364,9 +364,9 @@ export function UserKeysCard() {
       >
         <DialogContent className="rounded-2xl p-6">
           <DialogHeader className="gap-2">
-            <DialogTitle>Chỉnh sửangười dùng密钥</DialogTitle>
+            <DialogTitle>Sửa khóa người dùng</DialogTitle>
             <DialogDescription className="text-sm leading-6">
-              可以修改备注Tên；如需更换专用密钥，直接填写新的原始密钥即可。留空则保持当前密钥不变。
+              Có thể sửa tên ghi chú. Để đổi khóa, điền khóa mới bên dưới. Để trống thì giữ khóa hiện tại.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -375,20 +375,20 @@ export function UserKeysCard() {
               <Input
                 value={editName}
                 onChange={(event) => setEditName(event.target.value)}
-                placeholder="例如：设计同学 A、运营临时账号"
+                placeholder="VD: Bạn thiết kế, bạn vận hành..."
                 className="h-11 rounded-xl border-stone-200 bg-white"
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-stone-700">新的专用密钥（tùy chọn）</label>
+              <label className="text-sm font-medium text-stone-700">Khóa mới (tùy chọn)</label>
               <Input
                 value={editKey}
                 onChange={(event) => setEditKey(event.target.value)}
-                placeholder="例如：sk-your-custom-user-key"
+                placeholder="VD: sk-your-custom-user-key"
                 className="h-11 rounded-xl border-stone-200 bg-white font-mono"
               />
               <p className="text-xs leading-5 text-stone-500">
-                Lưu后旧密钥会立即失效，新密钥生效。系统仍只Lưu哈希，不会回显当前密钥。
+                Sau khi lưu, khóa cũ sẽ hết hiệu lực, khóa mới có hiệu lực ngay. Hệ thống chỉ lưu hash, không hiển thị lại khóa hiện tại.
               </p>
             </div>
           </div>
@@ -407,7 +407,7 @@ export function UserKeysCard() {
             </Button>
             <Button
               type="button"
-              className="h-10 rounded-xl bg-stone-950 px-5 text-white hover:bg-stone-800"
+              className="h-10 rounded-xl bg-stone-900 px-5 text-white hover:bg-stone-800"
               onClick={() => void handleEdit()}
               disabled={editingItem ? pendingIds.has(editingItem.id) : false}
             >

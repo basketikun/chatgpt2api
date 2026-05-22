@@ -36,7 +36,7 @@ export function CPAPoolDialog() {
         <DialogHeader className="gap-2">
           <DialogTitle>{editingPool ? "Chỉnh sửakết nối" : "Thêm kết nối"}</DialogTitle>
           <DialogDescription className="text-sm leading-6">
-            {editingPool ? "修改 CPA kết nối信息" : "添加一个新的 CLIProxyAPI kết nối"}
+            {editingPool ? "sửa CPA kết nốithông tin" : "thêmmộtmới CLIProxyAPI kết nối"}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -45,14 +45,14 @@ export function CPAPoolDialog() {
             <Input
               value={formName}
               onChange={(event) => setFormName(event.target.value)}
-              placeholder="例如：主号池、备用池"
+              placeholder="VD: Kho chính, kho dự phòng"
               className="h-11 rounded-xl border-stone-200 bg-white"
             />
           </div>
           <div className="space-y-2">
             <label className="flex items-center gap-1.5 text-sm font-medium text-stone-700">
               <Link2 className="size-3.5" />
-              CPA 地址
+              Địa chỉ CPA
             </label>
             <Input
               value={formBaseUrl}
@@ -71,12 +71,12 @@ export function CPAPoolDialog() {
                 type={showSecret ? "text" : "password"}
                 value={formSecretKey}
                 onChange={(event) => setFormSecretKey(event.target.value)}
-                placeholder={editingPool ? "留空则不修改密钥" : "CPA 管理密钥"}
+                placeholder={editingPool ? "Để trống nếu không sửa khóa" : "Khóa quản lý CPA"}
                 className="h-11 rounded-xl border-stone-200 bg-white pr-10"
               />
               <button
                 type="button"
-                className="absolute top-1/2 right-3 -translate-y-1/2 text-stone-400 transition hover:text-stone-600"
+                className="absolute top-1/2 right-3 -translate-y-1/2 text-stone-500 transition hover:text-stone-600"
                 onClick={() => setShowSecret(!showSecret)}
               >
                 {showSecret ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
@@ -94,12 +94,12 @@ export function CPAPoolDialog() {
             Hủy
           </Button>
           <Button
-            className="h-10 rounded-xl bg-stone-950 px-5 text-white hover:bg-stone-800"
+            className="h-10 rounded-xl bg-stone-900 px-5 text-white hover:bg-stone-800"
             onClick={() => void savePool()}
             disabled={isSavingPool}
           >
             {isSavingPool ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
-            {editingPool ? "Lưu修改" : "添加"}
+            {editingPool ? "Lưusửa" : "thêm"}
           </Button>
         </DialogFooter>
       </DialogContent>

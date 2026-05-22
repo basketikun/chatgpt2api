@@ -155,7 +155,7 @@ export function Sub2APIConnections() {
             window.clearInterval(pollTimerRef.current);
             pollTimerRef.current = null;
           }
-          toast.error(error instanceof Error ? error.message : "查询导入进度thất bại");
+          toast.error(error instanceof Error ? error.message : "Không tìm được tiến độ nhập");
         });
     }, 1500);
 
@@ -197,7 +197,7 @@ export function Sub2APIConnections() {
 
   const handleFetchGroups = async () => {
     if (!editingServer) {
-      toast.error("请先Lưukết nối后再拉取nhóm");
+      toast.error("请先Lưukết nốisau再lấynhóm");
       return;
     }
     setIsLoadingGroups(true);
@@ -205,12 +205,12 @@ export function Sub2APIConnections() {
       const data = await fetchSub2APIServerGroups(editingServer.id);
       setRemoteGroups(data.groups);
       if (data.groups.length === 0) {
-        toast.message("远端没有配置nhóm");
+        toast.message("Máy chủ từ xa không có cấu hình nhóm");
       } else {
         toast.success(`Đọc到 ${data.groups.length} 个nhóm`);
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "拉取nhómthất bại");
+      toast.error(error instanceof Error ? error.message : "lấynhómthất bại");
     } finally {
       setIsLoadingGroups(false);
     }
@@ -231,7 +231,7 @@ export function Sub2APIConnections() {
         return;
       }
     } else if (!editingServer && !formApiKey.trim()) {
-      toast.error("请输入 Admin API Key");
+      toast.error("Vui lòng nhập Admin API Key");
       return;
     }
 
@@ -303,7 +303,7 @@ export function Sub2APIConnections() {
       setAccountQuery("");
       setAccountPage(1);
       setBrowserOpen(true);
-      toast.success(`Đọc成功，共 ${accounts.length} 个 OpenAI 账号`);
+      toast.success(`Đã đọc, tổng cộng  ${accounts.length} tài khoản OpenAI`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Đọc tài khoản Sub2API thất bại");
     } finally {
@@ -359,7 +359,7 @@ export function Sub2APIConnections() {
       return;
     }
     if (selectedIds.length === 0) {
-      toast.error("请先chọn要导入的账号");
+      toast.error("Vui lòng chọn tài khoản cần nhập");
       return;
     }
 
@@ -374,7 +374,7 @@ export function Sub2APIConnections() {
       setBrowserOpen(false);
       toast.success("Đã khởi chạy tác vụ nhập");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "启动导入thất bại");
+      toast.error(error instanceof Error ? error.message : "Không bắt đầu được nhập");
     } finally {
       setIsStartingImport(false);
     }
@@ -382,7 +382,7 @@ export function Sub2APIConnections() {
 
   return (
     <>
-      <Card className="rounded-2xl border-white/80 bg-white/90 shadow-sm">
+      <Card className="rounded-2xl card-3d card-tint-violet">
         <CardContent className="space-y-6 p-6">
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-3">
@@ -390,16 +390,16 @@ export function Sub2APIConnections() {
                 <ServerCog className="size-5 text-stone-600" />
               </div>
               <div>
-                <h2 className="text-lg font-semibold tracking-tight">Sub2API kết nối管理</h2>
+                <h2 className="text-lg font-semibold tracking-tight">Quản lý kết nối Sub2API</h2>
                 <p className="text-sm text-stone-500">
-                  配置 Sub2API 服务器后，可查询其中的 OpenAI OAuth 账号并批量导入本地号池。
+                  Cấu hình máy chủ Sub2API, sau đó có thể tìm tài khoản OpenAI OAuth và nhập hàng loạt vào kho địa phương.
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-2">
               {servers.length > 0 ? <Badge className="rounded-md px-2.5 py-1">{servers.length} 个kết nối</Badge> : null}
               <Button
-                className="h-9 rounded-xl bg-stone-950 px-4 text-white hover:bg-stone-800"
+                className="h-9 rounded-xl bg-stone-900 px-4 text-white hover:bg-stone-800"
                 onClick={openAddDialog}
               >
                 <Plus className="size-4" />
@@ -410,14 +410,14 @@ export function Sub2APIConnections() {
 
           {isLoading ? (
             <div className="flex items-center justify-center py-10">
-              <LoaderCircle className="size-5 animate-spin text-stone-400" />
+              <LoaderCircle className="size-5 animate-spin text-stone-500" />
             </div>
           ) : servers.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-3 rounded-xl bg-stone-50 px-6 py-10 text-center">
-              <ServerCog className="size-8 text-stone-300" />
+            <div className="flex flex-col items-center justify-center gap-3 rounded-xl bg-stone-100 px-6 py-10 text-center">
+              <ServerCog className="size-8 text-stone-700" />
               <div className="space-y-1">
-                <p className="text-sm font-medium text-stone-600">暂无 Sub2API kết nối</p>
-                <p className="text-sm text-stone-400">点击「Thêm kết nối」Lưu你的 Sub2API 信息。</p>
+                <p className="text-sm font-medium text-stone-600">Chưa có kết nối Sub2API nào</p>
+                <p className="text-sm text-stone-500">Nhấn "Thêm kết nối" để lưu thông tin Sub2API của bạn.</p>
               </div>
             </div>
           ) : (
@@ -433,7 +433,7 @@ export function Sub2APIConnections() {
                     <div className="flex items-center justify-between gap-3">
                       <div className="min-w-0">
                         <div className="text-sm font-medium text-stone-800">{server.name || server.base_url}</div>
-                        <div className="truncate text-xs text-stone-400">
+                        <div className="truncate text-xs text-stone-500">
                           {server.base_url}
                           {server.email ? ` · ${server.email}` : server.has_api_key ? " · API Key" : ""}
                           {server.group_id ? ` · nhóm ${server.group_id}` : " · 全部nhóm"}
@@ -442,7 +442,7 @@ export function Sub2APIConnections() {
                       <div className="flex items-center gap-1">
                         <button
                           type="button"
-                          className="rounded-lg p-2 text-stone-400 transition hover:bg-stone-100 hover:text-stone-700"
+                          className="rounded-lg p-2 text-stone-500 transition hover:bg-stone-200 hover:text-stone-700"
                           onClick={() => openEditDialog(server)}
                           disabled={isBusy}
                           title="Chỉnh sửa"
@@ -451,7 +451,7 @@ export function Sub2APIConnections() {
                         </button>
                         <button
                           type="button"
-                          className="rounded-lg p-2 text-stone-400 transition hover:bg-rose-50 hover:text-rose-500"
+                          className="rounded-lg p-2 text-stone-500 transition hover:bg-rose-50 hover:text-rose-500"
                           onClick={() => void handleDelete(server)}
                           disabled={isBusy}
                           title="Xóa"
@@ -482,8 +482,8 @@ export function Sub2APIConnections() {
                     </div>
 
                     {importJob ? (
-                      <div className="space-y-2 rounded-xl bg-stone-50 px-3 py-3">
-                        <div className="text-xs font-medium tracking-[0.16em] text-stone-400 uppercase">导入Tác vụ</div>
+                      <div className="space-y-2 rounded-xl bg-stone-100 px-3 py-3">
+                        <div className="text-xs font-medium tracking-[0.16em] text-stone-500 uppercase">Tác vụ nhập</div>
                         {(() => {
                           const progress =
                             importJob.total > 0
@@ -496,7 +496,7 @@ export function Sub2APIConnections() {
                                   <div className="text-sm font-medium text-stone-700">
                                     Trạng thái {importJob.status}，Đã 处理 {importJob.completed}/{importJob.total}
                                   </div>
-                                  <div className="truncate text-xs text-stone-400">
+                                  <div className="truncate text-xs text-stone-500">
                                     Tác vụ {importJob.job_id.slice(0, 8)} · {importJob.created_at}
                                   </div>
                                 </div>
@@ -515,7 +515,7 @@ export function Sub2APIConnections() {
                               </div>
                               <div className="mt-3 h-2 overflow-hidden rounded-full bg-stone-200">
                                 <div
-                                  className="h-full rounded-full bg-stone-900 transition-all"
+                                  className="h-full rounded-full bg-white transition-all"
                                   style={{ width: `${progress}%` }}
                                 />
                               </div>
@@ -536,13 +536,13 @@ export function Sub2APIConnections() {
             </div>
           )}
 
-          <div className="rounded-xl bg-stone-50 px-4 py-3 text-sm leading-6 text-stone-500">
+          <div className="rounded-xl bg-stone-100 px-4 py-3 text-sm leading-6 text-stone-500">
             <p className="font-medium text-stone-600">Hướng dẫn sử dụng</p>
             <ul className="mt-1 list-inside list-disc space-y-0.5">
-              <li>输入 Sub2API 地址和管理员账户（或 Admin API Key），Lưu为一个kết nối。</li>
-              <li>点击某个kết nối的「Đồng bộ」会拉取其中 platform=openai 且 type=oauth 的账号列表。</li>
-              <li>勾选需要的账号后后端会并发拉取 access_token，自动导入本地号池并Làm mớiTrạng thái。</li>
-              <li>仅会Đọc sub2api 凭据中的 access_token；refresh_token 等字段不会写入本地。</li>
+              <li>Nhập địa chỉ Sub2API và tài khoản quản trị (hoặc Admin API Key), lưu thành một kết nối.</li>
+              <li>Nhấn "Đồng bộ" trên một kết nối sẽ lấy danh sách tài khoản có platform=openai và type=oauth.</li>
+              <li>Chọn tài khoản cần, backend sẽ tải access_token và tự động nhập vào kho địa phương kèm trạng thái.</li>
+              <li>Chỉ đọc access_token từ Sub2API; refresh_token và các trường khác không được lưu.</li>
             </ul>
           </div>
         </CardContent>
@@ -553,7 +553,7 @@ export function Sub2APIConnections() {
           <DialogHeader className="gap-2">
             <DialogTitle>{editingServer ? "Chỉnh sửakết nối" : "Thêm kết nối"}</DialogTitle>
             <DialogDescription className="text-sm leading-6">
-              {editingServer ? "修改 Sub2API kết nối信息" : "添加一个新的 Sub2API kết nối"}
+              {editingServer ? "sửa Sub2API kết nốithông tin" : "thêmmộtmới Sub2API kết nối"}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -569,7 +569,7 @@ export function Sub2APIConnections() {
             <div className="space-y-2">
               <label className="flex items-center gap-1.5 text-sm font-medium text-stone-700">
                 <Link2 className="size-3.5" />
-                Sub2API 地址
+                Địa chỉ Sub2API
               </label>
               <Input
                 value={formBaseUrl}
@@ -585,7 +585,7 @@ export function Sub2APIConnections() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="password">Email quản trị + 密码</SelectItem>
+                  <SelectItem value="password">Email quản trị + mật khẩu</SelectItem>
                   <SelectItem value="api_key">Admin API Key</SelectItem>
                 </SelectContent>
               </Select>
@@ -614,12 +614,12 @@ export function Sub2APIConnections() {
                       type={showSecret ? "text" : "password"}
                       value={formPassword}
                       onChange={(event) => setFormPassword(event.target.value)}
-                      placeholder={editingServer ? "留空则不修改密码" : "Mật khẩu quản trị"}
+                      placeholder={editingServer ? "留空则不sửamật khẩu" : "Mật khẩu quản trị"}
                       className="h-11 rounded-xl border-stone-200 bg-white pr-10"
                     />
                     <button
                       type="button"
-                      className="absolute top-1/2 right-3 -translate-y-1/2 text-stone-400 transition hover:text-stone-600"
+                      className="absolute top-1/2 right-3 -translate-y-1/2 text-stone-500 transition hover:text-stone-600"
                       onClick={() => setShowSecret((prev) => !prev)}
                     >
                       {showSecret ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
@@ -638,12 +638,12 @@ export function Sub2APIConnections() {
                     type={showSecret ? "text" : "password"}
                     value={formApiKey}
                     onChange={(event) => setFormApiKey(event.target.value)}
-                    placeholder={editingServer ? "留空则不修改密钥" : "Sub2API Admin API Key"}
+                    placeholder={editingServer ? "Để trống nếu không sửa khóa" : "Sub2API Admin API Key"}
                     className="h-11 rounded-xl border-stone-200 bg-white pr-10"
                   />
                   <button
                     type="button"
-                    className="absolute top-1/2 right-3 -translate-y-1/2 text-stone-400 transition hover:text-stone-600"
+                    className="absolute top-1/2 right-3 -translate-y-1/2 text-stone-500 transition hover:text-stone-600"
                     onClick={() => setShowSecret((prev) => !prev)}
                   >
                     {showSecret ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
@@ -685,7 +685,7 @@ export function Sub2APIConnections() {
               )}
               {editingServer ? (
                 <div className="flex items-center justify-between gap-2 text-xs text-stone-500">
-                  <span>Đồng bộ时会用nhóm ID 过滤，留空 = Đồng bộ所有 OpenAI OAuth 账号。</span>
+                  <span>Khi đồng bộ sẽ lọc theo ID nhóm, để trống = đồng bộ tất cả tài khoản OpenAI OAuth.</span>
                   <Button
                     variant="outline"
                     className="h-8 rounded-lg border-stone-200 bg-white px-2 text-xs text-stone-600"
@@ -697,12 +697,12 @@ export function Sub2APIConnections() {
                     ) : (
                       <RefreshCcw className="size-3.5" />
                     )}
-                    {remoteGroups ? "重新拉取" : "拉取nhóm"}
+                    {remoteGroups ? "重新lấy" : "lấynhóm"}
                   </Button>
                 </div>
               ) : (
                 <div className="text-xs text-stone-500">
-                  添加完kết nối后可在Chỉnh sửa对话框里点「拉取nhóm」chọn具体nhóm。
+                  thêm完kết nốisaucó thểtrongChỉnh sửahộp thoạinàynhấn「lấynhóm」chọncụ thểnhóm。
                 </div>
               )}
             </div>
@@ -717,12 +717,12 @@ export function Sub2APIConnections() {
               Hủy
             </Button>
             <Button
-              className="h-10 rounded-xl bg-stone-950 px-5 text-white hover:bg-stone-800"
+              className="h-10 rounded-xl bg-stone-900 px-5 text-white hover:bg-stone-800"
               onClick={() => void handleSave()}
               disabled={isSaving}
             >
               {isSaving ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
-              {editingServer ? "Lưu修改" : "添加"}
+              {editingServer ? "Lưusửa" : "thêm"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -731,15 +731,15 @@ export function Sub2APIConnections() {
       <Dialog open={browserOpen} onOpenChange={setBrowserOpen}>
         <DialogContent showCloseButton={false} className="max-h-[90vh] max-w-5xl rounded-2xl p-6">
           <DialogHeader className="gap-2">
-            <DialogTitle>chọn要导入的账号</DialogTitle>
+            <DialogTitle>Chọn tài khoản cần nhập</DialogTitle>
             <DialogDescription className="text-sm leading-6">
-              {browserServer ? `来自 ${browserServer.name || browserServer.base_url}` : "Sub2API 上的 OpenAI OAuth 账号"}
+              {browserServer ? `来自 ${browserServer.name || browserServer.base_url}` : "Tài khoản OpenAI OAuth trên Sub2API"}
             </DialogDescription>
           </DialogHeader>
 
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="relative min-w-[260px]">
-              <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-stone-400" />
+              <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-stone-500" />
               <Input
                 value={accountQuery}
                 onChange={(event) => {
@@ -774,13 +774,13 @@ export function Sub2APIConnections() {
                 className="h-10 rounded-xl border-stone-200 bg-white px-4 text-stone-700"
                 onClick={() => handleToggleSelectAllFiltered(!allFilteredSelected)}
               >
-                {allFilteredSelected ? "Hủy全选" : "Chọn tất cả kết quả lọc"}
+                {allFilteredSelected ? "Bỏ chọn tất cả" : "Chọn tất cả kết quả lọc"}
               </Button>
             </div>
           </div>
 
           <div className="rounded-xl border border-stone-200">
-            <div className="flex items-center justify-between border-b border-stone-100 px-4 py-3 text-sm text-stone-500">
+            <div className="flex items-center justify-between border-b border-stone-200 px-4 py-3 text-sm text-stone-500">
               <div className="flex items-center gap-3">
                 <Checkbox
                   checked={allFilteredSelected}
@@ -792,13 +792,13 @@ export function Sub2APIConnections() {
             </div>
             <div className="max-h-[420px] overflow-auto">
               {pagedAccounts.length === 0 ? (
-                <div className="flex items-center justify-center py-12 text-sm text-stone-400">Không có tài khoản phù hợp</div>
+                <div className="flex items-center justify-center py-12 text-sm text-stone-500">Không có tài khoản phù hợp</div>
               ) : (
                 <div className="divide-y divide-stone-100">
                   {pagedAccounts.map((item) => (
                     <label
                       key={item.id}
-                      className="flex cursor-pointer items-center gap-3 px-4 py-3 hover:bg-stone-50"
+                      className="flex cursor-pointer items-center gap-3 px-4 py-3 hover:bg-stone-800"
                     >
                       <Checkbox
                         checked={selectedIds.includes(item.id)}
@@ -821,7 +821,7 @@ export function Sub2APIConnections() {
                             </Badge>
                           ) : null}
                         </div>
-                        <div className="truncate text-xs text-stone-400">
+                        <div className="truncate text-xs text-stone-500">
                           id {item.id}
                           {item.expires_at ? ` · 过期 ${item.expires_at}` : ""}
                         </div>
@@ -871,7 +871,7 @@ export function Sub2APIConnections() {
               Hủy
             </Button>
             <Button
-              className="h-10 rounded-xl bg-stone-950 px-5 text-white hover:bg-stone-800"
+              className="h-10 rounded-xl bg-stone-900 px-5 text-white hover:bg-stone-800"
               onClick={() => void handleStartImport()}
               disabled={isStartingImport || selectedIds.length === 0}
             >

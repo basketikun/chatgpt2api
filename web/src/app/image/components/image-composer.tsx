@@ -12,6 +12,8 @@ type ImageComposerProps = {
   prompt: string;
   imageCount: string;
   imageSize: string;
+  model: string;
+  imageModels: Array<{ id: string; label: string }>;
   availableQuota: string;
   activeTaskCount: number;
   referenceImages: Array<{ name: string; dataUrl: string }>;
@@ -20,8 +22,10 @@ type ImageComposerProps = {
   onPromptChange: (value: string) => void;
   onImageCountChange: (value: string) => void;
   onImageSizeChange: (value: string) => void;
+  onModelChange: (value: string) => void;
   onSubmit: () => void | Promise<void>;
   onPickReferenceImage: () => void;
+  onPickLibraryImage: () => void;
   onReferenceImageChange: (files: File[]) => void | Promise<void>;
   onRemoveReferenceImage: (index: number) => void;
 };
@@ -30,6 +34,8 @@ export function ImageComposer({
   prompt,
   imageCount,
   imageSize,
+  model,
+  imageModels,
   availableQuota,
   activeTaskCount,
   referenceImages,
@@ -38,8 +44,10 @@ export function ImageComposer({
   onPromptChange,
   onImageCountChange,
   onImageSizeChange,
+  onModelChange,
   onSubmit,
   onPickReferenceImage,
+  onPickLibraryImage,
   onReferenceImageChange,
   onRemoveReferenceImage,
 }: ImageComposerProps) {
@@ -112,12 +120,12 @@ export function ImageComposer({
                     setLightboxIndex(index);
                     setLightboxOpen(true);
                   }}
-                  className="group size-14 overflow-hidden rounded-2xl border border-stone-200 bg-stone-50 transition hover:border-stone-300 sm:size-16"
-                  aria-label={`预览参考图 ${image.name || index + 1}`}
+                  className="group size-14 overflow-hidden rounded-2xl border border-stone-200 bg-stone-100 transition hover:border-stone-300 sm:size-16"
+                  aria-label={`Xem ảnh tham khảo ${image.name || index + 1}`}
                 >
                   <img
                     src={image.dataUrl}
-                    alt={image.name || `参考图 ${index + 1}`}
+                    alt={image.name || `ảnh tham khảo ${index + 1}`}
                     className="h-full w-full object-cover"
                   />
                 </button>
@@ -128,7 +136,7 @@ export function ImageComposer({
                     onRemoveReferenceImage(index);
                   }}
                   className="absolute -right-1 -top-1 inline-flex size-5 items-center justify-center rounded-full border border-stone-200 bg-white text-stone-500 transition hover:border-stone-300 hover:text-stone-800"
-                  aria-label={`移除参考图 ${image.name || index + 1}`}
+                  aria-label={`Xóa ảnh tham khảo ${image.name || index + 1}`}
                 >
                   <X className="size-3" />
                 </button>
@@ -167,33 +175,50 @@ export function ImageComposer({
                   void onSubmit();
                 }
               }}
-              className="min-h-[82px] resize-none rounded-[24px] border-0 bg-transparent px-4 pt-4 pb-2 text-[15px] leading-6 text-stone-900 shadow-none placeholder:text-stone-400 focus-visible:ring-0 sm:min-h-[148px] sm:rounded-[32px] sm:px-6 sm:pt-6 sm:pb-20 sm:leading-7"
+              className="min-h-[120px] resize-none rounded-[24px] border-2 border-indigo-200 bg-indigo-50/50 px-4 pt-4 pb-4 text-[16px] font-semibold leading-7 text-slate-900 shadow-none placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:border-indigo-400 sm:min-h-[160px] sm:rounded-[32px] sm:px-6 sm:pt-6 sm:pb-6 dark:bg-[#1a1a1a] dark:border-indigo-500/30 dark:text-[#ededed] dark:placeholder:text-[#6b7280]"
             />
 
-            <div className="rounded-b-[24px] border-t border-stone-100 bg-white px-3 pb-3 pt-2 sm:absolute sm:inset-x-0 sm:bottom-0 sm:rounded-b-none sm:border-t-0 sm:bg-gradient-to-t sm:from-white sm:via-white/95 sm:to-transparent sm:px-6 sm:pb-4 sm:pt-6" onClick={(event) => event.stopPropagation()}>
+            <div className="rounded-b-[24px] border-t border-stone-200 bg-white px-3 pb-3 pt-2 sm:px-6 sm:pb-4 sm:pt-3" onClick={(event) => event.stopPropagation()}>
               <div className="flex items-end justify-between gap-2 sm:gap-3">
-                <div className="hide-scrollbar flex min-w-0 flex-1 flex-nowrap items-center gap-1.5 overflow-x-auto pb-0.5 sm:flex-wrap sm:gap-3 sm:overflow-visible sm:pb-0">
+                <div className="hide-scrollbar flex min-w-0 flex-1 flex-nowrap items-center gap-1.5 overflow-x-auto pb-0.5 sm:flex-wrap sm:gap-2 sm:overflow-visible sm:pb-0">
                   <Button
                     type="button"
                     variant="outline"
-                    className="h-9 shrink-0 rounded-full border-stone-200 bg-white px-3 text-xs font-medium text-stone-700 shadow-none sm:h-10 sm:px-4 sm:text-sm"
+                    className="h-8 shrink-0 rounded-full border-stone-200 bg-white px-2.5 text-xs font-medium text-stone-700 shadow-none"
                     onClick={onPickReferenceImage}
-                    aria-label={referenceImages.length > 0 ? "添加参考图" : "上传"}
                   >
-                    <ImagePlus className="size-3.5 sm:size-4" />
-                    <span className="hidden sm:inline">{referenceImages.length > 0 ? "Thêm ảnh tham chiếu" : "Tải lên"}</span>
+                    <ImagePlus className="size-3.5" />
+                    <span className="hidden sm:inline ml-1">Tải ảnh</span>
                   </Button>
-                  <div className="shrink-0 rounded-full bg-stone-100 px-2 py-1 text-[10px] font-medium text-stone-600 sm:px-3 sm:py-2 sm:text-xs">
-                    <span className="hidden sm:inline">Hạn mức còn lại </span>{availableQuota}
-                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-8 shrink-0 rounded-full border-stone-200 bg-white px-2.5 text-xs font-medium text-stone-700 shadow-none"
+                    onClick={onPickLibraryImage}
+                  >
+                    <ImagePlus className="size-3.5" />
+                    <span className="hidden sm:inline ml-1">Thư viện</span>
+                  </Button>
                   {activeTaskCount > 0 && (
                     <div className="flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-[10px] font-medium text-amber-700 sm:gap-1.5 sm:px-3 sm:py-2 sm:text-xs">
                       <LoaderCircle className="size-3 animate-spin" />
-                      {activeTaskCount}<span className="hidden sm:inline"> tác vụ đang xử lý</span>
+                      {activeTaskCount}<span className="hidden sm:inline"> đang xử lý</span>
                     </div>
                   )}
-                  <div className="flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-stone-200 bg-white px-2 py-0.5 sm:h-auto sm:gap-2 sm:px-3 sm:py-1">
-                    <span className="hidden text-[11px] font-medium text-stone-700 sm:inline sm:text-sm">Số lượng</span>
+                  {imageModels.length > 0 && (
+                    <div className="flex h-8 shrink-0 items-center gap-1 rounded-full border border-stone-200 bg-white px-2 sm:px-3">
+                      <select
+                        value={model}
+                        onChange={(e) => onModelChange(e.target.value)}
+                        className="h-7 bg-transparent text-xs font-medium text-stone-700 focus:outline-none max-w-[130px] truncate"
+                      >
+                        {imageModels.map(m => (
+                          <option key={m.id} value={m.id}>{m.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  <div className="flex h-8 shrink-0 items-center gap-1 rounded-full border border-stone-200 bg-white px-2 sm:px-3">
                     <Input
                       type="number"
                       inputMode="numeric"
@@ -228,7 +253,7 @@ export function ImageComposer({
                     {isSizeMenuOpen ? (
                       <div
                         ref={sizeMenuRef}
-                        className="fixed z-[80] max-h-[45dvh] overflow-y-auto rounded-3xl border border-white/80 bg-white p-2 shadow-[0_24px_80px_-32px_rgba(15,23,42,0.35)]"
+                        className="fixed z-[80] max-h-[45dvh] overflow-y-auto rounded-3xl border border-stone-200 bg-white p-2 shadow-[0_24px_80px_-32px_rgba(15,23,42,0.35)]"
                         style={{
                           top: sizeMenuPos.top,
                           left: sizeMenuPos.left,
@@ -243,7 +268,7 @@ export function ImageComposer({
                               key={option.label}
                               type="button"
                               className={cn(
-                                "flex w-full items-center justify-between rounded-2xl px-3 py-2 text-left text-sm text-stone-700 transition hover:bg-stone-100",
+                                "flex w-full items-center justify-between rounded-2xl px-3 py-2 text-left text-sm text-stone-700 transition hover:bg-stone-200",
                                 active && "bg-stone-100 font-medium text-stone-950",
                               )}
                               onClick={() => {
@@ -266,7 +291,7 @@ export function ImageComposer({
                   type="button"
                   onClick={() => void onSubmit()}
                   disabled={!prompt.trim()}
-                  className="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-stone-950 text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-300 sm:size-11"
+                  className="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-stone-900 text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-300 sm:size-11"
                   aria-label={referenceImages.length > 0 ? "Sửa ảnh" : "Tạo ảnh"}
                 >
                   <ArrowUp className="size-3.5 sm:size-4" />

@@ -146,6 +146,128 @@ def create_router() -> APIRouter:
         require_admin(authorization)
         return {"items": account_service.list_accounts()}
 
+    @router.get("/api/v1/provider-tree")
+    async def get_provider_tree(authorization: str | None = Header(default=None)):
+        """Return hierarchical tree: Provider → Sub-type/API → Accounts/Status."""
+        require_admin(authorization)
+        from services.config import config
+        from services.providers.custom_openai import get_custom_providers
+        import requests as req
+
+        accounts = account_service.list_accounts()
+        providers_cfg = config.data.get("providers") or {}
+        custom_providers = get_custom_providers()
+
+        tree: list[dict] = []
+
+        # ── ChatGPT branch ──
+        chatgpt_accounts = [a for a in accounts if str(a.get("type") or "").lower() not in ("", "custom")]
+        if chatgpt_accounts:
+            # Group by type
+            type_groups: dict[str, list] = {}
+            for acc in chatgpt_accounts:
+                acc_type = str(acc.get("type") or "free")
+                type_groups.setdefault(acc_type, []).append(acc)
+            groups = []
+            for acc_type, accs in sorted(type_groups.items()):
+                groups.append({
+                    "key": acc_type,
+                    "label": acc_type,
+                    "count": len(accs),
+                    "active": sum(1 for a in accs if a.get("status") == "active"),
+                    "limited": sum(1 for a in accs if a.get("status") == "limited"),
+                    "error": sum(1 for a in accs if a.get("status") in ("error", "disabled")),
+                    "accounts": accs,
+                })
+            tree.append({
+                "provider": "ChatGPT",
+                "icon": "chatgpt",
+                "type": "accounts",
+                "groups": groups,
+                "total": len(chatgpt_accounts),
+            })
+
+        # ── Built-in providers branch (Gemini, NVIDIA, etc.) ──
+        builtin_list = []
+        for p_id, p_cfg in providers_cfg.items():
+            if not isinstance(p_cfg, dict) or not p_cfg.get("enabled", False):
+                continue
+            api_key = p_cfg.get("api_key") or ""
+            base_url = p_cfg.get("base_url") or ""
+            builtin_list.append({
+                "id": p_id,
+                "name": p_cfg.get("name") or p_id,
+                "has_key": bool(api_key),
+                "key_preview": (api_key[:12] + "..." + api_key[-4:]) if len(api_key) > 16 else (api_key or "—"),
+                "base_url": base_url or "—",
+                "status": "configured",
+            })
+        if builtin_list:
+            tree.append({
+                "provider": "Providers",
+                "icon": "cpu",
+                "type": "providers",
+                "instances": builtin_list,
+                "total": len(builtin_list),
+            })
+
+        # ── Custom providers branch ──
+        custom_list = []
+        for cp_id, cp_cfg in custom_providers.items():
+            base_url = cp_cfg.get("base_url") or ""
+            port = base_url.split(":")[-1].rstrip("/") if ":" in base_url else "—"
+            # Quick health check
+            status = "unknown"
+            error_msg = None
+            models_count = 0
+            if base_url:
+                try:
+                    resp = req.get(f"{base_url}/health", timeout=4)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        if data.get("ok"):
+                            status = "available"
+                            models_count = len(data.get("clients") or {})
+                        else:
+                            status = "error"
+                            error_msg = data.get("error", "unknown")
+                    else:
+                        # Try /v1/models
+                        try:
+                            resp2 = req.get(f"{base_url}/v1/models", timeout=4)
+                            if resp2.status_code == 200:
+                                data2 = resp2.json()
+                                models_list = data2.get("data") or data2.get("models") or []
+                                status = "available"
+                                models_count = len(models_list)
+                            else:
+                                status = f"http_{resp.status_code}"
+                        except Exception:
+                            status = f"http_{resp.status_code}"
+                except Exception as e:
+                    status = "offline"
+                    error_msg = str(e)[:60]
+            custom_list.append({
+                "id": cp_id,
+                "name": cp_cfg.get("name") or cp_id,
+                "prefix": cp_cfg.get("prefix") or cp_id,
+                "base_url": base_url,
+                "port": port,
+                "status": status,
+                "models": models_count,
+                "error": error_msg,
+            })
+        if custom_list:
+            tree.append({
+                "provider": "Custom APIs",
+                "icon": "server",
+                "type": "custom",
+                "instances": custom_list,
+                "total": len(custom_list),
+            })
+
+        return {"tree": tree}
+
     @router.post("/api/accounts")
     async def create_accounts(body: AccountCreateRequest, authorization: str | None = Header(default=None)):
         require_admin(authorization)
@@ -153,13 +275,39 @@ def create_router() -> APIRouter:
         if not tokens:
             raise HTTPException(status_code=400, detail={"error": "tokens is required"})
         result = account_service.add_accounts(tokens)
-        refresh_result = account_service.refresh_accounts(tokens)
+        # Skip refresh for JWT/OAuth tokens (they use different auth flow)
+        chatgpt_tokens = [t for t in tokens if not t.startswith("eyJ")]
+        if chatgpt_tokens:
+            refresh_result = account_service.refresh_accounts(chatgpt_tokens)
+            refreshed = refresh_result.get("refreshed", 0)
+            errors = refresh_result.get("errors", [])
+        else:
+            # JWT tokens: set default quota and mark as image-capable
+            for token in tokens:
+                account_service.update_account(token, {
+                    "image_quota_unknown": True,
+                    "quota": 10,
+                    "status": "active",
+                })
+            refreshed = len(tokens)
+            errors = []
         return {
             **result,
-            "refreshed": refresh_result.get("refreshed", 0),
-            "errors": refresh_result.get("errors", []),
-            "items": refresh_result.get("items", result.get("items", [])),
+            "refreshed": refreshed,
+            "errors": errors,
+            "items": refresh_result.get("items", result.get("items", [])) if chatgpt_tokens else result.get("items", []),
         }
+
+    @router.post("/api/accounts/oauth")
+    async def create_oauth_accounts(body: dict, authorization: str | None = Header(default=None)):
+        """Add OAuth tokens (Codex from 9router) with custom type."""
+        require_admin(authorization)
+        tokens = [str(t or "").strip() for t in (body.get("tokens") or []) if str(t or "").strip()]
+        if not tokens:
+            raise HTTPException(status_code=400, detail={"error": "tokens is required"})
+        account_type = str(body.get("type") or "free,codex").strip()
+        result = account_service.add_accounts_with_type(tokens, account_type)
+        return {"items": result.get("items", []), "added": result.get("added", 0), "skipped": result.get("skipped", 0)}
 
     @router.delete("/api/accounts")
     async def delete_accounts(body: AccountDeleteRequest, authorization: str | None = Header(default=None)):

@@ -26,10 +26,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { createAccounts, type Account } from "@/lib/api";
+import { createAccounts, createOAuthAccounts, type Account } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-type ImportMethod = "menu" | "token" | "session" | "cpa";
+type ImportMethod = "menu" | "token" | "session" | "cpa" | "oauth" | "oauth_flow" | "antigravity_flow";
 
 type AccountImportDialogProps = {
   disabled?: boolean;
@@ -85,7 +85,7 @@ function MethodCard({
     <button
       type="button"
       onClick={onClick}
-      className="w-full rounded-2xl border border-stone-200 bg-white p-0 text-left transition hover:border-stone-300 hover:bg-stone-50"
+      className="w-full rounded-2xl border border-stone-200 bg-white p-0 text-left transition hover:border-stone-300 hover:bg-stone-800"
     >
       <Card className="rounded-2xl border-0 bg-transparent shadow-none">
         <CardContent className="flex items-start gap-4 p-4">
@@ -108,6 +108,7 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
   const [method, setMethod] = useState<ImportMethod>("menu");
   const [tokenInput, setTokenInput] = useState("");
   const [sessionInput, setSessionInput] = useState("");
+  const [oauthRedirectUrl, setOauthRedirectUrl] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pendingCpaImport, setPendingCpaImport] = useState<PendingCpaImport | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -148,11 +149,11 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
       if ((data.errors?.length ?? 0) > 0) {
         const firstError = data.errors?.[0]?.error;
         toast.error(
-          `${successText ?? "Nhập hoàn tất"}，Thêm mới ${data.added ?? 0} mục，Đã làm mới ${data.refreshed ?? 0} mục，Thất bại ${data.errors?.length ?? 0} mục${firstError ? `，Lỗi đầu tiên: ${firstError}` : ""}`,
+          `${successText ?? "Nhập hoàn tất"}, Thêm mới ${data.added ?? 0} mục, Đã làm mới ${data.refreshed ?? 0} mục, Thất bại ${data.errors?.length ?? 0} mục${firstError ? `, Lỗi đầu tiên: ${firstError}` : ""}`,
         );
       } else {
         toast.success(
-          `${successText ?? "Nhập hoàn tất"}，Thêm mới ${data.added ?? 0} mục，Bỏ qua ${data.skipped ?? 0} mục trùng lặp，Đã tự động làm mới thông tin tài khoản`,
+          `${successText ?? "Nhập hoàn tất"}, Thêm mới ${data.added ?? 0} mục, Bỏ qua ${data.skipped ?? 0} mục trùng lặp, Đã tự động làm mới thông tin tài khoản`,
         );
       }
     } catch (error) {
@@ -217,6 +218,28 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
     }
   };
 
+  const handleImportOAuth = async () => {
+    const oauthTokens = splitTokens(tokenInput);
+    if (oauthTokens.length === 0) {
+      toast.error("Vui lòng nhập ít nhất một OAuth Token");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const data = await createOAuthAccounts(oauthTokens, "codex");
+      onImported(data.items);
+      setOpen(false);
+      resetState();
+      toast.success(`Đã thêm ${data.added ?? 0} tài khoản Codex OAuth, bỏ qua ${data.skipped ?? 0} trùng lặp`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Nhập OAuth thất bại";
+      toast.error(message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleCpaSelected = async (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? []);
     event.target.value = "";
@@ -273,7 +296,7 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
               <ArrowLeft className="size-4" />
               Quay lại
             </button>
-            <span className="text-xs text-stone-400">Đã nhận diện {tokenCount} Token</span>
+            <span className="text-xs text-stone-500">Đã nhận diện {tokenCount} Token</span>
           </div>
           <div className="space-y-2">
             <label className="text-sm font-medium text-stone-700">Danh sách Access Token</label>
@@ -284,11 +307,71 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
               className="min-h-56 resize-none rounded-xl border-stone-200"
             />
           </div>
-          <div className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 p-4">
+          <div className="rounded-2xl border border-dashed border-stone-200 bg-stone-100 p-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="space-y-1">
                 <div className="text-sm font-medium text-stone-800">Nhập từ tệp TXT</div>
                 <div className="text-sm leading-6 text-stone-500">Hỗ trợ tệp `.txt`, nội dung tệp mỗi dòng một Token.</div>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-xl border-stone-200 bg-white"
+                onClick={() => txtInputRef.current?.click()}
+                disabled={isSubmitting}
+              >
+                <FileText className="size-4" />
+                Chọn TXT
+              </Button>
+            </div>
+          </div>
+          <input
+            ref={txtInputRef}
+            type="file"
+            accept=".txt,text/plain"
+            className="hidden"
+            onChange={(event) => void handleTxtSelected(event)}
+          />
+        </div>
+      );
+    }
+
+    if (method === "oauth") {
+      const tokenCount = splitTokens(tokenInput).length;
+
+      return (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => setMethod("menu")}
+              className="inline-flex items-center gap-1 text-sm text-stone-500 transition hover:text-stone-800"
+            >
+              <ArrowLeft className="size-4" />
+              Quay lại
+            </button>
+            <span className="text-xs text-stone-500">Đã nhận diện {tokenCount} Token OAuth</span>
+          </div>
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
+            <div className="font-medium">Token OAuth từ 9router</div>
+            <div>
+              Dán Codex OAuth token từ backup 9router. Các token này gọi thẳng OpenAI API (api.openai.com) — không giới hạn 24KB, không cần browser impersonation.
+            </div>
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-stone-700">OAuth Token (Codex)</label>
+            <Textarea
+              placeholder="Mỗi dòng một OAuth Token (JWT: eyJ...)..."
+              value={tokenInput}
+              onChange={(event) => setTokenInput(event.target.value)}
+              className="min-h-56 resize-none rounded-xl border-stone-200 font-mono text-xs"
+            />
+          </div>
+          <div className="rounded-2xl border border-dashed border-stone-200 bg-stone-100 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="space-y-1">
+                <div className="text-sm font-medium text-stone-800">Nhập từ tệp TXT</div>
+                <div className="text-sm leading-6 text-stone-500">Hỗ trợ tệp `.txt`, mỗi dòng một Token.</div>
               </div>
               <Button
                 type="button"
@@ -324,7 +407,7 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
             <ArrowLeft className="size-4" />
             Quay lại
           </button>
-          <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 text-sm leading-6 text-stone-600">
+          <div className="rounded-2xl border border-stone-200 bg-stone-100 p-4 text-sm leading-6 text-stone-600">
             Mở
             {" "}
             <a
@@ -368,7 +451,7 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
             <ArrowLeft className="size-4" />
             Quay lại
           </button>
-          <div className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 p-5">
+          <div className="rounded-2xl border border-dashed border-stone-200 bg-stone-100 p-5">
             <div className="space-y-2">
               <div className="text-sm font-medium text-stone-800">Chọn nhiều tệp CPA JSON từ máy tính</div>
               <div className="text-sm leading-6 text-stone-500">
@@ -377,7 +460,7 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
             </div>
             <Button
               type="button"
-              className="mt-4 rounded-xl bg-stone-950 text-white hover:bg-stone-800"
+              className="mt-4 rounded-xl bg-stone-900 text-white hover:bg-stone-800"
               onClick={() => cpaInputRef.current?.click()}
               disabled={isSubmitting}
             >
@@ -399,6 +482,120 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
               {pendingCpaImport.errorCount > 0 ? `，ngoài ra có ${pendingCpaImport.errorCount} tệp không trích xuất thành công` : ""}。
             </div>
           ) : null}
+        </div>
+      );
+    }
+
+    if (method === "oauth_flow") {
+      return (
+        <div className="space-y-4">
+          <button type="button" onClick={() => setMethod("menu")}
+            className="inline-flex items-center gap-1 text-sm text-stone-500 transition hover:text-stone-800">
+            <ArrowLeft className="size-4" /> Quay lại
+          </button>
+
+          <div className="rounded-2xl border border-stone-200 bg-stone-100 p-4">
+            <div className="mb-2 text-sm font-medium">Bước 1: Đăng nhập OpenAI</div>
+            <p className="text-sm text-stone-600 mb-3">Nhấn nút để mở trang đăng nhập OpenAI. Sau khi đăng nhập, trình duyệt sẽ chuyển hướng đến localhost (có thể báo lỗi "không thể kết nối").</p>
+            <Button variant="outline" className="bg-white"
+              onClick={async () => {
+                try {
+                  const { request: req } = await import("@/lib/request");
+                  const data = await req.get("/api/oauth/codex/start");
+                  const url = (data.data as any)?.auth_url;
+                  if (url) window.open(url, "_blank", "width=600,height=700");
+                  else toast.error("Không thể tạo URL OAuth");
+                } catch (e) { toast.error("Lỗi tạo OAuth URL"); }
+              }}>
+              Mở trang Đăng nhập OpenAI
+            </Button>
+          </div>
+
+          <div className="rounded-2xl border border-stone-200 bg-stone-100 p-4">
+            <div className="mb-2 text-sm font-medium">Bước 2: Dán URL callback</div>
+            <p className="text-sm text-stone-600 mb-3">Sau khi đăng nhập, copy TOÀN Bộ URL trên thanh địa chỉ (bắt đầu bằng http://localhost:3030...) và dán vào đây:</p>
+            <Textarea
+              placeholder="http://localhost:3030/auth/callback?code=..."
+              value={oauthRedirectUrl}
+              onChange={(e) => setOauthRedirectUrl(e.target.value)}
+              className="min-h-24 resize-none rounded-xl border-stone-300 font-mono text-xs mb-3"
+            />
+            <Button className="w-full bg-stone-900 text-white hover:bg-stone-800"
+              disabled={!oauthRedirectUrl || isSubmitting}
+              onClick={async () => {
+                setIsSubmitting(true);
+                try {
+                  const { request: req } = await import("@/lib/request");
+                  await req.post("/api/oauth/codex/exchange", { redirect_url: oauthRedirectUrl });
+                  toast.success("Đăng nhập thành công! Token đã được thêm.");
+                  setOpen(false);
+                  resetState();
+                  onImported([]);
+                } catch (error) {
+                  toast.error(error instanceof Error ? error.message : "Xác thực thất bại");
+                } finally { setIsSubmitting(false); }
+              }}>
+              {isSubmitting ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : null}
+              Xác nhận và Lưu Token
+            </Button>
+          </div>
+        </div>
+      );
+    }
+
+    if (method === "antigravity_flow") {
+      return (
+        <div className="space-y-4">
+          <button type="button" onClick={() => setMethod("menu")}
+            className="inline-flex items-center gap-1 text-sm text-stone-500 transition hover:text-stone-800">
+            <ArrowLeft className="size-4" /> Quay lại
+          </button>
+
+          <div className="rounded-2xl border border-stone-200 bg-stone-100 p-4">
+            <div className="mb-2 text-sm font-medium">Bước 1: Đăng nhập Google (Antigravity)</div>
+            <p className="text-sm text-stone-600 mb-3">Nhấn nút bên dưới để mở trang đăng nhập tài khoản Google. Sau khi đăng nhập và cấp quyền, trình duyệt của bạn sẽ chuyển hướng đến localhost (có thể báo lỗi "không thể kết nối" hoặc "không tìm thấy trang"). Hãy copy TOÀN BỘ URL trên thanh địa chỉ đó.</p>
+            <Button variant="outline" className="bg-white"
+              onClick={async () => {
+                try {
+                  const { request: req } = await import("@/lib/request");
+                  const data = await req.get("/api/oauth/antigravity/start");
+                  const url = (data.data as any)?.auth_url;
+                  if (url) window.open(url, "_blank", "width=600,height=700");
+                  else toast.error("Không thể tạo URL OAuth");
+                } catch (e) { toast.error("Lỗi tạo OAuth URL"); }
+              }}>
+              Mở trang Đăng nhập Google
+            </Button>
+          </div>
+
+          <div className="rounded-2xl border border-stone-200 bg-stone-100 p-4">
+            <div className="mb-2 text-sm font-medium">Bước 2: Dán URL callback</div>
+            <p className="text-sm text-stone-600 mb-3">Dán toàn bộ URL đã copy ở Bước 1 vào ô dưới đây (có dạng http://localhost:8080/callback?code=...):</p>
+            <Textarea
+              placeholder="http://localhost:8080/callback?code=..."
+              value={oauthRedirectUrl}
+              onChange={(e) => setOauthRedirectUrl(e.target.value)}
+              className="min-h-24 resize-none rounded-xl border-stone-300 font-mono text-xs mb-3"
+            />
+            <Button className="w-full bg-stone-900 text-white hover:bg-stone-800"
+              disabled={!oauthRedirectUrl || isSubmitting}
+              onClick={async () => {
+                setIsSubmitting(true);
+                try {
+                  const { request: req } = await import("@/lib/request");
+                  await req.post("/api/oauth/antigravity/exchange", { redirect_url: oauthRedirectUrl });
+                  toast.success("Đăng nhập thành công! Tài khoản Antigravity đã được thêm vào pool.");
+                  setOpen(false);
+                  resetState();
+                  onImported([]);
+                } catch (error) {
+                  toast.error(error instanceof Error ? error.message : "Xác thực thất bại");
+                } finally { setIsSubmitting(false); }
+              }}>
+              {isSubmitting ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : null}
+              Xác nhận và Lưu Token
+            </Button>
+          </div>
         </div>
       );
     }
@@ -434,6 +631,30 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
           }}
         />
         <MethodCard
+          title="Nhập OAuth Token (9router)"
+          description="Dán Codex OAuth token từ backup 9router. Gọi thẳng OpenAI API — không giới hạn 24KB."
+          icon={KeyRound}
+          onClick={() => setMethod("oauth")}
+        />
+        <MethodCard
+          title="Đăng nhập Codex OAuth"
+          description="Đăng nhập bằng tài khoản OpenAI để lấy token OAuth (hỗ trợ Docker/Server)."
+          icon={KeyRound}
+          onClick={() => setMethod("oauth_flow")}
+        />
+        <MethodCard
+          title="Đăng nhập Antigravity (Google)"
+          description="Đăng nhập bằng tài khoản Google để lấy token Antigravity (hỗ trợ Docker/Server)."
+          icon={KeyRound}
+          onClick={() => setMethod("antigravity_flow")}
+        />
+        <MethodCard
+          title="Lấy token tạo ảnh"
+          description="Mở chatgpt.com — đăng nhập → copy JSON → paste vào mục Session JSON ở trên."
+          icon={KeyRound}
+          onClick={() => window.open("https://chatgpt.com/api/auth/session", "_blank")}
+        />
+        <MethodCard
           title="Nhập từ máy chủ Sub2API"
           description="Vào trang cài đặt để cấu hình máy chủ Sub2API, sau đó chọn tài khoản OpenAI để nhập."
           icon={ServerCog}
@@ -453,14 +674,14 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
     <>
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <Button
-          className="h-10 rounded-xl bg-stone-950 px-4 text-white hover:bg-stone-800"
+          className="h-10 rounded-xl bg-stone-900 px-4 text-white hover:bg-stone-800"
           onClick={() => setOpen(true)}
           disabled={disabled}
         >
           <Upload className="size-4" />
           Nhập tài khoản
         </Button>
-        <DialogContent showCloseButton={false} className="rounded-2xl p-6">
+        <DialogContent showCloseButton={false} className="rounded-2xl p-6 max-h-[85vh] overflow-y-auto">
           <DialogHeader className="gap-2">
             <DialogTitle>
               {method === "menu"
@@ -469,7 +690,9 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
                   ? "Nhập Access Token"
                   : method === "session"
                     ? "Nhập Session JSON"
-                    : "Nhập CPA JSON"}
+                    : method === "antigravity_flow"
+                      ? "Đăng nhập Antigravity (Google)"
+                      : "Nhập CPA JSON"}
             </DialogTitle>
             <DialogDescription className="text-sm leading-6">
               {method === "menu"
@@ -478,7 +701,9 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
                   ? "Hỗ trợ dán thủ công hoặc nhập từ tệp TXT, mỗi dòng một Token."
                   : method === "session"
                     ? "Dán toàn bộ Session JSON, hệ thống sẽ tự động trích xuất accessToken."
-                    : "Hỗ trợ đọc nhiều tệp JSON cùng lúc và xác nhận số lượng trước khi gửi."}
+                    : method === "antigravity_flow"
+                      ? "Đăng nhập bằng tài khoản Google để lấy token Antigravity."
+                      : "Hỗ trợ đọc nhiều tệp JSON cùng lúc và xác nhận số lượng trước khi gửi."}
             </DialogDescription>
           </DialogHeader>
 
@@ -495,7 +720,7 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
             </Button>
             {method === "token" ? (
               <Button
-                className="h-10 rounded-xl bg-stone-950 px-5 text-white hover:bg-stone-800"
+                className="h-10 rounded-xl bg-stone-900 px-5 text-white hover:bg-stone-800"
                 onClick={() => void handleImportTokenText()}
                 disabled={footerDisabled}
               >
@@ -505,7 +730,7 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
             ) : null}
             {method === "session" ? (
               <Button
-                className="h-10 rounded-xl bg-stone-950 px-5 text-white hover:bg-stone-800"
+                className="h-10 rounded-xl bg-stone-900 px-5 text-white hover:bg-stone-800"
                 onClick={() => void handleImportSessionJson()}
                 disabled={footerDisabled}
               >
@@ -516,7 +741,7 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
             {method === "cpa" ? (
               <Button
                 className={cn(
-                  "h-10 rounded-xl bg-stone-950 px-5 text-white hover:bg-stone-800",
+                  "h-10 rounded-xl bg-stone-900 px-5 text-white hover:bg-stone-800",
                   !pendingCpaImport ? "hidden" : "",
                 )}
                 onClick={() => setConfirmOpen(true)}
@@ -552,7 +777,7 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
               Quay lại
             </Button>
             <Button
-              className="h-10 rounded-xl bg-stone-950 px-5 text-white hover:bg-stone-800"
+              className="h-10 rounded-xl bg-stone-900 px-5 text-white hover:bg-stone-800"
               onClick={() => void submitTokens(pendingCpaImport?.tokens ?? [], "Nhập CPA JSON hoàn tất")}
               disabled={isSubmitting || !pendingCpaImport}
             >

@@ -32,8 +32,8 @@ export function RegisterCard() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center rounded-xl border border-stone-200 bg-white/80 p-10">
-        <LoaderCircle className="size-5 animate-spin text-stone-400" />
+      <div className="flex items-center justify-center rounded-xl border border-stone-200 bg-stone-900/80 p-10">
+        <LoaderCircle className="size-5 animate-spin text-stone-500" />
       </div>
     );
   }
@@ -69,7 +69,7 @@ export function RegisterCard() {
                 <h2 className="text-lg font-semibold tracking-tight">Cấu hình đăng ký</h2>
               </div>
             </div>
-            <Button className="h-9 rounded-xl bg-stone-950 px-4 text-white hover:bg-stone-800" onClick={() => void save()} disabled={isSaving || config.enabled}>
+            <Button className="h-9 rounded-xl bg-stone-900 px-4 text-white hover:bg-stone-800" onClick={() => void save()} disabled={isSaving || config.enabled}>
               {isSaving ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
               Lưu cấu hình
             </Button>
@@ -153,7 +153,7 @@ export function RegisterCard() {
                         <Checkbox checked={Boolean(provider.enable)} onCheckedChange={(checked) => updateProvider(index, { enable: Boolean(checked) })} disabled={config.enabled} />
                         Kích hoạt
                       </label>
-                      <button type="button" className="rounded-lg p-2 text-stone-400 transition hover:bg-rose-50 hover:text-rose-500 disabled:opacity-50" onClick={() => deleteProvider(index)} disabled={config.enabled || providers.length <= 1} title="Xóa provider">
+                      <button type="button" className="rounded-lg p-2 text-stone-500 transition hover:bg-rose-50 hover:text-rose-500 disabled:opacity-50" onClick={() => deleteProvider(index)} disabled={config.enabled || providers.length <= 1} title="Xóa provider">
                         <Trash2 className="size-4" />
                       </button>
                     </div>
@@ -259,13 +259,13 @@ export function RegisterCard() {
                 ["Tài khoản bình thường", stats.current_available || 0],
               ].map(([label, value]) => (
                 <div key={label} className="border border-stone-200 bg-white/70 px-3 py-2">
-                  <div className="text-xs text-stone-400">{label}</div>
+                  <div className="text-xs text-stone-500">{label}</div>
                   <div className="mt-1 text-base font-semibold text-stone-800">{value}</div>
                 </div>
               ))}
             </div>
             <div className="grid grid-cols-3 gap-2">
-              <Button className="h-10 rounded-xl bg-stone-950 px-3 text-white hover:bg-stone-800" onClick={() => void toggle()} disabled={isSaving}>
+              <Button className="h-10 rounded-xl bg-stone-900 px-3 text-white hover:bg-stone-800" onClick={() => void toggle()} disabled={isSaving}>
                 {isSaving ? <LoaderCircle className="size-4 animate-spin" /> : config.enabled ? <Square className="size-4" /> : <Play className="size-4" />}
                 {config.enabled ? "Dừng" : "Bắt đầu"}
               </Button>
@@ -300,7 +300,7 @@ export function RegisterCard() {
               ) : (
                 logs.slice().reverse().map((item, index) => (
                   <div key={`${item.time}-${index}`} className={item.level === "red" ? "text-rose-600" : item.level === "green" ? "text-emerald-700" : item.level === "yellow" ? "text-amber-700" : "text-stone-700"}>
-                    <span className="text-stone-400">{new Date(item.time).toLocaleTimeString()}</span>
+                    <span className="text-stone-500">{new Date(item.time).toLocaleTimeString()}</span>
                     <span className="pl-2">{item.text}</span>
                   </div>
                 ))

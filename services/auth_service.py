@@ -35,7 +35,7 @@ class AuthService:
 
     @staticmethod
     def _default_name(role: object) -> str:
-        return "管理员密钥" if str(role or "").strip().lower() == "admin" else "普通用户"
+        return "Khóa quản trị" if str(role or "").strip().lower() == "admin" else "Người dùng"
 
     def _normalize_item(self, raw: object) -> dict[str, object] | None:
         if not isinstance(raw, dict):
@@ -105,13 +105,13 @@ class AuthService:
     def _build_key_hash_locked(self, raw_key: str, *, exclude_id: str = "") -> str:
         candidate = self._clean(raw_key)
         if not candidate:
-            raise ValueError("请输入新的专用密钥")
+            raise ValueError("Vui lòng nhập khóa mới")
         admin_key = self._clean(config.auth_key)
         if admin_key and hmac.compare_digest(candidate, admin_key):
-            raise ValueError("这个密钥和管理员密钥冲突了，请换一个新的密钥")
+            raise ValueError("这个密钥和Khóa quản trị冲突了，请换一个新的密钥")
         key_hash = _hash_key(candidate)
         if self._has_key_hash_locked(key_hash, exclude_id=exclude_id):
-            raise ValueError("这个专用密钥已经存在，请换一个新的密钥")
+            raise ValueError("Khóa này đã tồn tại, vui lòng dùng khóa khác")
         return key_hash
 
     def _has_name_locked(self, name: str, *, role: AuthRole | None = None, exclude_id: str = "") -> bool:
@@ -144,7 +144,7 @@ class AuthService:
         if not candidate:
             return self._build_default_name_locked(role, exclude_id=exclude_id)
         if self._has_name_locked(candidate, role=role, exclude_id=exclude_id):
-            raise ValueError("这个名称已经在使用中了，换一个更容易区分的名称吧")
+            raise ValueError("Tên này đã được dùng, hãy chọn tên khác")
         return candidate
 
     def create_key(self, *, role: AuthRole, name: str = "") -> tuple[dict[str, object], str]:

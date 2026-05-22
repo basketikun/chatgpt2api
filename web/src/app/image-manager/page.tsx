@@ -107,7 +107,7 @@ function ImageManagerContent() {
       setSelectedPaths((current) => current.filter((path) => data.items.some((item) => imageKey(item) === path)));
       setPage(1);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "加载图片失败");
+      toast.error(error instanceof Error ? error.message : "Không tải được ảnh");
     } finally {
       setIsLoading(false);
     }
@@ -131,9 +131,9 @@ function ImageManagerContent() {
       await deleteManagedImages({ paths: [deleteTarget.rel] });
       setItems((prev) => prev.filter((item) => item.rel !== deleteTarget.rel));
       setSelectedPaths((prev) => prev.filter((p) => p !== imageKey(deleteTarget)));
-      toast.success("图片已删除");
+      toast.success("Đã xóa ảnh");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "删除失败");
+      toast.error(error instanceof Error ? error.message : "Không xóa được");
     } finally {
       setIsDeleting(false);
       closeDialog();
@@ -147,7 +147,7 @@ function ImageManagerContent() {
       const tagsData = await fetchImageTags();
       setAllTags(tagsData.tags);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "设置标签失败");
+      toast.error(error instanceof Error ? error.message : "Không đặt được nhãn");
     }
   };
 
@@ -156,7 +156,7 @@ function ImageManagerContent() {
     if (!tag) return;
     const current = item.tags ?? [];
     if (current.includes(tag)) {
-      toast.error("标签已存在");
+      toast.error("Nhãn đã tồn tại");
       return;
     }
     void handleSetTags(item, [...current, tag]);
@@ -185,9 +185,9 @@ function ImageManagerContent() {
         ...item,
         tags: (item.tags ?? []).filter((t) => t !== tag),
       })));
-      toast.success(`标签"${tag}"已删除，影响 ${result.removed_from} 张图片`);
+      toast.success(`nhãn"${tag}"đã xóa，影响 ${result.removed_from}  ảnh`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "删除标签失败");
+      toast.error(error instanceof Error ? error.message : "Không xóa được nhãn");
     }
   };
 
@@ -222,12 +222,12 @@ function ImageManagerContent() {
     setIsDeleting(true);
     try {
       const data = await deleteManagedImages(deleteMode === "filtered" ? { start_date: startDate, end_date: endDate, all_matching: true } : { paths: selectedPaths });
-      toast.success(`已删除 ${data.removed} 张图片`);
+      toast.success(`đã xóa ${data.removed}  ảnh`);
       setDeleteMode(null);
       setSelectedPaths([]);
       await loadImages();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "删除图片失败");
+      toast.error(error instanceof Error ? error.message : "Không xóa được ảnh");
     } finally {
       setIsDeleting(false);
     }
@@ -239,9 +239,9 @@ function ImageManagerContent() {
     setIsDownloading(true);
     try {
       await downloadImages(paths);
-      toast.success(`已下载 ${paths.length} 张图片`);
+      toast.success(`đã tải ${paths.length}  ảnh`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "下载失败");
+      toast.error(error instanceof Error ? error.message : "Tải thất bại");
     } finally {
       setIsDownloading(false);
     }
@@ -260,20 +260,20 @@ function ImageManagerContent() {
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="space-y-1">
           <div className="text-xs font-semibold tracking-[0.18em] text-stone-500 uppercase">Images</div>
-          <h1 className="text-2xl font-semibold tracking-tight">图片管理</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Quản lý ảnh</h1>
         </div>
         <div className="flex flex-wrap gap-2">
           <DateRangeFilter startDate={startDate} endDate={endDate} onChange={(start, end) => { setStartDate(start); setEndDate(end); }} />
           <Button variant="outline" onClick={clearFilters} className="h-10 rounded-xl border-stone-200 bg-white px-4 text-stone-700">
-            清除筛选条件
+            Xóa bộ lọc
           </Button>
-          <Button onClick={() => void loadImages()} disabled={isLoading} className="h-10 rounded-xl bg-stone-950 px-4 text-white hover:bg-stone-800">
+          <Button onClick={() => void loadImages()} disabled={isLoading} className="h-10 rounded-xl bg-stone-900 px-4 text-white hover:bg-stone-800">
             {isLoading ? <LoaderCircle className="size-4 animate-spin" /> : <Search className="size-4" />}
-            查询
+            Tìm kiếm
           </Button>
           <Button variant="outline" onClick={() => setDeleteMode("filtered")} disabled={isDeleting || items.length === 0 || (!startDate && !endDate)} className="h-10 rounded-xl border-rose-200 bg-white px-4 text-rose-600 hover:bg-rose-50">
             <Trash2 className="size-4" />
-            删除匹配日期
+            Xóa theo ngày
           </Button>
         </div>
       </div>
@@ -282,7 +282,7 @@ function ImageManagerContent() {
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-medium text-stone-500">
             <Tag className="mr-1 inline size-3.5" />
-            标签筛选：
+            Lọc nhãn：
           </span>
           {allTags.map((tag) => {
             const isPressing = pressingTag === tag;
@@ -319,45 +319,45 @@ function ImageManagerContent() {
             <button type="button" onClick={() => setSelectedTags([])}>
               <Badge variant="secondary" className="cursor-pointer rounded-md">
                 <X className="mr-0.5 size-3" />
-                清除
+                Xóa
               </Badge>
             </button>
           ) : null}
         </div>
       ) : null}
 
-      <Card className="rounded-2xl border-white/80 bg-white/90 shadow-sm">
+      <Card className="rounded-2xl border-stone-200 bg-white/90 shadow-sm">
         <CardContent className="p-0">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-100 px-5 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-200 px-5 py-4">
             <div className="flex flex-wrap items-center gap-3 text-sm text-stone-600">
               <ImageIcon className="size-4" />
-              共 {filteredItems.length} 张
-              {selectedTags.length > 0 ? <span className="text-stone-400">（筛选自 {items.length} 张）</span> : null}
+              共 {filteredItems.length} 
+              {selectedTags.length > 0 ? <span className="text-stone-500">（lọc từ {items.length} ）</span> : null}
               <label className="flex items-center gap-2">
                 <Checkbox checked={currentPageSelected} onCheckedChange={(checked) => togglePaths(currentRows.map(imageKey), Boolean(checked))} />
-                本页全选
+                Chọn cả trang
               </label>
               <label className="flex items-center gap-2">
                 <Checkbox checked={allSelected} onCheckedChange={(checked) => togglePaths(filteredItems.map(imageKey), Boolean(checked))} />
-                全选结果
+                Chọn tất cả
               </label>
-              {selectedPaths.length > 0 ? <span>已选 {selectedPaths.length} 张</span> : null}
+              {selectedPaths.length > 0 ? <span>Đã chọn {selectedPaths.length} </span> : null}
             </div>
             <div className="flex items-center gap-2">
               <Button variant="ghost" className="h-8 rounded-lg px-3 text-stone-500" onClick={() => void loadImages()} disabled={isLoading}>
                 <RefreshCw className={`size-4 ${isLoading ? "animate-spin" : ""}`} />
                 刷新
               </Button>
-              <button type="button" className="text-sm text-stone-500 hover:text-stone-900 disabled:text-stone-300" onClick={() => setSelectedPaths([])} disabled={selectedPaths.length === 0 || isDeleting}>
-                取消选择
+              <button type="button" className="text-sm text-stone-500 hover:text-stone-900 disabled:text-stone-700" onClick={() => setSelectedPaths([])} disabled={selectedPaths.length === 0 || isDeleting}>
+                Bỏ chọn
               </button>
-              <Button variant="outline" className="h-8 rounded-lg border-stone-200 bg-white px-3 text-stone-600 hover:bg-stone-50" onClick={() => void handleBatchDownload()} disabled={selectedPaths.length === 0 || isDownloading || isDeleting}>
+              <Button variant="outline" className="h-8 rounded-lg border-stone-200 bg-white px-3 text-stone-600 hover:bg-stone-800" onClick={() => void handleBatchDownload()} disabled={selectedPaths.length === 0 || isDownloading || isDeleting}>
                 {isDownloading ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}
-                下载所选
+                Tải đã chọn
               </Button>
               <Button variant="outline" className="h-8 rounded-lg border-rose-200 bg-white px-3 text-rose-600 hover:bg-rose-50" onClick={() => setDeleteMode("selected")} disabled={selectedPaths.length === 0 || isDeleting}>
                 <Trash2 className="size-4" />
-                删除所选
+                Xóa đã chọn
               </Button>
             </div>
           </div>
@@ -365,7 +365,7 @@ function ImageManagerContent() {
             {currentRows.map((item) => {
               const imageIndex = filteredItems.findIndex((row) => row.url === item.url);
               return (
-              <div key={item.rel} className="group border-r border-b border-stone-100 p-4 transition hover:bg-stone-50">
+              <div key={item.rel} className="group border-r border-b border-stone-200 p-4 transition hover:bg-stone-800">
                 <div className="relative">
                   <button
                     type="button"
@@ -392,7 +392,7 @@ function ImageManagerContent() {
                   <button
                     type="button"
                     className="absolute top-2 right-2 z-10 inline-flex size-7 items-center justify-center rounded-full bg-black/50 text-white opacity-100 transition hover:bg-red-600 sm:opacity-0 sm:group-hover:opacity-100"
-                    title="删除图片"
+                    title="Xóa ảnh"
                     onClick={(e) => {
                       e.stopPropagation();
                       openDeleteDialog(item);
@@ -411,19 +411,19 @@ function ImageManagerContent() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="size-8 rounded-lg text-stone-400 hover:bg-stone-100 hover:text-stone-700"
+                        className="size-8 rounded-lg text-stone-500 hover:bg-stone-200 hover:text-stone-700"
                         onClick={() => void handleSingleDownload(item)}
-                        title="下载图片"
+                        title="Tải ảnh"
                       >
                         <Download className="size-4" />
                       </Button>
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="size-8 rounded-lg text-stone-400 hover:bg-stone-100 hover:text-stone-700"
+                        className="size-8 rounded-lg text-stone-500 hover:bg-stone-200 hover:text-stone-700"
                         onClick={() => {
                           void navigator.clipboard.writeText(item.url);
-                          toast.success("图片地址已复制");
+                          toast.success("Đã sao chép địa chỉ ảnh");
                         }}
                       >
                         <Copy className="size-4" />
@@ -452,20 +452,20 @@ function ImageManagerContent() {
                       <PopoverTrigger asChild>
                         <button
                           type="button"
-                          className="inline-flex size-5 items-center justify-center rounded-full border border-dashed border-stone-300 text-stone-400 hover:border-stone-500 hover:text-stone-600"
-                          title="添加标签"
+                          className="inline-flex size-5 items-center justify-center rounded-full border border-dashed border-stone-300 text-stone-500 hover:border-stone-500 hover:text-stone-600"
+                          title="thêmnhãn"
                         >
                           <Plus className="size-3" />
                         </button>
                       </PopoverTrigger>
                       <PopoverContent align="start" className="w-56 p-2">
                         <div className="space-y-2">
-                          <div className="text-xs font-medium text-stone-500">添加标签</div>
+                          <div className="text-xs font-medium text-stone-500">thêmnhãn</div>
                           <div className="flex gap-1">
                             <Input
                               value={tagInput}
                               onChange={(e) => setTagInput(e.target.value)}
-                              placeholder="输入标签名"
+                              placeholder="Nhập tên nhãn"
                               className="h-8 text-xs"
                               onKeyDown={(e) => {
                                 if (e.key === "Enter") {
@@ -484,7 +484,7 @@ function ImageManagerContent() {
                             </Button>
                           </div>
                           {allTags.filter((t) => !(item.tags ?? []).includes(t)).length > 0 ? (
-                            <div className="flex flex-wrap gap-1 border-t border-stone-100 pt-2">
+                            <div className="flex flex-wrap gap-1 border-t border-stone-200 pt-2">
                               {allTags.filter((t) => !(item.tags ?? []).includes(t)).map((tag) => (
                                 <button
                                   key={tag}
@@ -494,7 +494,7 @@ function ImageManagerContent() {
                                     setTagEditTarget(null);
                                   }}
                                 >
-                                  <Badge variant="outline" className="cursor-pointer rounded-md text-[10px] hover:bg-stone-100">
+                                  <Badge variant="outline" className="cursor-pointer rounded-md text-[10px] hover:bg-stone-200">
                                     {tag}
                                   </Badge>
                                 </button>
@@ -509,8 +509,8 @@ function ImageManagerContent() {
               </div>
             )})}
           </div>
-          <div className="flex items-center justify-end gap-2 border-t border-stone-100 px-4 py-3 text-sm text-stone-500">
-            <span>第 {safePage} / {pageCount} 页，共 {filteredItems.length} 张</span>
+          <div className="flex items-center justify-end gap-2 border-t border-stone-200 px-4 py-3 text-sm text-stone-500">
+            <span>第 {safePage} / {pageCount} 页，共 {filteredItems.length} </span>
             <Button variant="outline" size="icon" className="size-9 rounded-lg border-stone-200 bg-white" disabled={safePage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
               <ChevronLeft className="size-4" />
             </Button>
@@ -518,20 +518,20 @@ function ImageManagerContent() {
               <ChevronRight className="size-4" />
             </Button>
           </div>
-          {!isLoading && filteredItems.length === 0 ? <div className="px-6 py-14 text-center text-sm text-stone-500">没有找到图片</div> : null}
+          {!isLoading && filteredItems.length === 0 ? <div className="px-6 py-14 text-center text-sm text-stone-500">Không tìm thấy ảnh nào</div> : null}
         </CardContent>
       </Card>
 
       <Dialog open={dialogVisible} onOpenChange={(open) => { if (!open) closeDialog(); }}>
         <DialogContent className="max-w-sm overflow-hidden rounded-2xl">
           <DialogHeader>
-            <DialogTitle className="pr-8">确认删除</DialogTitle>
+            <DialogTitle className="pr-8">Xác nhận xóa</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-stone-600">
-            确定要删除这张图片吗？此操作不可恢复。
+            Xác nhận xóa ảnh này? Thao tác này không thể hoàn tác.
           </p>
           {deleteTarget ? (
-            <div className="flex items-center gap-3 overflow-hidden rounded-xl border border-stone-200 bg-stone-50 p-3">
+            <div className="flex items-center gap-3 overflow-hidden rounded-xl border border-stone-200 bg-stone-100 p-3">
               <img
                 src={deleteTarget.thumbnail_url || deleteTarget.url}
                 alt=""
@@ -547,11 +547,11 @@ function ImageManagerContent() {
           ) : null}
           <DialogFooter>
             <Button variant="outline" onClick={closeDialog} className="rounded-xl">
-              取消
+              Hủy
             </Button>
             <Button variant="destructive" onClick={() => void handleDelete()} disabled={isDeleting} className="rounded-xl">
               {isDeleting ? <LoaderCircle className="mr-1 size-4 animate-spin" /> : <Trash2 className="mr-1 size-4" />}
-              删除
+              Xóa
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -567,18 +567,18 @@ function ImageManagerContent() {
       <Dialog open={Boolean(deleteMode)} onOpenChange={(open) => (!open ? setDeleteMode(null) : null)}>
         <DialogContent showCloseButton={false} className="rounded-2xl p-6">
           <DialogHeader className="gap-2">
-            <DialogTitle>{deleteMode === "filtered" ? "删除匹配日期的图片" : "删除所选图片"}</DialogTitle>
+            <DialogTitle>{deleteMode === "filtered" ? "Xóa ảnh theo ngày" : "Xóa ảnh đã chọn"}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-stone-600">
-            确认删除 {selectedCount} 张图片吗？删除后无法恢复。
+            Xác nhận xóa {selectedCount}   ảnh？Xóakhông thể hoàn tác。
           </p>
           <DialogFooter>
             <Button variant="outline" className="rounded-xl" onClick={() => setDeleteMode(null)} disabled={isDeleting}>
-              取消
+              Hủy
             </Button>
             <Button className="rounded-xl bg-rose-600 text-white hover:bg-rose-700" onClick={() => void confirmDelete()} disabled={isDeleting || selectedCount === 0}>
               {isDeleting ? <LoaderCircle className="size-4 animate-spin" /> : null}
-              确认删除
+              Xác nhận xóa
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -586,14 +586,14 @@ function ImageManagerContent() {
       <Dialog open={Boolean(tagDeleteTarget)} onOpenChange={(open) => { if (!open) setTagDeleteTarget(null); }}>
         <DialogContent className="max-w-sm rounded-2xl">
           <DialogHeader>
-            <DialogTitle>删除标签</DialogTitle>
+            <DialogTitle>Xóanhãn</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-stone-600">
-            确定要删除标签 <span className="font-semibold">"{tagDeleteTarget}"</span> 吗？将从所有图片中移除该标签。
+            确定要Xóanhãn <span className="font-semibold">"{tagDeleteTarget}"</span>? Nhãn sẽ bị xóa khỏi tất cả ảnh.
           </p>
           <DialogFooter>
             <Button variant="outline" className="rounded-xl" onClick={() => setTagDeleteTarget(null)}>
-              取消
+              Hủy
             </Button>
             <Button
               variant="destructive"
@@ -603,7 +603,7 @@ function ImageManagerContent() {
                 setTagDeleteTarget(null);
               }}
             >
-              确认删除
+              Xác nhận xóa
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -615,7 +615,7 @@ function ImageManagerContent() {
 export default function ImageManagerPage() {
   const { isCheckingAuth, session } = useAuthGuard(["admin"]);
   if (isCheckingAuth || !session || session.role !== "admin") {
-    return <div className="flex min-h-[40vh] items-center justify-center"><LoaderCircle className="size-5 animate-spin text-stone-400" /></div>;
+    return <div className="flex min-h-[40vh] items-center justify-center"><LoaderCircle className="size-5 animate-spin text-stone-500" /></div>;
   }
   return <ImageManagerContent />;
 }

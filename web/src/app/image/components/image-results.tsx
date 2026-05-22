@@ -130,7 +130,7 @@ export function ImageResults({
             {!turn.promptDeleted ? (
               <div className="flex justify-end">
                 <div className="max-w-[90%] px-1 py-1 text-[14px] leading-6 text-stone-900 sm:max-w-[82%] sm:text-[15px] sm:leading-7">
-                  <div className="mb-1.5 flex flex-wrap justify-end gap-2 text-[11px] text-stone-400 sm:mb-2">
+                  <div className="mb-1.5 flex flex-wrap justify-end gap-2 text-[11px] text-stone-500 sm:mb-2">
                     <span>Lượt {turnIndex + 1}</span>
                     <span>
                       {turn.mode === "edit" ? "Chỉnh sửa ảnh" : "Tạo ảnh từ văn bản"}
@@ -150,7 +150,7 @@ export function ImageResults({
                     <button
                       type="button"
                       onClick={() => onDeletePrompt(selectedConversation.id, turn.id)}
-                      className="inline-flex size-6 items-center justify-center rounded-full text-stone-300 transition hover:bg-rose-50 hover:text-rose-500"
+                      className="inline-flex size-6 items-center justify-center rounded-full text-stone-700 transition hover:bg-rose-50 hover:text-rose-500"
                       aria-label="Xóa nhật ký prompt"
                     >
                       <Trash2 className="size-3" />
@@ -177,14 +177,14 @@ export function ImageResults({
                             >
                               <img
                                 src={image.dataUrl}
-                                alt={image.name || `参考图 ${index + 1}`}
+                                alt={image.name || `ảnh tham khảo ${index + 1}`}
                                 className="absolute inset-0 h-full w-full object-cover transition duration-200 group-hover:scale-[1.02]"
                               />
                             </button>
                             <Button
                               variant="outline"
                               size="sm"
-                              className="rounded-full border-stone-200 bg-white text-stone-700 hover:bg-stone-50"
+                              className="rounded-full border-stone-200 bg-white text-stone-700 hover:bg-stone-800"
                               onClick={() => onContinueEdit(selectedConversation.id, image)}
                             >
                               <Sparkles className="size-4" />
@@ -239,13 +239,13 @@ export function ImageResults({
                             <div className="flex flex-col gap-1 px-0.5 py-1 text-[10px] sm:flex-row sm:items-center sm:justify-between sm:gap-2 sm:px-3 sm:py-3 sm:text-xs">
                               <div className="min-w-0 text-stone-500">
                                 <span>Kết quả {index + 1}</span>
-                                {imageMeta ? <span className="block text-stone-400 sm:ml-2 sm:inline">{imageMeta}</span> : null}
+                                {imageMeta ? <span className="block text-stone-500 sm:ml-2 sm:inline">{imageMeta}</span> : null}
                               </div>
                               <div className="flex items-center gap-1.5">
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  className="h-7 w-7 rounded-full border-stone-200 bg-white px-0 text-[10px] text-stone-700 hover:bg-stone-50 sm:h-8 sm:w-fit sm:px-3 sm:text-xs"
+                                  className="h-7 w-7 rounded-full border-stone-200 bg-white px-0 text-[10px] text-stone-700 hover:bg-stone-800 sm:h-8 sm:w-fit sm:px-3 sm:text-xs"
                                   onClick={() => onContinueEdit(selectedConversation.id, image)}
                                   aria-label="Thêm vào chỉnh sửa"
                                 >
@@ -255,7 +255,7 @@ export function ImageResults({
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  className="h-7 w-7 rounded-full border-stone-200 bg-white px-0 text-[10px] text-stone-700 hover:bg-stone-50 sm:h-8 sm:w-fit sm:px-3 sm:text-xs"
+                                  className="h-7 w-7 rounded-full border-stone-200 bg-white px-0 text-[10px] text-stone-700 hover:bg-stone-800 sm:h-8 sm:w-fit sm:px-3 sm:text-xs"
                                   onClick={() => void downloadStoredImage(image, index)}
                                   aria-label="Tải xuống"
                                 >
@@ -343,7 +343,7 @@ export function ImageResults({
                     <button
                       type="button"
                       onClick={() => onDeleteResults(selectedConversation.id, turn.id)}
-                      className="inline-flex size-6 items-center justify-center rounded-full text-stone-300 transition hover:bg-rose-50 hover:text-rose-500"
+                      className="inline-flex size-6 items-center justify-center rounded-full text-stone-700 transition hover:bg-rose-50 hover:text-rose-500"
                       aria-label="Xóa kết quả tạo ảnh"
                     >
                       <Trash2 className="size-3" />

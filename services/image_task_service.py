@@ -238,7 +238,7 @@ class ImageTaskService:
                 mode,
                 model,
                 started,
-                "调用完成",
+                "Gọi thành công",
                 request_preview=request_text(payload.get("prompt")),
                 urls=_collect_image_urls(data),
             )
@@ -250,7 +250,7 @@ class ImageTaskService:
                 mode,
                 model,
                 started,
-                "调用失败",
+                "Gọi thất bại",
                 request_preview=request_text(payload.get("prompt")),
                 status="failed",
                 error=error_message,

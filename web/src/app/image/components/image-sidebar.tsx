@@ -67,7 +67,7 @@ export function ImageSidebar({
       <div className="flex h-full min-h-0 flex-col gap-2 py-1 sm:gap-3 sm:py-2">
         {!hideActionButtons && (
           <div className="flex items-center gap-2">
-            <Button className="h-10 flex-1 rounded-xl bg-stone-950 text-white hover:bg-stone-800" onClick={onCreateDraft}>
+            <Button className="h-10 flex-1 rounded-xl bg-stone-900 text-white hover:bg-stone-800" onClick={onCreateDraft}>
               <MessageSquarePlus className="size-4" />
               Hội thoại mới
             </Button>
@@ -133,7 +133,7 @@ export function ImageSidebar({
                         <span className="truncate">{conversation.title}</span>
                       )}
                     </div>
-                    <div className={cn("mt-1 text-xs", active ? "text-stone-500" : "text-stone-400")}>
+                    <div className={cn("mt-1 text-xs", active ? "text-stone-500" : "text-stone-500")}>
                       {conversation.turns.length} lượt · {formatConversationTime(conversation.updatedAt)}
                     </div>
                     {stats.running > 0 || stats.queued > 0 ? (
@@ -151,7 +151,7 @@ export function ImageSidebar({
                     <button
                       type="button"
                       onClick={(e) => startRename(conversation, e)}
-                      className="inline-flex size-7 items-center justify-center rounded-md text-stone-400 hover:bg-stone-100 hover:text-stone-600"
+                      className="inline-flex size-7 items-center justify-center rounded-md text-stone-500 hover:bg-stone-200 hover:text-stone-600"
                       aria-label="Đổi tên hội thoại"
                     >
                       <Pencil className="size-3.5" />
@@ -159,7 +159,7 @@ export function ImageSidebar({
                     <button
                       type="button"
                       onClick={() => void onDeleteConversation(conversation.id)}
-                      className="inline-flex size-7 items-center justify-center rounded-md text-stone-400 hover:bg-stone-100 hover:text-rose-500"
+                      className="inline-flex size-7 items-center justify-center rounded-md text-stone-500 hover:bg-stone-200 hover:text-rose-500"
                       aria-label="Xóa hội thoại"
                     >
                       <Trash2 className="size-4" />

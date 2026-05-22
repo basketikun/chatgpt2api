@@ -30,7 +30,7 @@ export function DateRangeFilter({ startDate, endDate, onChange }: DateRangeFilte
       <Popover>
         <PopoverTrigger asChild>
           <Button variant="outline" className="h-10 justify-start rounded-xl border-stone-200 bg-white px-3 font-normal text-stone-700">
-            <CalendarIcon className="size-4 text-stone-400" />
+            <CalendarIcon className="size-4 text-stone-500" />
             {label}
           </Button>
         </PopoverTrigger>

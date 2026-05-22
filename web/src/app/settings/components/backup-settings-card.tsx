@@ -98,9 +98,9 @@ export function BackupSettingsCard() {
 
   if (isLoadingConfig) {
     return (
-      <Card className="rounded-2xl border-white/80 bg-white/90 shadow-sm">
+      <Card className="rounded-2xl card-3d card-tint-amber">
         <CardContent className="flex items-center justify-center p-10">
-          <LoaderCircle className="size-5 animate-spin text-stone-400" />
+          <LoaderCircle className="size-5 animate-spin text-stone-500" />
         </CardContent>
       </Card>
     );
@@ -165,7 +165,7 @@ export function BackupSettingsCard() {
 
   return (
     <>
-      <Card className="rounded-2xl border-white/80 bg-white/90 shadow-sm">
+      <Card className="rounded-2xl card-3d card-tint-amber">
         <CardContent className="space-y-6 p-6">
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-center gap-3">
@@ -184,7 +184,7 @@ export function BackupSettingsCard() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm leading-6 text-stone-600">
+          <div className="rounded-xl border border-stone-200 bg-stone-100 px-4 py-3 text-sm leading-6 text-stone-600">
             Tài khoản và mã khóa người dùng sẽ xuất bản chụp logic từ backend lưu trữ hiện tại, không phụ thuộc vào lớp dưới cùng là `json`, `sqlite`, `postgres` hay `git`. Thư mục hình ảnh không được sao lưu theo mặc định để tránh kích thước bản sao lưu quá lớn.
           </div>
 
@@ -207,6 +207,11 @@ export function BackupSettingsCard() {
           <div className="space-y-2">
             <label className="text-sm text-stone-700">Cloudflare Account ID</label>
             <Input value={String(backup.account_id || "")} onChange={(event) => setBackupField("account_id", event.target.value)} className="h-10 rounded-xl border-stone-200 bg-white" />
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm text-stone-700">R2 Endpoint (S3 API)</label>
+            <Input value={String(backup.endpoint || "")} onChange={(event) => setBackupField("endpoint", event.target.value)} placeholder="https://{id}.r2.cloudflarestorage.com" className="h-10 rounded-xl border-stone-200 bg-white" />
+            <p className="text-xs text-stone-500">Lấy từ R2 bucket → Settings → S3 API. Dùng cho cả backup và RAG online.</p>
           </div>
           <div className="space-y-2">
             <label className="text-sm text-stone-700">Tên Bucket</label>
@@ -263,7 +268,7 @@ export function BackupSettingsCard() {
           </div>
           </div>
 
-          <div className="grid gap-3 rounded-xl border border-stone-200 bg-stone-50 px-4 py-4 text-sm text-stone-600 md:grid-cols-3">
+          <div className="grid gap-3 rounded-xl border border-stone-200 bg-stone-100 px-4 py-4 text-sm text-stone-600 md:grid-cols-3">
           <div>
             <div className="text-xs text-stone-500">Bắt đầu gần nhất</div>
             <div className="mt-1 font-medium text-stone-800">{formatDateTime(backupState?.last_started_at)}</div>
@@ -297,7 +302,7 @@ export function BackupSettingsCard() {
             {isRunningBackup || backupState?.running ? <LoaderCircle className="size-4 animate-spin" /> : <Play className="size-4" />}
             Sao lưu ngay
           </Button>
-          <Button className="h-9 rounded-xl bg-stone-950 px-4 text-white hover:bg-stone-800" onClick={() => void saveConfig()} disabled={isSavingConfig}>
+          <Button className="h-9 rounded-xl bg-stone-900 px-4 text-white hover:bg-stone-800" onClick={() => void saveConfig()} disabled={isSavingConfig}>
             {isSavingConfig ? <LoaderCircle className="size-4 animate-spin" /> : <CloudUpload className="size-4" />}
             Lưu cấu hình
           </Button>
@@ -313,10 +318,10 @@ export function BackupSettingsCard() {
 
           {isLoadingBackups ? (
             <div className="flex items-center justify-center py-10">
-              <LoaderCircle className="size-5 animate-spin text-stone-400" />
+              <LoaderCircle className="size-5 animate-spin text-stone-500" />
             </div>
           ) : backups.length === 0 ? (
-            <div className="rounded-xl bg-stone-50 px-6 py-10 text-center text-sm text-stone-500">
+            <div className="rounded-xl bg-stone-100 px-6 py-10 text-center text-sm text-stone-500">
               Chưa có bản sao lưu từ xa. Lưu cấu hình và thực hiện sao lưu thủ công một lần để nó xuất hiện ở đây.
             </div>
           ) : (
@@ -372,22 +377,22 @@ export function BackupSettingsCard() {
       </Card>
 
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="flex max-h-[85vh] max-w-3xl flex-col overflow-hidden rounded-2xl border-white/80 bg-white">
+        <DialogContent className="flex max-h-[85vh] max-w-3xl flex-col overflow-hidden rounded-2xl border-stone-200 bg-white">
           <DialogHeader className="shrink-0 border-b border-stone-200 pb-3">
             <DialogTitle>Chi tiết sao lưu</DialogTitle>
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
             {detailLoading ? (
               <div className="flex items-center justify-center py-16">
-                <LoaderCircle className="size-5 animate-spin text-stone-400" />
+                <LoaderCircle className="size-5 animate-spin text-stone-500" />
               </div>
             ) : !detail ? (
-              <div className="rounded-xl bg-stone-50 px-6 py-10 text-center text-sm text-stone-500">
+              <div className="rounded-xl bg-stone-100 px-6 py-10 text-center text-sm text-stone-500">
                 Tạm thời không thể đọc chi tiết bản sao lưu; nếu đây là bản sao lưu được mã hóa, vui lòng xác nhận rằng bạn đã điền đúng mật khẩu mã hóa và lưu cấu hình trước.
               </div>
             ) : (
               <>
-                <div className="grid gap-3 rounded-xl border border-stone-200 bg-stone-50 px-4 py-4 text-sm text-stone-600 md:grid-cols-2">
+                <div className="grid gap-3 rounded-xl border border-stone-200 bg-stone-100 px-4 py-4 text-sm text-stone-600 md:grid-cols-2">
                   <div>
                     <div className="text-xs text-stone-500">Tên đối tượng</div>
                     <div className="mt-1 break-all font-medium text-stone-800">{detail.name}</div>

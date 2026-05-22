@@ -177,29 +177,147 @@ def message_text(content: Any) -> str:
 # ChatGPT backend limit is ~100 KB; we use 80 KB to be safe.
 _MAX_PAYLOAD_BYTES = 80_000
 
+# RTK-inspired compression thresholds
+_RTK_TOOL_RESULT_MAX = 600   # Keep first+last chars of tool results
+_RTK_ASSISTANT_DEDUP = True   # Collapse repeated assistant content
+_RTK_SYSTEM_ENTITY_TRIM = 0.7  # Keep 70% of system entity list when truncating
+
+
+def _rtk_compress_tool_result(content: str) -> str:
+    """RTK-style: compress large tool call results (keep head + tail)."""
+    if len(content) <= _RTK_TOOL_RESULT_MAX:
+        return content
+    head = content[:_RTK_TOOL_RESULT_MAX // 2]
+    tail = content[-(_RTK_TOOL_RESULT_MAX // 2):]
+    return f"{head}\n\n[... {len(content) - _RTK_TOOL_RESULT_MAX} chars compressed ...]\n\n{tail}"
+
+
+def _has_image_content(msg: dict[str, Any]) -> bool:
+    """Check if a message contains images (should never be dropped)."""
+    content = msg.get("content")
+    if isinstance(content, list):
+        for part in content:
+            if isinstance(part, dict) and part.get("type") in ("image", "image_url", "input_image"):
+                return True
+    return False
+
+
+def _rtk_compress_messages(messages: list[dict[str, Any]], max_bytes: int = _MAX_PAYLOAD_BYTES) -> list[dict[str, Any]]:
+    """RTK-inspired smart message compression.
+
+    Strategies (ordered by priority):
+    0. Deduplicate consecutive identical tool results (HA sends duplicates)
+    1. Compress tool result content (keep head+tail, not just truncate)
+    2. Deduplicate repeated assistant messages
+    3. Drop oldest non-system messages
+    4. Truncate system message (keep structure)
+    5. Compress last user message (head+tail)
+    """
+    import copy
+
+    # Step 0: Deduplicate consecutive tool messages by tool_call_id (HA sends twice)
+    seen_tool_ids = set()
+    deduped = []
+    for msg in messages:
+        tid = msg.get("tool_call_id") or ""
+        if tid and msg.get("role") in ("tool", "tool_result"):
+            if tid in seen_tool_ids:
+                continue
+            seen_tool_ids.add(tid)
+        deduped.append(msg)
+    messages = deduped
+
+    payload = json.dumps(messages, ensure_ascii=False, default=str)
+    if len(payload.encode("utf-8")) <= max_bytes:
+        return messages
+
+    # Deep copy to avoid mutating original
+    msgs = copy.deepcopy(messages)
+
+    # Step 1: Compress large tool results (RTK-style: keep head+tail)
+    for msg in msgs:
+        if msg.get("role") == "tool" and isinstance(msg.get("content"), str):
+            msg["content"] = _rtk_compress_tool_result(msg["content"])
+        # Also compress large user messages with data dumps
+        if msg.get("role") == "user" and isinstance(msg.get("content"), str):
+            content = msg["content"]
+            if len(content) > 3000:
+                head = content[:1000]
+                tail = content[-1000:]
+                msg["content"] = f"{head}\n\n[... {len(content) - 2000} chars compressed ...]\n\n{tail}"
+
+    payload = json.dumps(msgs, ensure_ascii=False, default=str)
+    if len(payload.encode("utf-8")) <= max_bytes:
+        return msgs
+
+    # Step 2: Deduplicate repeated assistant messages
+    if _RTK_ASSISTANT_DEDUP:
+        seen: dict[str, int] = {}
+        for i, msg in enumerate(msgs):
+            if msg.get("role") == "assistant" and isinstance(msg.get("content"), str):
+                key = msg["content"][:80]
+                if key in seen:
+                    msgs[seen[key]]["content"] += f" [repeated {i - seen[key]}x]"
+                    msg["content"] = "[see above]"
+                else:
+                    seen[key] = i
+        # Remove placeholder messages
+        msgs = [m for m in msgs if not (m.get("role") == "assistant" and m.get("content") == "[see above]")]
+
+    payload = json.dumps(msgs, ensure_ascii=False, default=str)
+    if len(payload.encode("utf-8")) <= max_bytes:
+        return msgs
+
+    # Step 3: Drop oldest non-system messages (preserve messages with images)
+    system_msgs = [m for m in msgs if m.get("role") == "system"]
+    other_msgs = [m for m in msgs if m.get("role") != "system"]
+    # Separate image-containing messages — never drop them
+    img_msgs = [m for m in other_msgs if _has_image_content(m)]
+    other_msgs = [m for m in other_msgs if not _has_image_content(m)]
+    while other_msgs:
+        test_payload = json.dumps(system_msgs + img_msgs + other_msgs, ensure_ascii=False, default=str)
+        if len(test_payload.encode("utf-8")) <= max_bytes:
+            break
+        other_msgs.pop(0)
+    other_msgs = img_msgs + other_msgs  # Image messages first
+
+    # Step 4: Truncate system message (keep first 70% + last 30%)
+    test_payload = json.dumps(system_msgs + other_msgs, ensure_ascii=False, default=str)
+    if len(test_payload.encode("utf-8")) > max_bytes and system_msgs:
+        last_sys = system_msgs[-1]
+        if isinstance(last_sys.get("content"), str):
+            content = last_sys["content"]
+            excess = len(test_payload.encode("utf-8")) - max_bytes
+            keep = max(500, int(len(content) * _RTK_SYSTEM_ENTITY_TRIM))
+            allowed = max(300, len(content) - excess - 200)
+            if len(content) > min(keep, allowed):
+                cutoff = min(keep, allowed)
+                last_sys["content"] = content[:cutoff] + "\n\n[... System entities truncated ...]"
+
+    # Step 5: Compress last user message (head+tail)
+    test_payload = json.dumps(system_msgs + other_msgs, ensure_ascii=False, default=str)
+    if len(test_payload.encode("utf-8")) > max_bytes and other_msgs:
+        last_user = other_msgs[-1]
+        if last_user.get("role") == "user" and isinstance(last_user.get("content"), str):
+            content = last_user["content"]
+            excess = len(test_payload.encode("utf-8")) - max_bytes
+            allowed = max(300, len(content) - excess - 100)
+            if len(content) > allowed:
+                half = max(150, allowed // 2)
+                last_user["content"] = content[:half] + "\n\n[... truncated ...]\n\n" + content[-half:]
+
+    return system_msgs + other_msgs
+
 
 def _truncate_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Drop oldest non-system messages when the serialized payload exceeds the size limit.
-
-    This prevents HTTP 413 (Request Entity Too Large) errors from the ChatGPT backend.
-    Home Assistant accumulates the entire conversation history (including tool call results)
-    across multiple iterations, which can easily exceed the limit.
-
-    Strategy:
-    1. Keep all system messages (they define behavior and tools).
-    2. Drop oldest non-system messages until under the threshold.
-    3. If still over limit, truncate the system message (usually HA entity list).
-    4. If still over limit, truncate the last user message content as a last resort.
-    """
+    """Drop oldest non-system messages when the serialized payload exceeds the size limit."""
     payload = json.dumps(messages, ensure_ascii=False, default=str)
     if len(payload.encode("utf-8")) <= _MAX_PAYLOAD_BYTES:
         return messages
 
-    # Separate system messages from the rest
     system_msgs = [m for m in messages if m.get("role") == "system"]
     other_msgs = [m for m in messages if m.get("role") != "system"]
 
-    # Drop oldest non-system messages until under limit
     while other_msgs:
         test_payload = json.dumps(system_msgs + other_msgs, ensure_ascii=False, default=str)
         if len(test_payload.encode("utf-8")) <= _MAX_PAYLOAD_BYTES:
@@ -207,20 +325,15 @@ def _truncate_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         other_msgs.pop(0)
 
     test_payload = json.dumps(system_msgs + other_msgs, ensure_ascii=False, default=str)
+    if len(test_payload.encode("utf-8")) > _MAX_PAYLOAD_BYTES and system_msgs:
+        last_sys = system_msgs[-1]
+        if isinstance(last_sys.get("content"), str):
+            content = last_sys["content"]
+            excess = len(test_payload.encode("utf-8")) - _MAX_PAYLOAD_BYTES
+            allowed_len = max(500, len(content) - excess - 200)
+            if len(content) > allowed_len:
+                last_sys["content"] = content[:allowed_len] + "\n\n[System prompt truncated due to size limits]"
 
-    # If still over limit, truncate the last system message (typically the HA entity list)
-    if len(test_payload.encode("utf-8")) > _MAX_PAYLOAD_BYTES:
-        if system_msgs:
-            last_sys = system_msgs[-1]
-            if isinstance(last_sys.get("content"), str):
-                content = last_sys["content"]
-                excess = len(test_payload.encode("utf-8")) - _MAX_PAYLOAD_BYTES
-                allowed_len = max(500, len(content) - excess - 200)
-                if len(content) > allowed_len:
-                    last_sys["content"] = content[:allowed_len] + "\n\n[System prompt truncated due to size limits]"
-                    test_payload = json.dumps(system_msgs + other_msgs, ensure_ascii=False, default=str)
-
-    # If still over limit, truncate last user content
     if other_msgs and len(test_payload.encode("utf-8")) > _MAX_PAYLOAD_BYTES:
         last_user = other_msgs[-1]
         if last_user.get("role") == "user" and isinstance(last_user.get("content"), str):
@@ -230,8 +343,7 @@ def _truncate_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
             if len(content) > allowed_len:
                 last_user["content"] = content[:allowed_len] + "\n\n[Content truncated due to size limits]"
 
-    result = system_msgs + other_msgs
-    return result
+    return system_msgs + other_msgs
 
 
 def normalize_messages(messages: object, system: Any = None, tools: list[dict[str, Any]] | None = None, tool_choice: Any = None) -> list[dict[str, Any]]:
@@ -239,6 +351,14 @@ def normalize_messages(messages: object, system: Any = None, tools: list[dict[st
 
     # Inject global system prompt and tools documentation
     system_instructions = config.global_system_prompt or ""
+
+    # Inject Karpathy guidelines if mode enabled
+    if config.karpathy_mode:
+        from services.karpathy_guidelines import load_guidelines
+        karpathy_prompt = load_guidelines()
+        if karpathy_prompt:
+            system_instructions = karpathy_prompt + "\n\n" + system_instructions
+
     if tools:
         system_instructions += _build_tool_prompt(tools, tool_choice=tool_choice)
 
@@ -260,6 +380,10 @@ def normalize_messages(messages: object, system: Any = None, tools: list[dict[st
             # Map 'developer' role to 'system' (Gemini-FastAPI compat)
             if role == "developer":
                 role = "system"
+
+            # Map 'tool_result' role (HA format) to 'tool' first
+            if role == "tool_result":
+                role = "tool"
 
             # Map 'tool' role to 'user' for Web ChatGPT visibility
             # Preserve tool_call_id in the text so the model understands context
@@ -304,6 +428,25 @@ def normalize_messages(messages: object, system: Any = None, tools: list[dict[st
                 for data, mime in images:
                     parts.append({"type": "image", "data": data, "mime": mime})
                 normalized.append({"role": role, "content": parts})
+            elif isinstance(content, list):
+                # Preserve original list content (may have image_url with HTTP URLs)
+                preserved = []
+                for part in content:
+                    if isinstance(part, dict) and part.get("type") in ("image_url", "input_image"):
+                        preserved.append(part)
+                    elif isinstance(part, dict) and part.get("type") == "text":
+                        preserved.append(part)
+                if preserved:
+                    normalized.append({"role": role, "content": preserved})
+                else:
+                    msg = {"role": role, "content": text}
+                    if "tool_calls" in message:
+                        msg["tool_calls"] = message["tool_calls"]
+                    if "tool_call_id" in message:
+                        msg["tool_call_id"] = message["tool_call_id"]
+                    if "name" in message:
+                        msg["name"] = message["name"]
+                    normalized.append(msg)
             else:
                 msg = {"role": role, "content": text}
                 if "tool_calls" in message:
@@ -410,14 +553,16 @@ def format_image_result(
             continue
         revised_prompt = str(item.get("revised_prompt") or prompt).strip() or prompt
         if response_format == "b64_json":
+            clean_b64 = b64_json.split(",", 1)[1] if b64_json.startswith("data:") else b64_json
             data.append({
                 "b64_json": b64_json,
-                "url": save_image_bytes(base64.b64decode(b64_json), base_url),
+                "url": save_image_bytes(base64.b64decode(clean_b64), base_url),
                 "revised_prompt": revised_prompt,
             })
         else:
+            clean_b64 = b64_json.split(",", 1)[1] if b64_json.startswith("data:") else b64_json
             data.append({
-                "url": save_image_bytes(base64.b64decode(b64_json), base_url),
+                "url": save_image_bytes(base64.b64decode(clean_b64), base_url),
                 "revised_prompt": revised_prompt,
             })
     result: dict[str, Any] = {"created": created or int(time.time()), "data": data}
@@ -764,6 +909,8 @@ def stream_image_outputs(
         total: int = 1,
 ) -> Iterator[ImageOutput]:
     last: dict[str, Any] = {}
+    all_file_ids: list[str] = []
+    all_sediment_ids: list[str] = []
     for event in conversation_events(
             backend,
             prompt=request.prompt,
@@ -772,6 +919,13 @@ def stream_image_outputs(
             size=request.size,
     ):
         last = event
+        # Accumulate image IDs from all events (ChatGPT may return multiple)
+        for fid in (event.get("file_ids") or []):
+            if fid not in all_file_ids:
+                all_file_ids.append(str(fid))
+        for sid in (event.get("sediment_ids") or []):
+            if sid not in all_sediment_ids:
+                all_sediment_ids.append(str(sid))
         if event.get("type") == "conversation.delta":
             yield ImageOutput(
                 kind="progress",
@@ -794,8 +948,8 @@ def stream_image_outputs(
             )
 
     conversation_id = str(last.get("conversation_id") or "")
-    file_ids = [str(item) for item in last.get("file_ids") or []]
-    sediment_ids = [str(item) for item in last.get("sediment_ids") or []]
+    file_ids = all_file_ids or [str(item) for item in last.get("file_ids") or []]
+    sediment_ids = all_sediment_ids or [str(item) for item in last.get("sediment_ids") or []]
     message = str(last.get("text") or "").strip()
     is_text_response = last.get("tool_invoked") is False or last.get("turn_use_case") == "text"
     logger.info({
@@ -832,8 +986,21 @@ def stream_image_outputs(
 
 
 def stream_image_outputs_with_pool(request: ConversationRequest) -> Iterator[ImageOutput]:
-    if str(request.model or "").strip() not in IMAGE_MODELS:
-        raise ImageGenerationError("unsupported image model,supported models: " + ", ".join(IMAGE_MODELS))
+    model = str(request.model or "").strip()
+    # Support combo models: resolve to first image-capable model in the combo
+    if model not in IMAGE_MODELS:
+        from services.backend_router import backend_router
+        if backend_router.is_combo(model):
+            routes = backend_router.route_combo(model)
+            for route in routes:
+                if route.model in IMAGE_MODELS:
+                    request.model = route.model
+                    model = route.model
+                    break
+            else:
+                raise ImageGenerationError("unsupported image model,supported models: " + ", ".join(IMAGE_MODELS))
+        else:
+            raise ImageGenerationError("unsupported image model,supported models: " + ", ".join(IMAGE_MODELS))
 
     emitted = False
     last_error = ""

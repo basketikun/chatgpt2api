@@ -10,8 +10,58 @@ from services.log_service import (
     LOG_TYPE_ACCOUNT,
     log_service,
 )
+from services.rate_limit_backoff import rate_limit_backoff
 from services.storage.base import StorageBackend
 from utils.helper import anonymize_token
+from utils.log import logger
+
+# Token audience values for routing
+_TOKEN_AUDIENCE_CHATGPT = "chatgpt.com"
+_TOKEN_AUDIENCE_OPENAI_API = "api.openai.com"
+
+
+def detect_token_audience(access_token: str) -> str:
+    """Decode JWT to determine which API the token works with."""
+    if not access_token or not access_token.startswith("eyJ"):
+        return "unknown"
+    try:
+        import base64, json
+        parts = access_token.split(".")
+        if len(parts) >= 2:
+            # Fix base64 padding: JWT uses base64url without padding
+            padded = parts[1] + "=" * (-len(parts[1]) % 4)
+            payload = json.loads(base64.urlsafe_b64decode(padded))
+            aud = payload.get("aud", "")
+            if isinstance(aud, list):
+                aud = aud[0] if aud else ""
+            aud_str = str(aud).lower()
+            if "api.openai.com" in aud_str:
+                return _TOKEN_AUDIENCE_OPENAI_API
+            if "chatgpt.com" in aud_str:
+                return _TOKEN_AUDIENCE_CHATGPT
+    except Exception:
+        pass
+    return "unknown"
+
+# Status migration: Chinese → English (backward compatible)
+_STATUS_MIGRATION = {
+    "正常": "active",
+    "限流": "limited",
+    "异常": "error",
+    "禁用": "disabled",
+}
+_STATUS_REVERSE = {v: k for k, v in _STATUS_MIGRATION.items()}
+
+DISPLAY_STATUS = {
+    "active": "Hoạt động",
+    "limited": "Giới hạn",
+    "error": "Lỗi",
+    "disabled": "Vô hiệu",
+}
+
+
+# NoAuth providers — virtual connections (port from 9router FREE_PROVIDERS)
+NO_AUTH_PROVIDERS = {"opencode"}
 
 
 class AccountService:
@@ -40,7 +90,9 @@ class AccountService:
     def _is_image_account_available(account: dict) -> bool:
         if not isinstance(account, dict):
             return False
-        if account.get("status") in {"禁用", "限流", "异常"}:
+        if account.get("status") in {"disabled", "limited", "error"}:
+            return False
+        if "antigravity" in str(account.get("type") or "").split(","):
             return False
         if bool(account.get("image_quota_unknown")):
             return True
@@ -55,7 +107,11 @@ class AccountService:
         normalized = dict(item)
         normalized["access_token"] = access_token
         normalized["type"] = normalized.get("type") or "free"
-        normalized["status"] = normalized.get("status") or "正常"
+        normalized["plan"] = normalized.get("plan") or None
+        normalized["audience"] = normalized.get("audience") or detect_token_audience(access_token)
+        # Auto-migrate Chinese status to English
+        raw_status = normalized.get("status") or "active"
+        normalized["status"] = _STATUS_MIGRATION.get(raw_status, raw_status)
         normalized["quota"] = max(0, int(normalized.get("quota") if normalized.get("quota") is not None else 0))
         normalized["image_quota_unknown"] = bool(normalized.get("image_quota_unknown"))
         normalized["email"] = normalized.get("email") or None
@@ -64,6 +120,7 @@ class AccountService:
         normalized["limits_progress"] = limits_progress if isinstance(limits_progress, list) else []
         normalized["default_model_slug"] = normalized.get("default_model_slug") or None
         normalized["restore_at"] = normalized.get("restore_at") or None
+        normalized["project_id"] = normalized.get("project_id") or None
         normalized["success"] = int(normalized.get("success") or 0)
         normalized["fail"] = int(normalized.get("fail") or 0)
         normalized["last_used_at"] = normalized.get("last_used_at")
@@ -135,7 +192,8 @@ class AccountService:
             candidates = [
                 token
                 for account in self._accounts.values()
-                if account.get("status") not in {"禁用", "异常"}
+                if account.get("status") not in {"disabled", "error"}
+                   and "antigravity" not in str(account.get("type") or "").split(",")
                    and (token := account.get("access_token") or "")
                    and token not in excluded
             ]
@@ -162,14 +220,14 @@ class AccountService:
 
     def remove_invalid_token(self, access_token: str, event: str) -> bool:
         if not config.auto_remove_invalid_accounts:
-            self.update_account(access_token, {"status": "异常", "quota": 0})
+            self.update_account(access_token, {"status": "error", "quota": 0})
             return False
         removed = bool(self.delete_accounts([access_token])["removed"])
         if removed:
-            log_service.add(LOG_TYPE_ACCOUNT, "自动移除异常账号",
+            log_service.add(LOG_TYPE_ACCOUNT, "Tự động xóa tài khoản lỗi",
                             {"source": event, "token": anonymize_token(access_token)})
         elif access_token:
-            self.update_account(access_token, {"status": "异常", "quota": 0})
+            self.update_account(access_token, {"status": "error", "quota": 0})
         return removed
 
     def get_account(self, access_token: str) -> dict | None:
@@ -188,7 +246,7 @@ class AccountService:
             return [
                 token
                 for item in self._accounts.values()
-                if item.get("status") == "限流"
+                if item.get("status") == "limited"
                    and (token := item.get("access_token") or "")
             ]
 
@@ -218,9 +276,97 @@ class AccountService:
                     self._accounts[access_token] = account
             self._save_accounts()
             items = [dict(item) for item in self._accounts.values()]
-            log_service.add(LOG_TYPE_ACCOUNT, f"新增 {added} 个账号，跳过 {skipped} 个",
+            log_service.add(LOG_TYPE_ACCOUNT, f"新增 {added}  tài khoản，跳过 {skipped} 个",
                             {"added": added, "skipped": skipped})
         return {"added": added, "skipped": skipped, "items": items}
+
+    def add_accounts_with_type(self, tokens: list[str], account_type: str = "codex") -> dict:
+        """Add accounts with a specific type (e.g. 'codex' for 9router OAuth tokens)."""
+        tokens = list(dict.fromkeys(token for token in tokens if token))
+        if not tokens:
+            return {"added": 0, "skipped": 0, "items": self.list_accounts()}
+
+        with self._lock:
+            added = 0
+            skipped = 0
+            updated = 0
+            for access_token in tokens:
+                current = self._accounts.get(access_token)
+                if current is not None:
+                    # Merge type: add new type to existing (e.g. existing "free" + new "codex" → "free,codex")
+                    existing_types = set(str(current.get("type") or "").split(","))
+                    new_types = set(str(account_type).split(","))
+                    merged = ",".join(sorted(existing_types | new_types))
+                    if merged != str(current.get("type") or ""):
+                        current["type"] = merged
+                        updated += 1
+                        logger.info({"event": "account_type_merged", "token": anonymize_token(access_token), "new_type": merged})
+                    else:
+                        skipped += 1
+                    continue
+                added += 1
+                account = self._normalize_account({
+                    "access_token": access_token,
+                    "type": account_type,
+                    "status": "active",
+                })
+                if account is not None:
+                    self._accounts[access_token] = account
+            self._save_accounts()
+            items = [dict(item) for item in self._accounts.values()]
+            log_service.add(LOG_TYPE_ACCOUNT, f"Thêm {added} tài khoản {account_type}, cập nhật {updated}, bỏ qua {skipped}",
+                            {"added": added, "skipped": skipped, "updated": updated, "type": account_type})
+        return {"added": added, "skipped": skipped, "updated": updated, "items": items}
+
+    def add_accounts_with_credentials(self, creds: list[dict], account_type: str = "codex") -> dict:
+        """Add Codex OAuth accounts with full credential payload (access + refresh + expiry).
+
+        Each cred dict accepts: access_token (required), refresh_token, expires_at.
+        Existing accounts are merged: refresh_token / expires_at are updated even
+        when the access_token already exists, so older imports get refreshable.
+        """
+        added = 0
+        skipped = 0
+        updated = 0
+        with self._lock:
+            for cred in creds or []:
+                if not isinstance(cred, dict):
+                    continue
+                access_token = str(cred.get("access_token") or "").strip()
+                if not access_token:
+                    continue
+                refresh_token = str(cred.get("refresh_token") or "").strip() or None
+                expires_at = cred.get("expires_at") or None
+                current = self._accounts.get(access_token)
+                if current is None:
+                    added += 1
+                    base = {"access_token": access_token, "type": account_type, "status": "active"}
+                else:
+                    base = dict(current)
+                    existing_types = set(str(base.get("type") or "").split(","))
+                    new_types = set(str(account_type).split(","))
+                    base["type"] = ",".join(sorted(existing_types | new_types))
+                    skipped += 1
+                if refresh_token:
+                    base["refresh_token"] = refresh_token
+                    updated += 1
+                if expires_at:
+                    base["expires_at"] = expires_at
+                if cred.get("project_id"):
+                    base["project_id"] = cred["project_id"]
+                if cred.get("email"):
+                    base["email"] = cred["email"]
+                account = self._normalize_account(base)
+                if account is not None:
+                    self._accounts[access_token] = account
+            self._save_accounts()
+            items = [dict(item) for item in self._accounts.values()]
+            log_service.add(
+                LOG_TYPE_ACCOUNT,
+                f"Thêm {added} tài khoản {account_type} có refresh, cập nhật {updated}, bỏ qua {skipped}",
+                {"added": added, "skipped": skipped, "updated": updated, "type": account_type},
+            )
+        return {"added": added, "skipped": skipped, "updated": updated, "items": items}
 
     def delete_accounts(self, tokens: list[str]) -> dict:
         target_set = set(token for token in tokens if token)
@@ -236,7 +382,7 @@ class AccountService:
                 else:
                     self._index = 0
                 self._save_accounts()
-                log_service.add(LOG_TYPE_ACCOUNT, f"删除 {removed} 个账号", {"removed": removed})
+                log_service.add(LOG_TYPE_ACCOUNT, f"删除 {removed}  tài khoản", {"removed": removed})
             items = [dict(item) for item in self._accounts.values()]
         return {"removed": removed, "items": items}
 
@@ -250,14 +396,14 @@ class AccountService:
             account = self._normalize_account({**current, **updates, "access_token": access_token})
             if account is None:
                 return None
-            if account.get("status") == "限流" and config.auto_remove_rate_limited_accounts:
+            if account.get("status") == "limited" and config.auto_remove_rate_limited_accounts:
                 self._accounts.pop(access_token, None)
                 self._save_accounts()
-                log_service.add(LOG_TYPE_ACCOUNT, "自动移除限流账号", {"token": anonymize_token(access_token)})
+                log_service.add(LOG_TYPE_ACCOUNT, "Tự động xóa tài khoản giới hạn", {"token": anonymize_token(access_token)})
                 return None
             self._accounts[access_token] = account
             self._save_accounts()
-            log_service.add(LOG_TYPE_ACCOUNT, "更新账号",
+            log_service.add(LOG_TYPE_ACCOUNT, "Cập nhật tài khoản",
                             {"token": anonymize_token(access_token), "status": account.get("status")})
             return dict(account)
         return None
@@ -278,19 +424,19 @@ class AccountService:
                 if not image_quota_unknown:
                     next_item["quota"] = max(0, int(next_item.get("quota") or 0) - 1)
                 if not image_quota_unknown and next_item["quota"] == 0:
-                    next_item["status"] = "限流"
+                    next_item["status"] = "limited"
                     next_item["restore_at"] = next_item.get("restore_at") or None
-                elif next_item.get("status") == "限流":
-                    next_item["status"] = "正常"
+                elif next_item.get("status") == "limited":
+                    next_item["status"] = "active"
             else:
                 next_item["fail"] = int(next_item.get("fail") or 0) + 1
             account = self._normalize_account(next_item)
             if account is None:
                 return None
-            if account.get("status") == "限流" and config.auto_remove_rate_limited_accounts:
+            if account.get("status") == "limited" and config.auto_remove_rate_limited_accounts:
                 self._accounts.pop(access_token, None)
                 self._save_accounts()
-                log_service.add(LOG_TYPE_ACCOUNT, "自动移除限流账号", {"token": anonymize_token(access_token)})
+                log_service.add(LOG_TYPE_ACCOUNT, "Tự động xóa tài khoản giới hạn", {"token": anonymize_token(access_token)})
                 return None
             self._accounts[access_token] = account
             self._save_accounts()
@@ -305,7 +451,14 @@ class AccountService:
             from services.openai_backend_api import InvalidAccessTokenError, OpenAIBackendAPI
             result = OpenAIBackendAPI(access_token).get_user_info()
         except InvalidAccessTokenError:
-            self.remove_invalid_token(access_token, event)
+            # Token can't access chatgpt.com — keep existing data, don't set error
+            logger.info({"event": "fetch_remote_401_skip", "token": anonymize_token(access_token)})
+            return self.get_account(access_token)
+        except Exception as exc:
+            msg = str(exc).lower()
+            if any(k in msg for k in ("openssl", "tls", "invalid library", "curl: (35)")):
+                logger.warning({"event": "fetch_remote_tls_skip", "token": anonymize_token(access_token), "error": str(exc)[:120]})
+                return self.get_account(access_token)
             raise
         return self.update_account(access_token, result)
 
@@ -337,6 +490,113 @@ class AccountService:
             "errors": errors,
             "items": self.list_accounts(),
         }
+
+
+    def get_health_score(self, access_token: str) -> float:
+        """Calculate health score for an account (0.0-1.0).
+
+        Ported from 9router health scoring pattern:
+        - 0.35: rate-limit status
+        - 0.20: response latency (placeholder)
+        - 0.20: concurrency saturation
+        - 0.15: token last used recency
+        - 0.10: success/fail ratio
+        """
+        account = self.get_account(access_token)
+        if not account:
+            return 0.0
+
+        score = 0.0
+
+        # Rate-limit status (0.35)
+        status = str(account.get("status") or "active")
+        if status == "active":
+            score += 0.35
+        elif status == "limited":
+            score += 0.0
+        else:
+            score += 0.1
+
+        # Concurrency saturation (0.20)
+        max_conc = max(1, int(config.image_account_concurrency or 1))
+        inflight = int(self._image_inflight.get(access_token, 0))
+        saturation = inflight / max_conc
+        score += (1 - saturation) * 0.20
+
+        # Token recency (0.15)
+        last_used = account.get("last_used_at")
+        if last_used:
+            try:
+                from datetime import datetime
+                last_dt = datetime.strptime(str(last_used), "%Y-%m-%d %H:%M:%S")
+                age_minutes = (datetime.now() - last_dt).total_seconds() / 60
+                if age_minutes < 5:
+                    score += 0.15
+                elif age_minutes < 30:
+                    score += 0.10
+                else:
+                    score += 0.03
+            except (ValueError, TypeError):
+                score += 0.05
+        else:
+            score += 0.05
+
+        # Success/fail ratio (0.10)
+        success = int(account.get("success") or 0)
+        fail = int(account.get("fail") or 0)
+        total = success + fail
+        if total > 0:
+            score += (success / total) * 0.10
+        else:
+            score += 0.05
+
+        # Latency placeholder (0.20) — default to mid-range
+        score += 0.10
+
+        return max(0.0, min(1.0, score))
+
+    def get_provider_credentials(
+        self,
+        provider_id: str,
+        exclude_connection_ids: set[str] | None = None,
+        model: str = "",
+    ) -> dict[str, Any] | None:
+        """Get credentials for a provider, supporting noAuth virtual connections.
+
+        Ported from 9router src/sse/services/auth.js getProviderCredentials().
+        Returns None if no credentials available.
+
+        For noAuth providers (opencode): returns a virtual connection with
+        id="noauth" and accessToken="public".
+        """
+        # Check for noAuth provider first (port from 9router FREE_PROVIDERS check)
+        if provider_id in NO_AUTH_PROVIDERS:
+            return {
+                "id": "noauth",
+                "connectionName": "Public",
+                "isActive": True,
+                "accessToken": "public",
+                "noAuth": True,
+            }
+
+        # For chatgpt provider, use existing token pool
+        if provider_id == "chatgpt":
+            token = self.get_text_access_token(exclude_connection_ids)
+            if not token:
+                return None
+            return {
+                "id": anonymize_token(token),
+                "connectionName": "ChatGPT",
+                "isActive": True,
+                "accessToken": token,
+                "noAuth": False,
+            }
+
+        return None
+
+    def is_noauth_provider(self, provider_id: str) -> bool:
+        """Check if a provider uses noAuth virtual connections."""
+        return provider_id in NO_AUTH_PROVIDERS
 
 
 account_service = AccountService(config.get_storage_backend())

@@ -1,0 +1,34 @@
+# Production docker-compose for vn-mcp-hub.
+#
+# Uses pre-built image from GHCR — no source needed on the host.
+# Ideal for Portainer Web editor (just paste this content).
+#
+# Override defaults via environment variables:
+#   HOST_PORT     - host port (default 8005, container is fixed at 8005)
+#   IMAGE_TAG     - image tag (default latest)
+#   CHROMA_DIR    - host path or volume name for Chroma DB
+#   DATA_DIR      - host path or volume name for markdown sources
+
+services:
+  vn-mcp-hub:
+    image: ghcr.io/tritue2011/vn-mcp-hub:${IMAGE_TAG:-latest}
+    container_name: vn-mcp-hub
+    pull_policy: always
+    ports:
+      - "${HOST_PORT:-8005}:8005"
+    volumes:
+      - ${CHROMA_DIR:-vn_mcp_chroma}:/app/chroma_db
+      - ${DATA_DIR:-vn_mcp_data}:/app/data
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8005/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  vn_mcp_chroma:
+  vn_mcp_data:

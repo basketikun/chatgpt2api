@@ -1,13 +1,14 @@
 import { httpRequest, request } from "@/lib/request";
 
 export type AccountType = string;
-export type AccountStatus = "正常" | "限流" | "异常" | "禁用";
+export type AccountStatus = "active" | "limited" | "error" | "disabled";
 export type ImageModel = "gpt-image-2" | "codex-gpt-image-2";
 export type AuthRole = "admin" | "user";
 
 export type Account = {
   access_token: string;
   type: AccountType;
+  plan?: string | null;
   status: AccountStatus;
   quota: number;
   image_quota_unknown?: boolean;
@@ -67,6 +68,8 @@ export type SettingsConfig = {
   image_account_concurrency?: number | string;
   auto_remove_invalid_accounts?: boolean;
   auto_remove_rate_limited_accounts?: boolean;
+  rtk_enabled?: boolean;
+  rtk_other_enabled?: boolean;
   log_levels?: string[];
   backup?: BackupSettings;
   backup_state?: BackupState;
@@ -258,6 +261,13 @@ export async function createAccounts(tokens: string[]) {
   return httpRequest<AccountMutationResponse>("/api/accounts", {
     method: "POST",
     body: { tokens },
+  });
+}
+
+export async function createOAuthAccounts(tokens: string[], accountType = "codex") {
+  return httpRequest<AccountMutationResponse>("/api/accounts/oauth", {
+    method: "POST",
+    body: { tokens, type: accountType },
   });
 }
 

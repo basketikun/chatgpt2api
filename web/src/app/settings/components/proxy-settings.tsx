@@ -38,7 +38,7 @@ export function ProxySettingsCard() {
       setFormUrl(data.proxy.url);
       setFormEnabled(data.proxy.enabled);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "加载代理配置thất bại");
+      toast.error(error instanceof Error ? error.message : "Không tải được cấu hình proxy");
     } finally {
       setIsLoading(false);
     }
@@ -58,7 +58,7 @@ export function ProxySettingsCard() {
 
   const handleSave = async () => {
     if (formEnabled && !formUrl.trim()) {
-      toast.error("启用代理时必须填写Địa chỉ proxy");
+      toast.error("kích hoạt代理时必须填写Địa chỉ proxy");
       return;
     }
     setIsSaving(true);
@@ -70,7 +70,7 @@ export function ProxySettingsCard() {
       setSettings(data.proxy);
       setFormUrl(data.proxy.url);
       setFormEnabled(data.proxy.enabled);
-      toast.success("代理配置Đã Lưu");
+      toast.success("Đã lưu cấu hình proxy");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Lưuthất bại");
     } finally {
@@ -90,9 +90,9 @@ export function ProxySettingsCard() {
       const data = await testProxy(candidate);
       setTestResult(data.result);
       if (data.result.ok) {
-        toast.success(`代理可用（${data.result.latency_ms} ms，HTTP ${data.result.status}）`);
+        toast.success(`代理có thể用（${data.result.latency_ms} ms，HTTP ${data.result.status}）`);
       } else {
-        toast.error(`代理不可用：${data.result.error ?? "未知错误"}`);
+        toast.error(`代理不có thể用：${data.result.error ?? "未知错误"}`);
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Kiểm tra proxythất bại");
@@ -102,7 +102,7 @@ export function ProxySettingsCard() {
   };
 
   return (
-    <Card className="rounded-2xl border-white/80 bg-white/90 shadow-sm">
+    <Card className="rounded-2xl card-3d card-tint-sky">
       <CardContent className="space-y-6 p-6">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
@@ -110,9 +110,9 @@ export function ProxySettingsCard() {
               <Wifi className="size-5 text-stone-600" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold tracking-tight">上游代理配置</h2>
+              <h2 className="text-lg font-semibold tracking-tight">Cấu hình proxy</h2>
               <p className="text-sm text-stone-500">
-                为 chatgpt.com 的请求配置出网代理，适合国内服务器部署；Sub2API / CPA 请求不受影响。
+                Cấu hình proxy cho request đến chatgpt.com. Sub2API / CPA không bị ảnh hưởng.
               </p>
             </div>
           </div>
@@ -120,7 +120,7 @@ export function ProxySettingsCard() {
 
         {isLoading ? (
           <div className="flex items-center justify-center py-10">
-            <LoaderCircle className="size-5 animate-spin text-stone-400" />
+            <LoaderCircle className="size-5 animate-spin text-stone-500" />
           </div>
         ) : (
           <div className="space-y-4">
@@ -132,9 +132,9 @@ export function ProxySettingsCard() {
                 onChange={(event) => setFormEnabled(event.target.checked)}
               />
               <div className="space-y-0.5">
-                <div className="text-sm font-medium text-stone-800">启用代理</div>
+                <div className="text-sm font-medium text-stone-800">kích hoạt代理</div>
                 <div className="text-sm text-stone-500">
-                  关闭后 chatgpt.com 请求会直连。Lưu后立即生效，无需重启。
+                  关闭sau chatgpt.com 请求会直连。Lưusau立即生效，无需重启。
                 </div>
               </div>
             </label>
@@ -150,7 +150,7 @@ export function ProxySettingsCard() {
                 placeholder="http://user:pass@host:port 或 socks5://host:port"
                 className="h-11 rounded-xl border-stone-200 bg-white font-mono text-xs"
               />
-              <div className="text-xs text-stone-400">
+              <div className="text-xs text-stone-500">
                 支持 <code className="font-mono">http / https / socks4 / socks5 / socks5h</code>。
               </div>
             </div>
@@ -165,17 +165,17 @@ export function ProxySettingsCard() {
               >
                 {testResult.ok ? (
                   <>
-                    代理可用：HTTP {testResult.status}，用时 {testResult.latency_ms} ms
+                    代理có thể用：HTTP {testResult.status}，用时 {testResult.latency_ms} ms
                   </>
                 ) : (
-                  <>代理不可用：{testResult.error ?? "未知错误"}（用时 {testResult.latency_ms} ms）</>
+                  <>代理不có thể用：{testResult.error ?? "未知错误"}（用时 {testResult.latency_ms} ms）</>
                 )}
               </div>
             ) : null}
 
             <div className="flex items-center gap-2">
               <Button
-                className="h-10 rounded-xl bg-stone-950 px-5 text-white hover:bg-stone-800"
+                className="h-10 rounded-xl bg-stone-900 px-5 text-white hover:bg-stone-800"
                 onClick={() => void handleSave()}
                 disabled={isSaving || !dirty}
               >

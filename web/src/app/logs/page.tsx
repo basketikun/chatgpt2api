@@ -153,16 +153,16 @@ function LogsContent() {
           <Button variant="outline" onClick={clearFilters} className="h-10 rounded-xl border-stone-200 bg-white px-4 text-stone-700">
             Xóa bộ lọc
           </Button>
-          <Button onClick={() => void loadLogs()} disabled={isLoading} className="h-10 rounded-xl bg-stone-950 px-4 text-white hover:bg-stone-800">
+          <Button onClick={() => void loadLogs()} disabled={isLoading} className="h-10 rounded-xl bg-stone-900 px-4 text-white hover:bg-stone-800">
             {isLoading ? <LoaderCircle className="size-4 animate-spin" /> : <Search className="size-4" />}
             Truy vấn
           </Button>
         </div>
       </div>
 
-      <Card className="overflow-hidden rounded-2xl border-white/80 bg-white/90 shadow-sm">
+      <Card className="overflow-hidden rounded-2xl border-stone-200 bg-white/90 shadow-sm">
         <CardContent className="p-0">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-100 px-5 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-200 px-5 py-4">
             <div className="flex flex-wrap items-center gap-3 text-sm text-stone-600">
               <span>Tổng cộng {items.length} mục</span>
               <label className="flex items-center gap-2">
@@ -180,7 +180,7 @@ function LogsContent() {
                 <RefreshCw className={`size-4 ${isLoading ? "animate-spin" : ""}`} />
                 Làm mới
               </Button>
-              <button type="button" className="text-sm text-stone-500 hover:text-stone-900 disabled:text-stone-300" onClick={() => setSelectedIds([])} disabled={selectedIds.length === 0 || isDeleting}>
+              <button type="button" className="text-sm text-stone-500 hover:text-stone-900 disabled:text-stone-700" onClick={() => setSelectedIds([])} disabled={selectedIds.length === 0 || isDeleting}>
                 Bỏ chọn
               </button>
               <Button variant="outline" className="h-8 rounded-lg border-rose-200 bg-white px-3 text-rose-600 hover:bg-rose-50" onClick={() => setDeletingItems(items.filter((item) => selectedSet.has(item.id)))} disabled={selectedIds.length === 0 || isDeleting}>
@@ -238,10 +238,10 @@ function LogsContent() {
                                   <ImageThumbnail src={url} thumbnailSrc={getImageThumbnailUrl(url)} className="h-full w-full" />
                                 </button>
                               ))}
-                              {urls.length > 3 ? <span className="text-xs text-stone-400">+{urls.length - 3}</span> : null}
+                              {urls.length > 3 ? <span className="text-xs text-stone-500">+{urls.length - 3}</span> : null}
                             </div>
                           ) : (
-                            <span className="inline-flex items-center gap-1 text-xs text-stone-400">
+                            <span className="inline-flex items-center gap-1 text-xs text-stone-500">
                               <ImageIcon className="size-3.5" />
                               -
                             </span>
@@ -265,7 +265,7 @@ function LogsContent() {
               </TableBody>
             </Table>
           </div>
-          <div className="flex items-center justify-end gap-2 border-t border-stone-100 px-4 py-3 text-sm text-stone-500">
+          <div className="flex items-center justify-end gap-2 border-t border-stone-200 px-4 py-3 text-sm text-stone-500">
             <span>Trang {safePage} / {pageCount}, Tổng cộng {items.length} mục</span>
             <Button variant="outline" size="icon" className="size-9 rounded-lg border-stone-200 bg-white" disabled={safePage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
               <ChevronLeft className="size-4" />
@@ -279,7 +279,7 @@ function LogsContent() {
       </Card>
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent className="flex h-[min(88vh,860px)] w-[min(92vw,920px)] flex-col overflow-hidden rounded-2xl p-0">
-          <DialogHeader className="shrink-0 border-b border-stone-100 px-6 py-5">
+          <DialogHeader className="shrink-0 border-b border-stone-200 px-6 py-5">
             <DialogTitle>Chi tiết nhật ký</DialogTitle>
           </DialogHeader>
           <div className="flex-1 overflow-y-auto px-6 py-5">
@@ -289,7 +289,7 @@ function LogsContent() {
                   .filter(([key, value]) => key !== "urls" && typeof value !== "object")
                   .map(([key, value]) => (
                     <div key={key} className="flex items-start justify-between gap-4">
-                      <span className="text-stone-400">{key}</span>
+                      <span className="text-stone-500">{key}</span>
                       <span className="text-right font-medium break-all text-stone-700">{String(value)}</span>
                     </div>
                   ))}
@@ -311,7 +311,7 @@ function LogsContent() {
                   ))}
                 </div>
               ) : null}
-              <pre className="max-h-[72vh] overflow-auto rounded-xl border border-stone-200 bg-stone-50 p-4 text-xs leading-6 text-stone-700">
+              <pre className="max-h-[72vh] overflow-auto rounded-xl border border-stone-200 bg-stone-100 p-4 text-xs leading-6 text-stone-700">
                 {JSON.stringify(detailLog?.detail || {}, null, 2)}
               </pre>
             </div>
@@ -351,7 +351,7 @@ function LogsContent() {
 export default function LogsPage() {
   const { isCheckingAuth, session } = useAuthGuard(["admin"]);
   if (isCheckingAuth || !session || session.role !== "admin") {
-    return <div className="flex min-h-[40vh] items-center justify-center"><LoaderCircle className="size-5 animate-spin text-stone-400" /></div>;
+    return <div className="flex min-h-[40vh] items-center justify-center"><LoaderCircle className="size-5 animate-spin text-stone-500" /></div>;
   }
   return <LogsContent />;
 }

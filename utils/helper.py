@@ -11,8 +11,143 @@ from curl_cffi import requests
 from fastapi import HTTPException
 from utils.log import logger
 
-IMAGE_MODELS = {"gpt-image-2", "codex-gpt-image-2"}
+IMAGE_MODELS = {"gpt-image-2", "codex-gpt-image-2", "gemini-image/imagen-3.0-generate-001", "gemini-image/gemini-2.5-flash-image", "gemini-image/gemini-3.1-flash-image-preview"}
 OUTPUT_DIR = Path(__file__).resolve().parent / "output"
+
+# Model capability classification
+_IMAGE_GEN_PREFIXES = {
+    "nv-image/", "sdwebui/", "comfyui/", "huggingface/",
+    "bfl/", "stability/", "fal-ai/", "cloudflare/",
+    "recraft/", "runwayml/",
+}
+_IMAGE_GEN_KEYWORDS = {
+    "flux", "stable-diffusion", "sdxl", "dall-e", "gpt-image",
+    "image-generation", "image_generation", "imagen",
+}
+# Providers where ALL models support image generation
+_IMAGE_GEN_PROVIDER_PREFIXES = {
+    "nv-image/",     # NVIDIA image gen (FLUX, SD)
+    "sdwebui/",      # Stable Diffusion WebUI
+    "comfyui/",      # ComfyUI
+    "huggingface/",  # HuggingFace inference
+    "bfl/",          # Black Forest Labs
+    "stability/",    # Stability AI
+    "fal-ai/",       # Fal.ai
+    "cloudflare/",   # Cloudflare AI
+    "recraft/",      # Recraft
+    "runwayml/",     # RunwayML
+}
+# Providers where ALL models support vision (multimodal)
+_VISION_PROVIDER_PREFIXES: set[str] = {
+    "cx/",            # Codex supports image input natively
+    "gemini_free/",   # Gemini API supports image input
+    "ag/",            # Antigravity supports multimodal vision
+}
+# Custom providers that support image generation
+_IMAGE_GEN_CUSTOM_PROVIDERS = {
+    "geminiapi",     # Gemini API server — supports image gen via /v1/responses
+}
+# Custom providers where ALL models support vision
+_VISION_CUSTOM_PROVIDERS: set[str] = {
+    "geminiapi",      # Gemini-FastAPI supports image input
+}
+# Individual model keywords for vision (used for nv/ and other providers)
+_VISION_KEYWORDS = {
+    "gemma-2", "gemma-3", "gemma-4", "gemma-7b",
+    "fuyu", "kosmos", "nvclip", "vila", "trellis",
+    "phi-3-vision", "phi-4-multimodal", "phi-3.5-moe",
+    "llama-3.2-11b", "llama-3.2-90b", "llama-4-maverick",
+    "nemotron-nano-12b-v2-vl", "nemotron-3-nano-omni",
+    "bevformer", "sparsedrive", "streampetr", "visual-changenet",
+    "cosmos-predict1", "nv-dinov2", "nv-grounding-dino",
+    "retail-object-detection", "codegemma",
+    "yi-large", "sarvam",
+}
+# Providers where ALL models support video analysis
+_VIDEO_PROVIDER_PREFIXES: set[str] = {
+    "cx/",            # Codex supports video via multimodal
+    "gemini_free/",   # Gemini API supports video input
+    "ag/",            # Antigravity supports video input
+}
+# Custom providers where ALL models support video
+_VIDEO_CUSTOM_PROVIDERS: set[str] = {
+    "geminiapi",      # Gemini-FastAPI supports video
+}
+
+
+def classify_model_capability(model_id: str) -> list[str]:
+    """Classify a model by capabilities: ['chat'], ['chat','vision'], ['image'], etc.
+
+    Image Gen: models that generate images (FLUX, SD, DALL-E)
+    Vision: models that can analyze/understand images (multimodal)
+    Chat: text models (all models are at least chat-capable)
+    """
+    mid = str(model_id or "").strip().lower()
+    caps: list[str] = []
+
+    # Check image gen first
+    is_image = False
+    for prefix in _IMAGE_GEN_PREFIXES:
+        if mid.startswith(prefix):
+            caps.append("image")
+            is_image = True
+            break
+    if not is_image:
+        for prefix in _IMAGE_GEN_PROVIDER_PREFIXES:
+            if mid.startswith(prefix):
+                caps.append("image")
+                is_image = True
+                break
+    if not is_image:
+        for kw in _IMAGE_GEN_KEYWORDS:
+            if kw in mid:
+                caps.append("image")
+                break
+    if not is_image:
+        for cp_prefix in _IMAGE_GEN_CUSTOM_PROVIDERS:
+            if mid.startswith(cp_prefix):  # matches geminiapi, geminiapi1, geminiapi2, etc.
+                caps.append("image")
+                break
+
+    # Check vision capability
+    for prefix in _VISION_PROVIDER_PREFIXES:
+        if mid.startswith(prefix):
+            caps.append("vision")
+            break
+    else:
+        for cp_prefix in _VISION_CUSTOM_PROVIDERS:
+            if mid.startswith(cp_prefix):  # matches geminiapi, geminiapi1, etc.
+                caps.append("vision")
+                break
+        else:
+            for kw in _VISION_KEYWORDS:
+                if kw in mid:
+                    caps.append("vision")
+                    break
+
+    # All models support chat (unless they're pure image gen with no text)
+    if not is_image:
+        caps.append("chat")
+
+    # Check video analysis capability
+    for prefix in _VIDEO_PROVIDER_PREFIXES:
+        if mid.startswith(prefix):
+            if "video" not in caps:
+                caps.append("video")
+            break
+    else:
+        for cp_prefix in _VIDEO_CUSTOM_PROVIDERS:
+            if mid.startswith(cp_prefix):  # matches geminiapi, geminiapi1, etc.
+                if "video" not in caps:
+                    caps.append("video")
+                break
+
+    return caps if caps else ["chat"]
+
+
+def get_model_capability_label(cap: str) -> str:
+    """Human-readable label for model capability."""
+    return {"chat": "Chat", "vision": "Phân tích ảnh", "image": "Tạo ảnh", "video": "Phân tích video"}.get(cap, cap)
 
 
 def new_uuid() -> str:

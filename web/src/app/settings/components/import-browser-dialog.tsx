@@ -64,15 +64,15 @@ export function ImportBrowserDialog() {
     <Dialog open={browserOpen} onOpenChange={setBrowserOpen}>
       <DialogContent showCloseButton={false} className="max-h-[90vh] max-w-5xl rounded-2xl p-6">
         <DialogHeader className="gap-2">
-          <DialogTitle>chọn要导入的账号</DialogTitle>
+          <DialogTitle>Chọn tài khoản cần nhập</DialogTitle>
           <DialogDescription className="text-sm leading-6">
-            {browserPool ? `来自 ${browserPool.name || browserPool.base_url}` : "Đọc到的远程账号列表"}
+            {browserPool ? `来自 ${browserPool.name || browserPool.base_url}` : "Danh sách tài khoản từ xa"}
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="relative min-w-[260px]">
-            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-stone-400" />
+            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-stone-500" />
             <Input
               value={fileQuery}
               onChange={(event) => setFileQuery(event.target.value)}
@@ -98,13 +98,13 @@ export function ImportBrowserDialog() {
               className="h-10 rounded-xl border-stone-200 bg-white px-4 text-stone-700"
               onClick={() => toggleSelectAllFiltered(!allFilteredSelected)}
             >
-              {allFilteredSelected ? "Hủy全选" : "Chọn tất cả kết quả lọc"}
+              {allFilteredSelected ? "Bỏ chọn tất cả" : "Chọn tất cả kết quả lọc"}
             </Button>
           </div>
         </div>
 
         <div className="rounded-xl border border-stone-200">
-          <div className="flex items-center justify-between border-b border-stone-100 px-4 py-3 text-sm text-stone-500">
+          <div className="flex items-center justify-between border-b border-stone-200 px-4 py-3 text-sm text-stone-500">
             <div className="flex items-center gap-3">
               <Checkbox checked={allFilteredSelected} onCheckedChange={(checked) => toggleSelectAllFiltered(Boolean(checked))} />
               <span>Kết quả lọc {filteredFiles.length} 个</span>
@@ -113,18 +113,18 @@ export function ImportBrowserDialog() {
           </div>
           <div className="max-h-[420px] overflow-auto">
             {pagedFiles.length === 0 ? (
-              <div className="flex items-center justify-center py-12 text-sm text-stone-400">没有匹配的远程账号</div>
+              <div className="flex items-center justify-center py-12 text-sm text-stone-500">Không có tài khoản từ xa phù hợp</div>
             ) : (
               <div className="divide-y divide-stone-100">
                 {pagedFiles.map((item) => (
-                  <label key={item.name} className="flex cursor-pointer items-center gap-3 px-4 py-3 hover:bg-stone-50">
+                  <label key={item.name} className="flex cursor-pointer items-center gap-3 px-4 py-3 hover:bg-stone-800">
                     <Checkbox
                       checked={selectedNames.includes(item.name)}
                       onCheckedChange={(checked) => toggleFile(item.name, Boolean(checked))}
                     />
                     <div className="min-w-0">
                       <div className="truncate text-sm font-medium text-stone-700">{item.email || item.name}</div>
-                      <div className="truncate text-xs text-stone-400">{item.name}</div>
+                      <div className="truncate text-xs text-stone-500">{item.name}</div>
                     </div>
                   </label>
                 ))}
@@ -171,7 +171,7 @@ export function ImportBrowserDialog() {
             Hủy
           </Button>
           <Button
-            className="h-10 rounded-xl bg-stone-950 px-5 text-white hover:bg-stone-800"
+            className="h-10 rounded-xl bg-stone-900 px-5 text-white hover:bg-stone-800"
             onClick={() => void startImport()}
             disabled={isStartingImport || selectedNames.length === 0}
           >

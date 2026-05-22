@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentProps } from "react";
@@ -7,14 +7,21 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   CircleAlert,
   CircleOff,
   Copy,
+  Cpu,
   Download,
+  ExternalLink,
   LoaderCircle,
   Pencil,
+  Power,
+  PowerOff,
   RefreshCw,
   Search,
+  Server,
+  Sparkles,
   Trash2,
   UserRound,
 } from "lucide-react";
@@ -48,17 +55,20 @@ import {
   type Account,
   type AccountStatus,
 } from "@/lib/api";
+import { request } from "@/lib/request";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { cn } from "@/lib/utils";
+import { useLangStore } from "@/store/lang";
+import { translations, TranslationKey } from "@/lib/i18n";
 
 import { AccountImportDialog } from "./components/account-import-dialog";
 
-const accountStatusOptions: { label: string; value: AccountStatus | "all" }[] = [
-  { label: "Tất cả trạng thái", value: "all" },
-  { label: "Bình thường", value: "正常" },
-  { label: "Giới hạn", value: "限流" },
-  { label: "Lỗi", value: "异常" },
-  { label: "Vô hiệu hóa", value: "禁用" },
+const accountStatusOptions: { labelKey: TranslationKey; value: AccountStatus | "all" }[] = [
+  { labelKey: "allStatus", value: "all" },
+  { labelKey: "status_normal", value: "active" },
+  { labelKey: "status_limited", value: "limited" },
+  { labelKey: "status_error", value: "error" },
+  { labelKey: "status_disabled", value: "disabled" },
 ];
 
 const statusMeta: Record<
@@ -68,19 +78,43 @@ const statusMeta: Record<
     badge: ComponentProps<typeof Badge>["variant"];
   }
 > = {
-  正常: { icon: CheckCircle2, badge: "success" },
-  限流: { icon: CircleAlert, badge: "warning" },
-  异常: { icon: CircleOff, badge: "danger" },
-  禁用: { icon: Ban, badge: "secondary" },
+  active: { icon: CheckCircle2, badge: "success" },
+  limited: { icon: CircleAlert, badge: "warning" },
+  error: { icon: CircleOff, badge: "danger" },
+  disabled: { icon: Ban, badge: "secondary" },
 };
 
 const metricCards = [
-  { key: "total", label: "Tổng số tài khoản", color: "text-stone-900", icon: UserRound },
-  { key: "active", label: "Hoạt động", color: "text-emerald-600", icon: CheckCircle2 },
-  { key: "limited", label: "Bị giới hạn", color: "text-orange-500", icon: CircleAlert },
-  { key: "abnormal", label: "Bị lỗi", color: "text-rose-500", icon: CircleOff },
-  { key: "disabled", label: "Đã vô hiệu", color: "text-stone-500", icon: Ban },
-  { key: "quota", label: "Hạn mức còn lại", color: "text-blue-500", icon: RefreshCw },
+  {
+    key: "total", labelKey: "totalAccounts" as TranslationKey, icon: UserRound,
+    gradient: "from-indigo-500 to-blue-600", shadow: "shadow-indigo-200",
+    bg: "from-indigo-50/80 to-blue-50/80", textColor: "text-indigo-900", labelColor: "text-indigo-600",
+  },
+  {
+    key: "active", labelKey: "active" as TranslationKey, icon: CheckCircle2,
+    gradient: "from-emerald-500 to-teal-600", shadow: "shadow-emerald-200",
+    bg: "from-emerald-50/80 to-teal-50/80", textColor: "text-emerald-900", labelColor: "text-emerald-600",
+  },
+  {
+    key: "limited", labelKey: "limited" as TranslationKey, icon: CircleAlert,
+    gradient: "from-amber-500 to-orange-500", shadow: "shadow-amber-200",
+    bg: "from-amber-50/80 to-orange-50/80", textColor: "text-amber-900", labelColor: "text-amber-600",
+  },
+  {
+    key: "abnormal", labelKey: "abnormal" as TranslationKey, icon: CircleOff,
+    gradient: "from-rose-500 to-red-600", shadow: "shadow-rose-200",
+    bg: "from-rose-50/80 to-red-50/80", textColor: "text-rose-900", labelColor: "text-rose-600",
+  },
+  {
+    key: "disabled", labelKey: "disabled" as TranslationKey, icon: Ban,
+    gradient: "from-slate-400 to-slate-500", shadow: "shadow-slate-200",
+    bg: "from-slate-50/80 to-slate-100/80", textColor: "text-slate-700", labelColor: "text-slate-500",
+  },
+  {
+    key: "quota", labelKey: "quotaRemaining" as TranslationKey, icon: RefreshCw,
+    gradient: "from-sky-500 to-cyan-600", shadow: "shadow-sky-200",
+    bg: "from-sky-50/80 to-cyan-50/80", textColor: "text-sky-900", labelColor: "text-sky-600",
+  },
 ] as const;
 
 function isUnlimitedImageQuotaAccount(account: Account) {
@@ -108,7 +142,8 @@ function formatQuota(account: Account) {
   return String(Math.max(0, account.quota));
 }
 
-function formatRestoreAt(value?: string | null) {
+function formatRestoreAt(value: string | null | undefined, lang: "vi" | "en") {
+  const t = translations[lang];
   if (!value) {
     return { absolute: "—", relative: "" };
   }
@@ -122,7 +157,7 @@ function formatRestoreAt(value?: string | null) {
   const totalHours = Math.ceil(diffMs / (1000 * 60 * 60));
   const days = Math.floor(totalHours / 24);
   const hours = totalHours % 24;
-  const relative = diffMs > 0 ? `Còn ${days}d ${hours}h` : "Đã đến lúc phục hồi";
+  const relative = diffMs > 0 ? `${t.restoreIn} ${days}d ${hours}h` : t.readyToRestore;
 
   const pad = (num: number) => String(num).padStart(2, "0");
   const absolute = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(
@@ -133,7 +168,7 @@ function formatRestoreAt(value?: string | null) {
 }
 
 function formatQuotaSummary(accounts: Account[]) {
-  const availableAccounts = accounts.filter((account) => account.status === "正常");
+  const availableAccounts = accounts.filter((account) => account.status === "active");
   if (availableAccounts.some(isUnlimitedImageQuotaAccount)) {
     return "∞";
   }
@@ -149,6 +184,23 @@ function maskToken(token?: string) {
   return `${token.slice(0, 16)}...${token.slice(-8)}`;
 }
 
+function tryDecodeJwtEmail(token?: string): string | null {
+  if (!token) return null;
+  try {
+    const parts = token.split(".");
+    if (parts.length < 2) return null;
+    const payload = JSON.parse(atob(parts[1]));
+    const profile = payload?.["https://api.openai.com/profile"];
+    return typeof profile?.email === "string" ? profile.email : null;
+  } catch {
+    return null;
+  }
+}
+
+function accountLabel(account: Account) {
+  return account.email || tryDecodeJwtEmail(account.access_token) || maskToken(account.access_token);
+}
+
 function downloadTokens(accounts: Account[]) {
   const content = `${accounts.map((account) => account.access_token).join("\n")}\n`;
   const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
@@ -161,20 +213,92 @@ function downloadTokens(accounts: Account[]) {
 }
 
 function displayAccountType(account: Account) {
-  return account.type || "Free";
+  // go and free → same ChatGPT group; codex stays separate
+  if (account.type === "go") return "free";
+  if (account.type === "codex") return "codex";
+  return account.plan || account.type || "Free";
+}
+
+function translateStatus(status: string, lang: "vi" | "en") {
+  const t = translations[lang];
+  switch (status) {
+    case "active": return t.status_normal;
+    case "limited": return t.status_limited;
+    case "error": return t.status_error;
+    case "disabled": return t.status_disabled;
+    default: return status;
+  }
+}
+
+function formatRelativeTime(value: string | null | undefined, lang: "vi" | "en"): string {
+  const t = translations[lang];
+  if (!value) return "—";
+  const date = new Date(value);
+  if (isNaN(date.getTime())) return value;
+  const diffMs = Date.now() - date.getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return t.justNow;
+  if (mins < 60) return `${mins} ${t.minsAgo}`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs} ${t.hrsAgo}`;
+  return `${Math.floor(hrs / 24)} ${t.daysAgo}`;
+}
+
+function QuotaBar({
+  label, used, max, resetAfter
+}: { label: string; used: number; max: number; resetAfter?: string | null }) {
+  const pct = max > 0 ? Math.min(100, Math.round((used / max) * 100)) : 0;
+  const remaining = Math.max(0, max - used);
+  const remainPct = 100 - pct;
+  const dotColor = remainPct > 70 ? "bg-emerald-500" : remainPct > 30 ? "bg-amber-400" : "bg-rose-500";
+  const barColor = remainPct > 70 ? "bg-emerald-500" : remainPct > 30 ? "bg-amber-400" : "bg-rose-500";
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          <span className={`size-2 rounded-full shrink-0 ${dotColor}`} />
+          <span className="text-[11px] font-medium text-slate-500">{label}</span>
+        </div>
+        {resetAfter && (
+          <span className="text-[10px] text-slate-400 shrink-0">{resetAfter}</span>
+        )}
+      </div>
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all ${barColor}`}
+            style={{ width: `${remainPct}%` }}
+          />
+        </div>
+        <span className="text-[11px] text-slate-500 shrink-0 w-20 text-right">
+          {remaining} / {max}
+        </span>
+        <span className={`text-[11px] font-bold shrink-0 w-8 text-right ${dotColor.replace('bg-', 'text-')}`}>
+          {remainPct}%
+        </span>
+      </div>
+    </div>
+  );
 }
 
 function AccountsPageContent() {
+  const { lang, setLang } = useLangStore();
+  const t = (key: TranslationKey) => translations[lang][key] || key;
   const didLoadRef = useRef(false);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedProviders, setExpandedProviders] = useState<Set<string>>(new Set());
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
+  const [providerTree, setProviderTree] = useState<any[]>([]);
   const [typeFilter, setTypeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState<AccountStatus | "all">("all");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState("10");
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
-  const [editStatus, setEditStatus] = useState<AccountStatus>("正常");
+  const [editStatus, setEditStatus] = useState<AccountStatus>("active");
+  const [editType, setEditType] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -204,7 +328,58 @@ function AccountsPageContent() {
     }
     didLoadRef.current = true;
     void loadAccounts();
+    void fetchProviderTree();
   }, []);
+
+  const fetchProviderTree = async () => {
+    await buildProviderTree();
+  };
+
+  const buildProviderTree = async () => {
+    const tree: any[] = [];
+    try {
+      const healthRes = await request.get("/api/v1/health");
+      const health = (healthRes.data as any) || {};
+      const gemini = health.gemini || {};
+      const instances: any[] = gemini.instances || [];
+
+      // ── Gemini API: separate branch like ChatGPT, each key is a row ──
+      const geminiInst = instances.find((i: any) => i.id === "gemini_free");
+      if (geminiInst && geminiInst.keys?.length > 0) {
+        tree.push({
+          provider: "Gemini API",
+          icon: "gemini",
+          type: "gemini_keys",
+          total: geminiInst.keys.length,
+          available: geminiInst.available_keys || 0,
+          status: geminiInst.status,
+          models: geminiInst.models || 0,
+          keys: geminiInst.keys.map((k: any) => ({
+            id: k.key_preview,
+            key_preview: k.key_preview,
+            status: k.status,
+            models: k.models || 0,
+            error: k.error || null,
+          })),
+        });
+      }
+
+      // ── Other Custom Providers ──
+      const otherInsts = instances.filter((i: any) => i.id !== "gemini_free");
+      if (otherInsts.length > 0) {
+        tree.push({
+          provider: "Providers & APIs",
+          icon: "server",
+          type: "providers",
+          instances: otherInsts,
+          total: otherInsts.length,
+        });
+      }
+    } catch (e) {
+      console.error("buildProviderTree failed:", e);
+    }
+    setProviderTree(tree);
+  };
 
   const filteredAccounts = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -226,10 +401,10 @@ function AccountsPageContent() {
 
   const summary = useMemo(() => {
     const total = accounts.length;
-    const active = accounts.filter((item) => item.status === "正常").length;
-    const limited = accounts.filter((item) => item.status === "限流").length;
-    const abnormal = accounts.filter((item) => item.status === "异常").length;
-    const disabled = accounts.filter((item) => item.status === "禁用").length;
+    const active = accounts.filter((item) => item.status === "active").length;
+    const limited = accounts.filter((item) => item.status === "limited").length;
+    const abnormal = accounts.filter((item) => item.status === "error").length;
+    const disabled = accounts.filter((item) => item.status === "disabled").length;
     const quota = formatQuotaSummary(accounts);
 
     return { total, active, limited, abnormal, disabled, quota };
@@ -237,11 +412,61 @@ function AccountsPageContent() {
 
   const accountTypeOptions = useMemo(
     () => [
-      { label: "Tất cả các loại", value: "all" },
+      { label: `Tất cả`, value: "all" },
       ...Array.from(new Set(accounts.map(displayAccountType))).map((type) => ({ label: type, value: type })),
     ],
     [accounts],
   );
+
+  const groupedAccounts = useMemo(() => {
+    const groups = new Map<string, Account[]>();
+    for (const acc of filteredAccounts) {
+      const type = displayAccountType(acc);
+      const list = groups.get(type);
+      if (list) list.push(acc);
+      else groups.set(type, [acc]);
+    }
+    return Array.from(groups.entries()).map(([type, items]) => {
+      const active = items.filter(a => a.status === "active").length;
+      const limited = items.filter(a => a.status === "limited").length;
+      const error = items.filter(a => a.status === "error").length;
+      return { key: type, label: type, count: items.length, items, active, limited, error };
+    });
+  }, [filteredAccounts]);
+
+  // Merge filtered accounts + provider tree for unified tree view
+  const mergedTree = useMemo(() => {
+    const tree: any[] = [];
+
+    // ChatGPT branch from filtered accounts
+    if (groupedAccounts.length > 0) {
+      tree.push({
+        provider: "ChatGPT",
+        icon: "chatgpt",
+        type: "accounts",
+        groups: groupedAccounts,
+        total: filteredAccounts.length,
+      });
+    }
+
+    // Providers + Custom APIs from backend tree
+    for (const branch of providerTree) {
+      if (branch.type !== "accounts") {
+        tree.push(branch);
+      }
+    }
+
+    return tree;
+  }, [groupedAccounts, filteredAccounts, providerTree]);
+
+  function toggleGroup(type: string) {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(type)) next.delete(type);
+      else next.add(type);
+      return next;
+    });
+  }
 
   const selectedTokens = useMemo(() => {
     const selectedSet = new Set(selectedIds);
@@ -249,7 +474,7 @@ function AccountsPageContent() {
   }, [accounts, selectedIds]);
 
   const abnormalTokens = useMemo(() => {
-    return accounts.filter((item) => item.status === "异常").map((item) => item.access_token);
+    return accounts.filter((item) => item.status === "error").map((item) => item.access_token);
   }, [accounts]);
 
   const paginationItems = useMemo(() => {
@@ -316,6 +541,19 @@ function AccountsPageContent() {
   const openEditDialog = (account: Account) => {
     setEditingAccount(account);
     setEditStatus(account.status);
+    setEditType(account.type || "free");
+  };
+
+  const handleToggleAccount = async (account: Account) => {
+    const newStatus: AccountStatus = account.status === "active" ? "disabled" : "active";
+    try {
+      const data = await updateAccount(account.access_token, { status: newStatus });
+      setAccounts(data.items);
+      setSelectedIds((prev) => prev.filter((id) => data.items.some((item) => item.access_token === id)));
+      toast.success(newStatus === "disabled" ? "Đã vô hiệu hóa tài khoản" : "Đã kích hoạt tài khoản");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Thay đổi trạng thái thất bại");
+    }
   };
 
   const handleUpdateAccount = async () => {
@@ -327,6 +565,7 @@ function AccountsPageContent() {
     try {
       const data = await updateAccount(editingAccount.access_token, {
         status: editStatus,
+        type: editType,
       });
       setAccounts(data.items);
       setSelectedIds((prev) => prev.filter((id) => data.items.some((item) => item.access_token === id)));
@@ -350,33 +589,20 @@ function AccountsPageContent() {
 
   return (
     <>
-      <section className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="space-y-1">
-          <div className="text-xs font-semibold tracking-[0.18em] text-stone-500 uppercase">
-            Account Pool
+      {/* ── Header: multi-row layout ── */}
+      <section className="space-y-3">
+        {/* Row 1: Title + count */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <h1 className="text-[22px] font-bold tracking-tight text-slate-900">{t("title")}</h1>
+            <Badge variant="secondary" className="rounded-lg bg-stone-200 px-2.5 py-0.5 text-sm text-stone-700">
+              {filteredAccounts.length} tài khoản
+            </Badge>
           </div>
-          <h1 className="text-2xl font-semibold tracking-tight">Quản lý tài khoản</h1>
         </div>
 
+        {/* Row 2: Import / Export */}
         <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="outline"
-            className="h-10 rounded-xl border-stone-200 bg-white/80 px-4 text-stone-700 hover:bg-white"
-            onClick={() => void loadAccounts()}
-            disabled={isLoading || isRefreshing || isDeleting}
-          >
-            <RefreshCw className={cn("size-4", isLoading ? "animate-spin" : "")} />
-            Làm mới
-          </Button>
-          <Button
-            variant="outline"
-            className="h-10 rounded-xl border-stone-200 bg-white/80 px-4 text-stone-700 hover:bg-white"
-            onClick={() => void handleRefreshAccounts(accounts.map((item) => item.access_token))}
-            disabled={isLoading || isRefreshing || isDeleting || accounts.length === 0}
-          >
-            <RefreshCw className={cn("size-4", isRefreshing ? "animate-spin" : "")} />
-            Làm mới tất cả thông tin và hạn mức
-          </Button>
           <AccountImportDialog
             disabled={isLoading || isRefreshing || isDeleting}
             onImported={(items) => {
@@ -385,29 +611,103 @@ function AccountsPageContent() {
               setPage(1);
             }}
           />
+          <a
+            href="/settings"
+            className="inline-flex items-center gap-1.5 h-9 rounded-lg border border-black/[0.08] bg-white px-3.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50 transition"
+          >
+            <ExternalLink className="size-3.5" />
+            Custom API
+          </a>
           <Button
             variant="outline"
-            className="h-10 rounded-xl border-stone-200 bg-white/80 px-4 text-stone-700 hover:bg-white"
+            className="h-9 rounded-lg border-black/[0.08] bg-white px-3.5 text-[13px] text-slate-600 hover:bg-slate-50"
             onClick={() => downloadTokens(accounts)}
             disabled={accounts.length === 0}
           >
-            <Download className="size-4" />
-            Xuất tất cả Token
+            <Download className="size-3.5" />
+            Xuất Token
           </Button>
+        </div>
+
+        {/* Row 3: Refresh + Search + Filters */}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-wrap">
+          <Button
+            variant="outline"
+            className="h-9 rounded-lg border-black/[0.08] bg-white px-3 text-[13px] text-slate-600 hover:bg-slate-50"
+            onClick={() => void loadAccounts()}
+            disabled={isLoading || isRefreshing || isDeleting}
+          >
+            <RefreshCw className={cn("size-3.5 mr-1.5", isLoading ? "animate-spin" : "")} />
+            Làm mới
+          </Button>
+          <Button
+            variant="outline"
+            className="h-9 rounded-lg border-black/[0.08] bg-white px-3 text-[13px] text-slate-600 hover:bg-slate-50"
+            onClick={() => void handleRefreshAccounts(accounts.map((item) => item.access_token))}
+            disabled={isLoading || isRefreshing || isDeleting || accounts.length === 0}
+          >
+            <RefreshCw className={cn("size-3.5 mr-1.5", isRefreshing ? "animate-spin" : "")} />
+            Làm mới tất cả
+          </Button>
+          <Button
+            variant="outline"
+            className="h-9 rounded-lg border-black/[0.08] bg-white px-3 text-[13px] text-slate-600 hover:bg-slate-50"
+            onClick={() => void handleRefreshAccounts(selectedTokens)}
+            disabled={isLoading || isRefreshing || isDeleting || selectedTokens.length === 0}
+          >
+            <RefreshCw className={cn("size-3.5 mr-1.5", isRefreshing ? "animate-spin" : "")} />
+            Làm mới đã chọn ({selectedTokens.length})
+          </Button>
+
+          <div className="flex-1" />
+
+          <div className="relative w-full sm:w-[200px]">
+            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-slate-400" />
+            <Input
+              value={query}
+              onChange={(event) => { setQuery(event.target.value); setPage(1); }}
+              placeholder="Tìm kiếm..."
+              className="h-9 rounded-lg border-slate-200 bg-white pl-8 w-full text-sm"
+            />
+          </div>
+          <Select value={typeFilter} onValueChange={(value) => { setTypeFilter(value); setPage(1); }}>
+            <SelectTrigger className="h-9 rounded-lg border-slate-200 bg-white w-[110px] text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {accountTypeOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={statusFilter} onValueChange={(value) => { setStatusFilter(value as AccountStatus | "all"); setPage(1); }}>
+            <SelectTrigger className="h-9 rounded-lg border-slate-200 bg-white w-[120px] text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {accountStatusOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {t(option.labelKey)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </section>
 
       <Dialog open={Boolean(editingAccount)} onOpenChange={(open) => (!open ? setEditingAccount(null) : null)}>
         <DialogContent showCloseButton={false} className="rounded-2xl p-6">
           <DialogHeader className="gap-2">
-            <DialogTitle>Sửa tài khoản</DialogTitle>
+            <DialogTitle>{t("editStatus")}</DialogTitle>
             <DialogDescription className="text-sm leading-6">
-              Thay đổi trạng thái tài khoản thủ công.
+              {t("editStatusDesc")}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium text-stone-700">Trạng thái</label>
+              <label className="text-sm font-medium text-stone-700">{t("status")}</label>
               <Select value={editStatus} onValueChange={(value) => setEditStatus(value as AccountStatus)}>
                 <SelectTrigger className="h-11 rounded-xl border-stone-200 bg-white">
                   <SelectValue />
@@ -417,9 +717,22 @@ function AccountsPageContent() {
                     .filter((option) => option.value !== "all")
                     .map((option) => (
                       <SelectItem key={option.value} value={option.value}>
-                        {option.label}
+                        {t(option.labelKey)}
                       </SelectItem>
                     ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-stone-700">Loại (type)</label>
+              <Select value={editType} onValueChange={setEditType}>
+                <SelectTrigger className="h-11 rounded-xl border-stone-200 bg-white">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="free">free (ChatGPT Session)</SelectItem>
+                  <SelectItem value="codex">codex (OAuth / 9router)</SelectItem>
+                  <SelectItem value="go">go</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -434,7 +747,7 @@ function AccountsPageContent() {
               Hủy
             </Button>
             <Button
-              className="h-10 rounded-xl bg-stone-950 px-5 text-white hover:bg-stone-800"
+              className="h-10 rounded-xl bg-stone-900 px-5 text-white hover:bg-stone-800"
               onClick={() => void handleUpdateAccount()}
               disabled={isUpdating}
             >
@@ -445,362 +758,527 @@ function AccountsPageContent() {
         </DialogContent>
       </Dialog>
 
+      {/* Stat cards */}
       <section className="space-y-3">
-        <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-6">
           {metricCards.map((item) => {
             const Icon = item.icon;
             const value = summary[item.key];
             return (
-              <Card key={item.key} className="rounded-2xl border-white/80 bg-white/90 shadow-sm">
-                <CardContent className="p-4">
-                  <div className="mb-4 flex items-start justify-between">
-                    <span className="text-xs font-medium text-stone-400">{item.label}</span>
-                    <Icon className="size-4 text-stone-400" />
-                  </div>
-                  <div className={cn("text-[1.75rem] font-semibold tracking-tight", item.color)}>
-                    <span className={typeof value === "number" ? "" : "text-[1.1rem]"}>
+              <div
+                key={item.key}
+                className={cn(
+                  "rounded-xl p-2.5 card-3d",
+                  `bg-gradient-to-br ${item.bg}`,
+                )}
+              >
+                <div className="flex items-start justify-between gap-1">
+                  <div className="min-w-0">
+                    <p className={cn("text-[10px] font-semibold mb-0.5 truncate", item.labelColor)}>{t(item.labelKey)}</p>
+                    <p className={cn("text-lg font-bold leading-none", item.textColor)}>
                       {typeof value === "number" ? formatCompact(value) : value}
-                    </span>
+                    </p>
                   </div>
-                </CardContent>
-              </Card>
+                  <div className={cn(
+                    "size-6 rounded-full flex items-center justify-center shrink-0",
+                    `bg-gradient-to-br ${item.gradient}`,
+                  )}>
+                    <Icon className="size-3 text-white" />
+                  </div>
+                </div>
+              </div>
             );
           })}
         </div>
       </section>
 
       <section className="space-y-4">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-center gap-3">
-            <h2 className="text-lg font-semibold tracking-tight">Danh sách tài khoản</h2>
-            <Badge variant="secondary" className="rounded-lg bg-stone-200 px-2 py-0.5 text-stone-700">
-              {filteredAccounts.length}
-            </Badge>
-          </div>
-
-          <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
-            <div className="relative min-w-[260px]">
-              <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-stone-400" />
-              <Input
-                value={query}
-                onChange={(event) => {
-                  setQuery(event.target.value);
-                  setPage(1);
-                }}
-                placeholder="Tìm kiếm Email"
-                className="h-10 rounded-xl border-stone-200 bg-white/85 pl-10"
-              />
-            </div>
-            <Select
-              value={typeFilter}
-              onValueChange={(value) => {
-                setTypeFilter(value);
-                setPage(1);
-              }}
-            >
-              <SelectTrigger className="h-10 w-full rounded-xl border-stone-200 bg-white/85 lg:w-[150px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {accountTypeOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select
-              value={statusFilter}
-              onValueChange={(value) => {
-                setStatusFilter(value as AccountStatus | "all");
-                setPage(1);
-              }}
-            >
-              <SelectTrigger className="h-10 w-full rounded-xl border-stone-200 bg-white/85 lg:w-[150px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {accountStatusOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
+        {/* Tree View */}
 
         {isLoading && accounts.length === 0 ? (
-          <Card className="rounded-2xl border-white/80 bg-white/90 shadow-sm">
+          <Card className="rounded-2xl card-3d card-tint-emerald">
             <CardContent className="flex flex-col items-center justify-center gap-3 px-6 py-14 text-center">
               <div className="rounded-xl bg-stone-100 p-3 text-stone-500">
                 <LoaderCircle className="size-5 animate-spin" />
               </div>
               <div className="space-y-1">
-                <p className="text-sm font-medium text-stone-700">Đang tải tài khoản</p>
-                <p className="text-sm text-stone-500">Đang đồng bộ danh sách và trạng thái từ backend.</p>
+                <p className="text-sm font-medium text-stone-700">{t("loadingAccounts")}</p>
+                <p className="text-sm text-stone-500">{t("syncingAccounts")}</p>
               </div>
             </CardContent>
           </Card>
         ) : null}
 
-        <Card
-          className={cn(
-            "overflow-hidden rounded-2xl border-white/80 bg-white/90 shadow-sm",
-            isLoading && accounts.length === 0 ? "hidden" : "",
-          )}
-        >
-          <CardContent className="space-y-0 p-0">
-            <div className="flex flex-col gap-3 border-b border-stone-100 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex flex-wrap items-center gap-2 text-sm text-stone-500">
-                <Button
-                  variant="ghost"
-                  className="h-8 rounded-lg px-3 text-stone-500 hover:bg-stone-100"
-                  onClick={() => void handleRefreshAccounts(selectedTokens)}
-                  disabled={selectedTokens.length === 0 || isRefreshing}
-                >
-                  {isRefreshing ? <LoaderCircle className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-                  Làm mới tài khoản đã chọn
-                </Button>
-                <Button
-                  variant="ghost"
-                  className="h-8 rounded-lg px-3 text-rose-500 hover:bg-rose-50 hover:text-rose-600"
-                  onClick={() => void handleDeleteTokens(abnormalTokens)}
-                  disabled={abnormalTokens.length === 0 || isDeleting}
-                >
-                  {isDeleting ? <LoaderCircle className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
-                  Xóa tài khoản lỗi
-                </Button>
-                <Button
-                  variant="ghost"
-                  className="h-8 rounded-lg px-3 text-rose-500 hover:bg-rose-50 hover:text-rose-600"
-                  onClick={() => void handleDeleteTokens(selectedTokens)}
-                  disabled={selectedTokens.length === 0 || isDeleting}
-                >
-                  {isDeleting ? <LoaderCircle className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
-                  Xóa mục đã chọn
-                </Button>
-                {selectedIds.length > 0 ? (
-                  <span className="rounded-lg bg-stone-100 px-2.5 py-1 text-xs font-medium text-stone-600">
-                    Đã chọn {selectedIds.length} mục
-                  </span>
-                ) : null}
-              </div>
-            </div>
+        {/* 3-Level Provider Tree */}
+        {!isLoading && (
+          <div className="space-y-2">
+            {mergedTree.map((provider: any) => {
+              const isProviderOpen = expandedProviders.has(provider.provider);
+              const tintClass =
+                provider.provider === "ChatGPT" ? "card-tint-emerald" :
+                provider.provider === "Gemini API" ? "card-tint-violet" :
+                provider.provider === "Providers & APIs" ? "card-tint-indigo" :
+                "card-tint-slate";
+              const Icon = provider.icon === "chatgpt" ? Sparkles :
+                provider.icon === "gemini" ? Sparkles :
+                provider.icon === "cpu" ? Cpu : Server;
+              return (
+                <div key={provider.provider} className="rounded-[16px] card-3d overflow-hidden">
+                  {/* Level 1: Provider header */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setExpandedProviders(prev => {
+                        const next = new Set(prev);
+                        if (next.has(provider.provider)) next.delete(provider.provider);
+                        else next.add(provider.provider);
+                        return next;
+                      });
+                    }}
+                    className={cn(
+                      "flex w-full items-center gap-3 px-5 py-4 text-left transition-colors",
+                      tintClass,
+                      isProviderOpen && "border-b border-black/[0.04]"
+                    )}
+                  >
+                    <ChevronDown className={cn(
+                      "size-4 text-slate-400 transition-transform",
+                      isProviderOpen && "rotate-180"
+                    )} />
+                    <div className="flex size-9 items-center justify-center rounded-xl bg-white/60">
+                      <Icon className="size-4 text-slate-500" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <span className="text-[15px] font-bold text-slate-800">{provider.provider}</span>
+                    </div>
+                    <Badge variant="secondary" className="rounded-md bg-white/60 text-[11px] px-2 text-slate-500">
+                      {provider.total} mục
+                    </Badge>
+                  </button>
 
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[920px] text-left">
-                <thead className="border-b border-stone-100 text-[11px] text-stone-400 uppercase tracking-[0.18em]">
-                  <tr>
-                    <th className="w-12 px-4 py-3">
-                      <Checkbox
-                        checked={allCurrentSelected}
-                        onCheckedChange={(checked) => toggleSelectAll(Boolean(checked))}
-                      />
-                    </th>
-                    <th className="w-56 px-4 py-3">token</th>
-                    <th className="w-28 px-4 py-3">Loại</th>
-                    <th className="w-24 px-4 py-3">Trạng thái</th>
-                    <th className="w-56 px-4 py-3">Thông tin tài khoản</th>
-                    <th className="w-24 px-4 py-3">Hạn mức</th>
-                    <th className="w-40 px-4 py-3">Thời gian hồi phục</th>
-                    <th className="w-18 px-4 py-3">Thành công</th>
-                    <th className="w-18 px-4 py-3">Thất bại</th>
-                    <th className="w-24 px-4 py-3">Hành động</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {currentRows.map((account) => {
-                    const status = statusMeta[account.status];
-                    const StatusIcon = status.icon;
-
-                    return (
-                      <tr
-                        key={account.access_token}
-                        className="border-b border-stone-100/80 text-sm text-stone-600 transition-colors hover:bg-stone-50/70"
-                      >
-                        <td className="px-4 py-3">
-                          <Checkbox
-                            checked={selectedIds.includes(account.access_token)}
-                            onCheckedChange={(checked) => {
-                              setSelectedIds((prev) =>
-                                checked
-                                  ? Array.from(new Set([...prev, account.access_token]))
-                                  : prev.filter((item) => item !== account.access_token),
-                              );
-                            }}
-                          />
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium tracking-tight text-stone-700">
-                              {maskToken(account.access_token)}
-                            </span>
+                  {/* Level 2: Sub-items */}
+                  {isProviderOpen && (
+                    <div className="divide-y divide-black/[0.03]">
+                      {/* ChatGPT: groups by account type */}
+                      {provider.type === "accounts" && provider.groups?.map((group: any) => {
+                        const isGroupOpen = expandedGroups.has(`${provider.provider}/${group.key}`);
+                        return (
+                          <div key={group.key}>
                             <button
                               type="button"
-                              className="rounded-lg p-1 text-stone-400 transition hover:bg-stone-100 hover:text-stone-700"
                               onClick={() => {
-                                void navigator.clipboard.writeText(account.access_token);
-                                toast.success("Token đã được sao chép");
+                                setExpandedGroups(prev => {
+                                  const next = new Set(prev);
+                                  const gid = `${provider.provider}/${group.key}`;
+                                  if (next.has(gid)) next.delete(gid);
+                                  else next.add(gid);
+                                  return next;
+                                });
                               }}
+                              className="flex w-full items-center gap-3 px-5 py-3 text-left hover:bg-slate-50/60 transition-colors"
                             >
-                              <Copy className="size-4" />
+                              <ChevronDown className={cn(
+                                "size-3.5 text-slate-400 transition-transform",
+                                isGroupOpen && "rotate-180"
+                              )} />
+                              <span className="flex-1 text-[13px] font-semibold text-slate-700">{group.label}</span>
+                              <Badge variant="secondary" className="rounded-md bg-slate-100 text-[10px] px-1.5 text-slate-500">
+                                {group.count}
+                              </Badge>
+                              <span className="flex items-center gap-1 text-[10px] text-emerald-600">{group.active} active</span>
+                              <span className="flex items-center gap-1 text-[10px] text-amber-600">{group.limited} limited</span>
+                              {group.error > 0 && (
+                                <span className="flex items-center gap-1 text-[10px] text-rose-500">{group.error} err</span>
+                              )}
                             </button>
+
+                            {/* Level 3: Individual accounts */}
+                            {isGroupOpen && group.items?.map((account: Account) => {
+                              const accountExpanded = expandedId === account.access_token;
+                              const status = statusMeta[account.status];
+                              const StatusIcon = status.icon;
+                              const isUnlimited = isUnlimitedImageQuotaAccount(account);
+                              const quotaVal = Math.max(0, account.quota);
+                              return (
+                                <div key={account.access_token}>
+                                  <div
+                                    className={cn(
+                                      "flex items-center gap-3 pl-12 pr-5 py-2.5 hover:bg-slate-50/60 cursor-pointer transition-colors",
+                                      accountExpanded && "bg-indigo-50/40"
+                                    )}
+                                    onClick={() => setExpandedId(accountExpanded ? null : account.access_token)}
+                                  >
+                                    <Checkbox
+                                      className="size-4"
+                                      checked={selectedIds.includes(account.access_token)}
+                                      onClick={(e) => e.stopPropagation()}
+                                      onCheckedChange={(checked) => {
+                                        if (checked) {
+                                          setSelectedIds(prev => [...prev, account.access_token]);
+                                        } else {
+                                          setSelectedIds(prev => prev.filter(id => id !== account.access_token));
+                                        }
+                                      }}
+                                    />
+                                    <div className={cn(
+                                      "size-7 shrink-0 rounded-full flex items-center justify-center",
+                                      account.status === "active" ? "bg-gradient-to-br from-indigo-500 to-blue-600"
+                                      : account.status === "limited" ? "bg-gradient-to-br from-amber-400 to-orange-500"
+                                      : account.status === "error" ? "bg-gradient-to-br from-rose-500 to-red-600"
+                                      : "bg-slate-200"
+                                    )}>
+                                      <UserRound className="size-3 text-white" />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="text-[12px] font-medium text-slate-700 truncate max-w-[140px]">
+                                          {accountLabel(account)}
+                                        </span>
+                                        <Badge variant={status.badge} className="inline-flex items-center gap-0.5 rounded text-[10px] px-1 py-0">
+                                          <StatusIcon className="size-2.5" />
+                                          {translateStatus(account.status, lang)}
+                                        </Badge>
+                                        {account.type && account.type !== account.plan ? (
+                                          <Badge variant="secondary" className="rounded text-[10px] px-1 py-0 bg-amber-50 text-amber-700 border border-amber-200">
+                                            {account.type}
+                                          </Badge>
+                                        ) : null}
+                                      </div>
+                                    </div>
+                                    <div className="hidden sm:flex items-center gap-2 text-[11px]">
+                                      <span className="text-emerald-600">{account.success}✓</span>
+                                      <span className="text-rose-400">{account.fail}✗</span>
+                                    </div>
+                                    <div className="text-[11px] font-bold">
+                                      {isUnlimited ? <span className="text-violet-600">∞</span>
+                                        : imageQuotaUnknown(account) ? <span className="text-slate-400">?</span>
+                                        : <span className={quotaVal > 0 ? "text-emerald-600" : "text-rose-500"}>{quotaVal}</span>
+                                      }
+                                    </div>
+                                    <div className="flex items-center gap-1 text-slate-400" onClick={e => e.stopPropagation()}>
+                                      <button className="rounded p-0.5 hover:bg-slate-100 hover:text-slate-700" onClick={() => openEditDialog(account)}><Pencil className="size-3" /></button>
+                                      <button
+                                        className="rounded p-0.5 hover:bg-amber-50 hover:text-amber-600"
+                                        onClick={() => void handleToggleAccount(account)}
+                                        title={account.status === "disabled" ? "Kích hoạt" : "Vô hiệu hóa"}
+                                      >
+                                        {account.status === "disabled" ? <Power className="size-3" /> : <PowerOff className="size-3" />}
+                                      </button>
+                                      <button className="rounded p-0.5 hover:bg-rose-50 hover:text-rose-500" onClick={() => void handleDeleteTokens([account.access_token])}><Trash2 className="size-3" /></button>
+                                    </div>
+                                  </div>
+                                  {/* Account expanded detail */}
+                                  {accountExpanded && (
+                                    <div className="pl-12 pr-5 pb-3 bg-slate-50/50 border-t border-indigo-100">
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-3">
+                                        <div className="rounded-[12px] p-4 card-3d card-tint-emerald space-y-3">
+                                          <div className="flex items-center justify-between">
+                                            <div>
+                                              <p className="text-[13px] font-bold text-slate-800">{accountLabel(account)}</p>
+                                              <div className="flex items-center gap-2 mt-0.5">
+                                                <Badge variant={status.badge} className="inline-flex items-center gap-0.5 rounded text-[10px] px-1 py-0">
+                                                  <span className={cn("size-1.5 rounded-full mr-0.5",
+                                                    account.status === "active" ? "bg-emerald-400" :
+                                                    account.status === "limited" ? "bg-amber-400" :
+                                                    account.status === "error" ? "bg-rose-400" : "bg-slate-300"
+                                                  )} />
+                                                  {translateStatus(account.status, lang)}
+                                                </Badge>
+                                                <Badge variant="secondary" className="rounded text-[10px] px-1 py-0 bg-slate-100 text-slate-500">
+                                                  {displayAccountType(account)}
+                                                </Badge>
+                                                {account.type && account.type !== account.plan ? (
+                                                  <Badge variant="secondary" className="rounded text-[10px] px-1 py-0 bg-amber-50 text-amber-700 border border-amber-200">
+                                                    {account.type}
+                                                  </Badge>
+                                                ) : null}
+                                              </div>
+                                            </div>
+                                          </div>
+                                          {isUnlimited ? (
+                                            <div className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-violet-500" /><span className="text-[11px] text-slate-500">Ảnh:</span><span className="text-[12px] font-bold text-violet-600">∞ không giới hạn</span></div>
+                                          ) : !imageQuotaUnknown(account) ? (
+                                            <QuotaBar label="Ảnh" used={Math.max(0, 100 - quotaVal)} max={100} resetAfter={account.restore_at ? formatRestoreAt(account.restore_at, lang).relative : undefined} />
+                                          ) : null}
+                                          {account.limits_progress?.map((lp, i) => (
+                                            <QuotaBar key={i} label={t(lp.feature_name as TranslationKey) ?? lp.feature_name ?? `Limit ${i + 1}`} used={Math.max(0, (lp as any).total ?? 100) - (lp.remaining ?? 0)} max={(lp as any).total ?? Math.max(lp.remaining ?? 0, 40)} resetAfter={lp.reset_after ? formatRestoreAt(lp.reset_after, lang).relative : undefined} />
+                                          ))}
+                                          <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-100">
+                                            <span>Dùng lần cuối</span>
+                                            <span className="font-medium text-slate-600">{formatRelativeTime(account.last_used_at, lang)}</span>
+                                          </div>
+                                        </div>
+                                        <div className="rounded-[12px] p-4 card-3d card-tint-sky space-y-3">
+                                          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Thống kê yêu cầu</p>
+                                          <div className="space-y-3">
+                                            <div className="space-y-1.5">
+                                              <div className="flex items-center justify-between gap-2">
+                                                <div className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-emerald-500" /><span className="text-[11px] text-slate-500">Thành công</span></div>
+                                                <span className="text-[11px] font-bold text-emerald-600">{account.success}</span>
+                                              </div>
+                                            </div>
+                                            <div className="space-y-1.5">
+                                              <div className="flex items-center justify-between gap-2">
+                                                <div className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-rose-500" /><span className="text-[11px] text-slate-500">Thất bại</span></div>
+                                                <span className="text-[11px] font-bold text-rose-500">{account.fail}</span>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <Badge variant="secondary" className="rounded-md bg-stone-100 text-stone-700">
-                            {displayAccountType(account)}
-                          </Badge>
-                        </td>
-                        <td className="px-4 py-3">
-                          <Badge
-                            variant={status.badge}
-                            className="inline-flex items-center gap-1 rounded-md px-2 py-1"
-                          >
-                            <StatusIcon className="size-3.5" />
-                            {account.status}
-                          </Badge>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="text-xs leading-5 text-stone-500">{account.email ?? "—"}</div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <Badge variant="info" className="rounded-md">
-                            {formatQuota(account)}
-                          </Badge>
-                        </td>
-                        <td className="px-4 py-3 text-xs leading-5 text-stone-500">
-                          {(() => {
-                            const restore = formatRestoreAt(account.restore_at);
-                            return (
-                              <div className="space-y-0.5">
-                                {restore.relative ? <div className="font-medium text-stone-700">{restore.relative}</div> : null}
-                                <div>{restore.absolute}</div>
+                        );
+                      })}
+
+                      {/* Gemini API: per-key rows like ChatGPT accounts */}
+                      {provider.type === "gemini_keys" && provider.keys?.map((keyInfo: any) => {
+                        const keyStatus = keyInfo.status;
+                        const statusColor = keyStatus === "available" ? "bg-gradient-to-br from-indigo-500 to-blue-600" :
+                          keyStatus === "rate_limited" ? "bg-gradient-to-br from-amber-400 to-orange-500" :
+                          keyStatus === "auth_error" ? "bg-gradient-to-br from-rose-500 to-red-600" :
+                          "bg-slate-200";
+                        return (
+                        <div key={keyInfo.id}>
+                          <div className={cn(
+                            "flex items-center gap-3 px-5 py-3 hover:bg-slate-50/60 cursor-pointer transition-colors",
+                          )}>
+                            <div className={cn("size-8 shrink-0 rounded-full flex items-center justify-center", statusColor)}>
+                              <span className="text-[10px] font-bold text-white">K</span>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[13px] font-semibold text-slate-800">API Key</span>
+                                <code className="text-[11px] text-slate-400">{keyInfo.key_preview}</code>
                               </div>
-                            );
-                          })()}
-                        </td>
-                        <td className="px-4 py-3 text-stone-500">{account.success}</td>
-                        <td className="px-4 py-3 text-stone-500">{account.fail}</td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-1 text-stone-400">
-                            <button
-                              type="button"
-                              className="rounded-lg p-2 transition hover:bg-stone-100 hover:text-stone-700"
-                              onClick={() => openEditDialog(account)}
-                              disabled={isUpdating}
-                            >
-                              <Pencil className="size-4" />
-                            </button>
-                            <button
-                              type="button"
-                              className="rounded-lg p-2 transition hover:bg-stone-100 hover:text-stone-700"
-                              onClick={() => void handleRefreshAccounts([account.access_token])}
-                              disabled={isRefreshing}
-                            >
-                              <RefreshCw className={cn("size-4", isRefreshing ? "animate-spin" : "")} />
-                            </button>
-                            <button
-                              type="button"
-                              className="rounded-lg p-2 transition hover:bg-rose-50 hover:text-rose-500"
-                              onClick={() => void handleDeleteTokens([account.access_token])}
-                              disabled={isDeleting}
-                            >
-                              <Trash2 className="size-4" />
-                            </button>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className={cn(
+                                  "inline-flex items-center gap-1 rounded-md text-[10px] px-1.5 py-0",
+                                  keyStatus === "available" ? "bg-emerald-500/10 text-emerald-600" :
+                                  keyStatus === "rate_limited" ? "bg-amber-500/10 text-amber-600" :
+                                  keyStatus === "auth_error" ? "bg-rose-500/10 text-rose-500" :
+                                  "bg-slate-100 text-slate-500"
+                                )}>
+                                  {keyStatus}
+                                </span>
+                                {keyInfo.models > 0 && <span className="text-[10px] text-slate-400">{keyInfo.models} models</span>}
+                              </div>
+                            </div>
+                            {keyInfo.error && (
+                              <span className="text-[10px] text-rose-400 max-w-[180px] truncate text-right">{keyInfo.error}</span>
+                            )}
                           </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                        </div>
+                        );
+                      })}
 
-              {!isLoading && currentRows.length === 0 ? (
-                <div className="flex flex-col items-center justify-center gap-3 px-6 py-14 text-center">
-                  <div className="rounded-xl bg-stone-100 p-3 text-stone-500">
-                    <Search className="size-5" />
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium text-stone-700">Không có tài khoản nào phù hợp</p>
-                    <p className="text-sm text-stone-500">Thử điều chỉnh bộ lọc hoặc từ khóa tìm kiếm.</p>
-                  </div>
+                      {/* Providers / Custom APIs: rows like ChatGPT accounts */}
+                      {(provider.type === "providers" || provider.type === "custom") && provider.instances?.map((inst: any) => {
+                        const isInstOpen = expandedId === `inst:${inst.id}`;
+                        const instStatusLabel = inst.status === "available" ? "active" : inst.status === "offline" ? "error" : inst.status === "configured" ? "active" : "limited";
+                        const instStatusColor = inst.status === "available" ? "bg-gradient-to-br from-indigo-500 to-blue-600" :
+                          inst.status === "offline" ? "bg-gradient-to-br from-rose-500 to-red-600" :
+                          inst.status === "configured" ? "bg-gradient-to-br from-sky-500 to-cyan-600" : "bg-slate-200";
+                        return (
+                        <div key={inst.id}>
+                          {/* Collapsed row — like ChatGPT account row */}
+                          <div
+                            className={cn(
+                              "flex items-center gap-3 px-5 py-3 cursor-pointer transition-colors",
+                              isInstOpen ? "bg-indigo-50/60" : "hover:bg-slate-50/60"
+                            )}
+                            onClick={() => setExpandedId(isInstOpen ? null : `inst:${inst.id}`)}
+                          >
+                            <div className={cn("size-8 shrink-0 rounded-full flex items-center justify-center", instStatusColor)}>
+                              <Server className="size-3.5 text-white" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[13px] font-semibold text-slate-800 truncate">{inst.name}</span>
+                                <span className={cn(
+                                  "inline-flex items-center gap-1 rounded-md text-[10px] px-1.5 py-0",
+                                  inst.status === "available" ? "bg-emerald-500/10 text-emerald-600" :
+                                  inst.status === "offline" ? "bg-rose-500/10 text-rose-500" :
+                                  "bg-slate-100 text-slate-500"
+                                )}>
+                                  {inst.status}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                {inst.prefix && <code className="text-[10px] text-slate-400">{inst.prefix}/</code>}
+                                {inst.port && inst.port !== "—" && <span className="text-[10px] text-slate-400">:{inst.port}</span>}
+                                {inst.base_url && <span className="text-[10px] text-slate-400 truncate max-w-[250px]">{inst.base_url}</span>}
+                              </div>
+                            </div>
+                            <div className="hidden sm:flex items-center gap-3 text-[11px]">
+                              {inst.models > 0 && <span className="text-slate-500">{inst.models} models</span>}
+                              {inst.clients > 0 && <span className="text-sky-600">{inst.clients} clients</span>}
+                            </div>
+                            <div className="flex items-center gap-1 text-slate-400" onClick={e => e.stopPropagation()}>
+                              {inst.error && <span className="text-[10px] text-rose-400 max-w-[120px] truncate">{inst.error}</span>}
+                            </div>
+                          </div>
+
+                          {/* Expanded detail panel — same style as ChatGPT accounts */}
+                          {isInstOpen && (
+                            <div className="border-t border-indigo-100 bg-slate-50/60 px-5 py-4">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                {/* Connection info card */}
+                                <div className="rounded-[12px] p-4 card-3d card-tint-emerald space-y-3">
+                                  <div className="flex items-center justify-between">
+                                    <div>
+                                      <p className="text-[13px] font-bold text-slate-800">{inst.name}</p>
+                                      <div className="flex items-center gap-2 mt-0.5">
+                                        <span className={cn(
+                                          "inline-flex items-center gap-0.5 rounded text-[10px] px-1.5 py-0",
+                                          inst.status === "available" ? "bg-emerald-500/10 text-emerald-600" :
+                                          inst.status === "offline" ? "bg-rose-500/10 text-rose-500" :
+                                          "bg-slate-100 text-slate-500"
+                                        )}>
+                                          <span className={cn("size-1.5 rounded-full",
+                                            inst.status === "available" ? "bg-emerald-400" :
+                                            inst.status === "offline" ? "bg-rose-400" : "bg-slate-300"
+                                          )} />
+                                          {inst.status}
+                                        </span>
+                                        {inst.prefix && <code className="text-[10px] text-slate-400 bg-slate-100 rounded px-1">{inst.prefix}/</code>}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="space-y-2 text-[12px]">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="size-2 rounded-full bg-indigo-500" />
+                                      <span className="text-slate-500">Base URL</span>
+                                      <span className="ml-auto text-[11px] text-slate-700 font-mono truncate max-w-[180px]">{inst.base_url || "—"}</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="size-2 rounded-full bg-sky-500" />
+                                      <span className="text-slate-500">Port</span>
+                                      <span className="ml-auto text-[11px] font-bold text-slate-700">{inst.port || "—"}</span>
+                                    </div>
+                                    {inst.has_key !== undefined && (
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="size-2 rounded-full bg-violet-500" />
+                                        <span className="text-slate-500">API Key</span>
+                                        <span className="ml-auto text-[11px] text-slate-600">{inst.has_key ? inst.key_preview : "Chưa có key"}</span>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {inst.error && (
+                                    <div className="rounded-[8px] bg-rose-50 border border-rose-100 px-3 py-2 text-[11px]">
+                                      <p className="font-medium text-rose-700">Lỗi kết nối</p>
+                                      <p className="text-rose-500 break-all">{inst.error}</p>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Metrics card */}
+                                <div className="rounded-[12px] p-4 card-3d card-tint-sky space-y-3">
+                                  <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Số liệu hoạt động</p>
+                                  <div className="space-y-3">
+                                    <div className="space-y-1.5">
+                                      <div className="flex items-center justify-between gap-2">
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="size-2 rounded-full bg-emerald-500" />
+                                          <span className="text-[11px] text-slate-500">Models</span>
+                                        </div>
+                                        <span className="text-[11px] font-bold text-emerald-600">{inst.models || 0}</span>
+                                      </div>
+                                      {(inst.models || 0) > 0 && (
+                                        <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                                          <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${Math.min(100, (inst.models || 0) * 10)}%` }} />
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div className="space-y-1.5">
+                                      <div className="flex items-center justify-between gap-2">
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="size-2 rounded-full bg-sky-500" />
+                                          <span className="text-[11px] text-slate-500">Clients</span>
+                                        </div>
+                                        <span className="text-[11px] font-bold text-sky-600">{inst.clients || 0}</span>
+                                      </div>
+                                      {(inst.clients || 0) > 0 && (
+                                        <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                                          <div className="h-full bg-sky-500 rounded-full" style={{ width: `${Math.min(100, (inst.clients || 0) * 20)}%` }} />
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div className="space-y-1.5">
+                                      <div className="flex items-center justify-between gap-2">
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="size-2 rounded-full bg-violet-500" />
+                                          <span className="text-[11px] text-slate-500">Entries</span>
+                                        </div>
+                                        <span className="text-[11px] font-bold text-violet-600">{inst.entries || 0}</span>
+                                      </div>
+                                      {(inst.entries || 0) > 0 && (
+                                        <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                                          <div className="h-full bg-violet-500 rounded-full" style={{ width: `${Math.min(100, (inst.entries || 0) * 2)}%` }} />
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                                {/* Per-key status card */}
+                                {inst.keys && inst.keys.length > 0 && (
+                                  <div className="rounded-[12px] p-4 card-3d card-tint-indigo space-y-3 md:col-span-2">
+                                    <div className="flex items-center justify-between">
+                                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                                        API Keys ({inst.available_keys}/{inst.total_keys} active)
+                                      </p>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                      {inst.keys.map((keyInfo: any, ki: number) => (
+                                        <div key={ki} className="flex items-center gap-3 rounded-[8px] bg-white/60 px-3 py-2">
+                                          <span className={cn("size-2 rounded-full shrink-0",
+                                            keyInfo.status === "available" ? "bg-emerald-500" :
+                                            keyInfo.status === "auth_error" ? "bg-rose-500" :
+                                            keyInfo.status === "rate_limited" ? "bg-amber-500" :
+                                            keyInfo.status === "network_error" ? "bg-rose-400" :
+                                            "bg-slate-300"
+                                          )} />
+                                          <code className="text-[11px] text-slate-500 flex-1">{keyInfo.key_preview}</code>
+                                          <span className={cn("text-[10px] font-medium px-1.5 py-0.5 rounded",
+                                            keyInfo.status === "available" ? "bg-emerald-500/10 text-emerald-600" :
+                                            keyInfo.status === "auth_error" ? "bg-rose-500/10 text-rose-500" :
+                                            keyInfo.status === "rate_limited" ? "bg-amber-500/10 text-amber-600" :
+                                            "bg-slate-100 text-slate-500"
+                                          )}>
+                                            {keyInfo.status}
+                                          </span>
+                                          {keyInfo.models > 0 && <span className="text-[10px] text-slate-400">{keyInfo.models} models</span>}
+                                          {keyInfo.error && <span className="text-[10px] text-rose-400 max-w-[140px] truncate">{keyInfo.error}</span>}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                      })}
+                    </div>
+                  )}
                 </div>
-              ) : null}
-            </div>
-
-            <div className="border-t border-stone-100 px-4 py-4">
-              <div className="flex items-center justify-center gap-3 overflow-x-auto whitespace-nowrap">
-                <div className="shrink-0 text-sm text-stone-500">
-                Hiển thị {filteredAccounts.length === 0 ? 0 : startIndex + 1} -{" "}
-                {Math.min(startIndex + Number(pageSize), filteredAccounts.length)} /{" "}
-                {filteredAccounts.length} mục
-                </div>
-
-                <span className="shrink-0 text-sm leading-none text-stone-500">
-                  Trang {safePage} / {pageCount}
-                </span>
-                <Select
-                  value={pageSize}
-                  onValueChange={(value) => {
-                    setPageSize(value);
-                    setPage(1);
-                  }}
-                >
-                  <SelectTrigger className="h-10 w-[108px] shrink-0 rounded-lg border-stone-200 bg-white text-sm leading-none">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="10">10 / trang</SelectItem>
-                    <SelectItem value="20">20 / trang</SelectItem>
-                    <SelectItem value="50">50 / trang</SelectItem>
-                    <SelectItem value="100">100 / trang</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="size-10 shrink-0 rounded-lg border-stone-200 bg-white"
-                  disabled={safePage <= 1}
-                  onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-                >
-                  <ChevronLeft className="size-4" />
-                </Button>
-                {paginationItems.map((item, index) =>
-                  item === "..." ? (
-                    <span key={`ellipsis-${index}`} className="px-1 text-sm text-stone-400">
-                      ...
-                    </span>
-                  ) : (
-                    <Button
-                      key={item}
-                      variant={item === safePage ? "default" : "outline"}
-                      className={cn(
-                        "h-10 min-w-10 shrink-0 rounded-lg px-3",
-                        item === safePage
-                          ? "bg-stone-950 text-white hover:bg-stone-800"
-                          : "border-stone-200 bg-white text-stone-700",
-                      )}
-                      onClick={() => setPage(item)}
-                    >
-                      {item}
-                    </Button>
-                  ),
-                )}
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="size-10 shrink-0 rounded-lg border-stone-200 bg-white"
-                  disabled={safePage >= pageCount}
-                  onClick={() => setPage((prev) => Math.min(pageCount, prev + 1))}
-                >
-                  <ChevronRight className="size-4" />
-                </Button>
+              );
+            })}
+            {mergedTree.length === 0 && (
+              <div className="flex flex-col items-center justify-center gap-3 px-6 py-14 text-center card-3d card-tint-slate rounded-[16px]">
+                <Search className="size-5 text-slate-400" />
+                <p className="text-sm text-slate-500">Chưa có dữ liệu provider nào</p>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            )}
+          </div>
+        )}
       </section>
     </>
   );
@@ -812,7 +1290,7 @@ export default function AccountsPage() {
   if (isCheckingAuth || !session || session.role !== "admin") {
     return (
       <div className="flex min-h-[40vh] items-center justify-center">
-        <LoaderCircle className="size-5 animate-spin text-stone-400" />
+        <LoaderCircle className="size-5 animate-spin text-stone-500" />
       </div>
     );
   }

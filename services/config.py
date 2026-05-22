@@ -10,8 +10,39 @@ import time
 from services.storage.base import StorageBackend
 
 BASE_DIR = Path(__file__).resolve().parents[1]
-DATA_DIR = BASE_DIR / "data"
-CONFIG_FILE = BASE_DIR / "config.json"
+
+# Auto-detect HA addon persistent storage
+# /data/options.json is the definitive signal we're in an HA addon
+_IS_ADDON = Path("/data/options.json").exists()
+_ADDON_DATA = Path("/config/chatgpt2api")
+_LEGACY_ADDON_DATA = Path("/data/chatgpt2api")
+
+# Migrate from old /data/ location if needed
+if _IS_ADDON and _LEGACY_ADDON_DATA.exists() and not _ADDON_DATA.exists():
+    import shutil as _shutil
+    _ADDON_DATA.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        _LEGACY_ADDON_DATA.rename(_ADDON_DATA)
+    except OSError:
+        _shutil.copytree(_LEGACY_ADDON_DATA, _ADDON_DATA)
+
+if _IS_ADDON:
+    DATA_DIR = _ADDON_DATA
+elif _ADDON_DATA.exists():
+    DATA_DIR = _ADDON_DATA
+else:
+    DATA_DIR = BASE_DIR / "data"
+
+CONFIG_FILE = DATA_DIR / "config.json"
+
+# On first run in addon, copy default config if not present
+if _IS_ADDON and not CONFIG_FILE.exists():
+    _default_config = BASE_DIR / "config.json"
+    if _default_config.exists():
+        import shutil
+        CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(_default_config, CONFIG_FILE)
+CONFIG_DATA_FILE = DATA_DIR / "config.json"
 VERSION_FILE = BASE_DIR / "VERSION"
 BACKUP_STATE_FILE = DATA_DIR / "backup_state.json"
 
@@ -119,6 +150,12 @@ def _load_settings() -> LoadedSettings:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     raw_config = _read_json_object(CONFIG_FILE, name="config.json")
     auth_key = _normalize_auth_key(os.getenv("CHATGPT2API_AUTH_KEY") or raw_config.get("auth-key"))
+
+    # HA addon fallback: read from /data/options.json if auth_key still empty
+    if _is_invalid_auth_key(auth_key):
+        addon_options = _read_json_object(Path("/data/options.json"), name="HA addon options")
+        auth_key = _normalize_auth_key(addon_options.get("auth_key") or "")
+
     if _is_invalid_auth_key(auth_key):
         raise ValueError(
             "❌ auth-key 未设置！\n"
@@ -153,14 +190,28 @@ class ConfigStore:
             )
 
     def _load(self) -> dict[str, object]:
+        # Load from data dir first (persists across restarts), fallback to root
+        if CONFIG_DATA_FILE.exists():
+            return _read_json_object(CONFIG_DATA_FILE, name="data/config.json")
         return _read_json_object(self.path, name="config.json")
 
     def _save(self) -> None:
-        self.path.write_text(json.dumps(self.data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        CONFIG_DATA_FILE.write_text(json.dumps(self.data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        # Also sync to root if different (backward compat)
+        if self.path != CONFIG_DATA_FILE:
+            self.path.write_text(json.dumps(self.data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     @property
     def auth_key(self) -> str:
-        return _normalize_auth_key(os.getenv("CHATGPT2API_AUTH_KEY") or self.data.get("auth-key"))
+        # Priority: 1) ENV var  2) HA addon config  3) config.json
+        key = _normalize_auth_key(os.getenv("CHATGPT2API_AUTH_KEY"))
+        if _is_invalid_auth_key(key):
+            addon_options = _read_json_object(Path("/data/options.json"), name="HA addon options")
+            key = _normalize_auth_key(addon_options.get("auth_key") or "")
+        if _is_invalid_auth_key(key):
+            key = _normalize_auth_key(str(self.data.get("auth-key") or ""))
+        return key
 
     @property
     def accounts_file(self) -> Path:
@@ -217,6 +268,31 @@ class ConfigStore:
         return [level for item in levels if (level := str(item or "").strip().lower()) in allowed]
 
     @property
+    def rtk_enabled(self) -> bool:
+        """RTK message compression for chatgpt. Default: True"""
+        val = self.data.get("rtk_enabled", True)
+        if isinstance(val, bool):
+            return val
+        if isinstance(val, str):
+            return val.strip().lower() in {"1", "true", "yes", "on"}
+        return True
+
+    @property
+    def rtk_other_enabled(self) -> bool:
+        """RTK message compression for other providers. Default: False"""
+        val = self.data.get("rtk_other_enabled", False)
+        if isinstance(val, bool):
+            return val
+        if isinstance(val, str):
+            return val.strip().lower() in {"1", "true", "yes", "on"}
+        return False
+
+    @property
+    def openai_default_model(self) -> str:
+        """Default model for web session routed through OpenAI API."""
+        return str(self.data.get("openai_default_model") or "gpt-4o").strip()
+
+    @property
     def sensitive_words(self) -> list[str]:
         words = self.data.get("sensitive_words")
         return [word for item in words if (word := str(item or "").strip())] if isinstance(words, list) else []
@@ -229,6 +305,22 @@ class ConfigStore:
     @property
     def global_system_prompt(self) -> str:
         return str(self.data.get("global_system_prompt") or "").strip()
+
+    @property
+    def karpathy_mode(self) -> bool:
+        return _normalize_bool(self.data.get("karpathy_mode"), False)
+
+    @property
+    def auto_refresh_enabled(self) -> bool:
+        return _normalize_bool(self.data.get("auto_refresh_enabled"), True)
+
+    @property
+    def default_image_size(self) -> str:
+        size = str(self.data.get("default_image_size") or "1792x1024").strip()
+        # Validate: must be WxH format
+        if "x" in size:
+            return size
+        return "1792x1024"
 
     @property
     def images_dir(self) -> Path:
@@ -258,11 +350,16 @@ class ConfigStore:
 
     @property
     def base_url(self) -> str:
-        return str(
+        url = str(
             os.getenv("CHATGPT2API_BASE_URL")
             or self.data.get("base_url")
             or ""
         ).strip().rstrip("/")
+        # HA addon fallback
+        if not url:
+            addon_options = _read_json_object(Path("/data/options.json"), name="HA addon options")
+            url = str(addon_options.get("base_url") or "").strip().rstrip("/")
+        return url
 
     @property
     def app_version(self) -> str:
@@ -299,6 +396,12 @@ class ConfigStore:
         next_data.pop("backup_state", None)
         self.data = next_data
         self._save()
+        # Invalidate model cache when settings change (combo_models, providers, etc.)
+        try:
+            from services.protocol.openai_v1_models import invalidate_models_cache
+            invalidate_models_cache()
+        except Exception:
+            pass
         return self.get()
 
     def get_backup_settings(self) -> dict[str, object]:

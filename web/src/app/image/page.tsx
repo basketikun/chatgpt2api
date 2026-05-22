@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { History, LoaderCircle, Plus, Trash2 } from "lucide-react";
+import { History, LoaderCircle, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { ImageComposer } from "@/app/image/components/image-composer";
@@ -73,7 +73,7 @@ function formatConversationTime(value: string) {
 }
 
 function formatAvailableQuota(accounts: Account[]) {
-  const availableAccounts = accounts.filter((account) => account.status !== "禁用");
+  const availableAccounts = accounts.filter((account) => account.status !== "disabled");
   return String(availableAccounts.reduce((sum, account) => sum + Math.max(0, account.quota), 0));
 }
 
@@ -88,7 +88,7 @@ function readFileAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = () => reject(new Error("读取参考图失败"));
+    reader.onerror = () => reject(new Error("Không đọc được ảnh tham khảo"));
     reader.readAsDataURL(file);
   });
 }
@@ -119,7 +119,7 @@ function buildReferenceImageFromResult(image: StoredImage, fileName: string): St
 async function fetchImageAsFile(url: string, fileName: string) {
   const response = await fetch(url);
   if (!response.ok) {
-    throw new Error("读取结果图失败");
+    throw new Error("Không đọc được ảnh kết quả");
   }
   const blob = await response.blob();
   return new File([blob], fileName, { type: blob.type || "image/png" });
@@ -347,6 +347,8 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
   const [imagePrompt, setImagePrompt] = useState("");
   const [imageCount, setImageCount] = useState("1");
   const [imageSize, setImageSize] = useState("");
+  const [imageModel, setImageModel] = useState("gpt-image-2");
+  const [imageModels, setImageModels] = useState<Array<{ id: string; label: string }>>([]);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [referenceImageFiles, setReferenceImageFiles] = useState<File[]>([]);
   const [referenceImages, setReferenceImages] = useState<StoredReferenceImage[]>([]);
@@ -356,6 +358,8 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
   const [availableQuota, setAvailableQuota] = useState("Đang tải...");
   const [lightboxImages, setLightboxImages] = useState<ImageLightboxItem[]>([]);
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [libraryImages, setLibraryImages] = useState<Array<{url: string; name: string}>>([]);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [deleteConfirm, setDeleteConfirm] = useState<
     | { type: "one"; id: string }
@@ -453,7 +457,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       const data = await fetchAccounts();
       setAvailableQuota(formatAvailableQuota(data.items));
     } catch {
-      setAvailableQuota((prev) => (prev === "加载中..." ? "--" : prev));
+      setAvailableQuota((prev) => (prev === "Đang tải..." ? "--" : prev));
     }
   }, [isAdmin]);
 
@@ -468,11 +472,28 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
     };
 
     void loadQuota();
+    void loadImageModels();
     window.addEventListener("focus", handleFocus);
     return () => {
       window.removeEventListener("focus", handleFocus);
     };
   }, [isAdmin, loadQuota]);
+
+  const loadImageModels = useCallback(async () => {
+    try {
+      const { request } = await import("@/lib/request");
+      const data = await request.get("/api/v1/models-with-capabilities");
+      const models = ((data.data as any)?.models || []) as any[];
+      const imgModels = models
+        .filter((m: any) => (m.capabilities || []).includes("image") && m.enabled !== false)
+        .map((m: any) => ({ id: m.id, label: m.id }));
+      setImageModels(imgModels);
+      // Auto-select first available if current not in list
+      if (imgModels.length > 0 && !imgModels.find(m => m.id === imageModel)) {
+        setImageModel(imgModels[0].id);
+      }
+    } catch { /* non-critical */ }
+  }, []);
 
   useEffect(() => {
     if (!selectedConversation) {
@@ -583,7 +604,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
     try {
       await deleteImageConversation(id);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "删除会话失败";
+      const message = error instanceof Error ? error.message : "Không xóa được phiên";
       toast.error(message);
       const items = await listImageConversations();
       conversationsRef.current = items;
@@ -740,6 +761,30 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
     setReferenceImages((prev) => prev.filter((_, currentIndex) => currentIndex !== index));
   }, []);
 
+  const handlePickLibraryImage = useCallback(async () => {
+    setLibraryOpen(true);
+    try {
+      const { request } = await import("@/lib/request");
+      const data = await request.get("/api/images?limit=50");
+      const items = ((data.data as any)?.items || []) as any[];
+      setLibraryImages(items.map((img: any) => {
+        const url = img.url || `/images/${img.path || img.filename}`;
+        const name = img.filename || url.split("/").pop() || "image";
+        return { url, name };
+      }));
+    } catch { setLibraryOpen(false); }
+  }, []);
+
+  const handleSelectLibraryImage = useCallback(async (imgUrl: string) => {
+    try {
+      const resp = await fetch(imgUrl);
+      const blob = await resp.blob();
+      const file = new File([blob], "library-ref.png", { type: blob.type || "image/png" });
+      await handleReferenceImageChange([file]);
+    } catch { /* ignore */ }
+    setLibraryOpen(false);
+  }, [handleReferenceImageChange]);
+
   const handleContinueEdit = useCallback(
     async (conversationId: string, image: StoredImage | StoredReferenceImage) => {
       try {
@@ -882,7 +927,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
           dataUrlToFile(image.dataUrl, image.name || `${activeTurn.id}-${index + 1}.png`, image.type),
         );
         if (activeTurn.mode === "edit" && referenceFiles.length === 0) {
-          throw new Error("未找到可用于继续编辑的参考图");
+          throw new Error("Không tìm thấy ảnh tham khảo để tiếp tục chỉnh sửa");
         }
 
         const pendingImages = activeTurn.images.filter((image) => image.status === "loading");
@@ -931,7 +976,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
 
         await loadQuota();
       } catch (error) {
-        const message = error instanceof Error ? error.message : "生成图片失败";
+        const message = error instanceof Error ? error.message : "Không tạo được ảnh";
         await updateConversation(conversationId, (current) => {
           const conversation = current ?? snapshot;
           return {
@@ -1004,7 +1049,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       setSelectedConversationId(conversationId);
       await persistConversation(nextConversation);
       void runConversationQueue(conversationId);
-      toast.success("已加入重新生成队列");
+      toast.success("Đã thêm vào hàng đợi tạo lại");
     },
     [runConversationQueue],
   );
@@ -1073,7 +1118,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
   const handleSubmit = async () => {
     const prompt = imagePrompt.trim();
     if (!prompt) {
-      toast.error("请输入提示词");
+      toast.error("Vui lòng nhập prompt");
       return;
     }
 
@@ -1088,7 +1133,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
     const draftTurn: ImageTurn = {
       id: turnId,
       prompt,
-      model: "gpt-image-2",
+      model: imageModel,
       mode: effectiveImageMode,
       referenceImages: effectiveImageMode === "edit" ? referenceImages : [],
       count: parsedCount,
@@ -1146,7 +1191,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
         </div>
 
         <Dialog open={isHistoryOpen} onOpenChange={setIsHistoryOpen}>
-          <DialogContent className="flex h-[min(82dvh,760px)] w-[92vw] max-w-[460px] flex-col overflow-hidden rounded-[32px] border-white/80 bg-white p-0 shadow-[0_32px_110px_-38px_rgba(15,23,42,0.45)] sm:rounded-[36px]">
+          <DialogContent className="flex h-[min(82dvh,760px)] w-[92vw] max-w-[460px] flex-col overflow-hidden rounded-[32px] border-stone-200 bg-white p-0 shadow-[0_32px_110px_-38px_rgba(15,23,42,0.45)] sm:rounded-[36px]">
             <DialogHeader className="px-6 pt-7 pb-4 sm:px-8">
               <DialogTitle className="flex items-center gap-2 text-xl font-bold tracking-tight">
                 <History className="size-5" />
@@ -1187,7 +1232,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
               Lịch sử ({conversations.length})
             </Button>
             <Button
-              className="h-10 rounded-2xl bg-stone-950 text-white shadow-sm"
+              className="h-10 rounded-2xl bg-stone-900 text-white shadow-sm"
               onClick={handleCreateDraft}
             >
               <Plus className="size-4" />
@@ -1224,6 +1269,8 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
             prompt={imagePrompt}
             imageCount={imageCount}
             imageSize={imageSize}
+            model={imageModel}
+            imageModels={imageModels}
             availableQuota={availableQuota}
             activeTaskCount={activeTaskCount}
             referenceImages={referenceImages}
@@ -1232,8 +1279,10 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
             onPromptChange={setImagePrompt}
             onImageCountChange={(value) => setImageCount(value ? clampImageCount(value) : "")}
             onImageSizeChange={setImageSize}
+            onModelChange={setImageModel}
             onSubmit={handleSubmit}
             onPickReferenceImage={() => fileInputRef.current?.click()}
+            onPickLibraryImage={handlePickLibraryImage}
             onReferenceImageChange={handleReferenceImageChange}
             onRemoveReferenceImage={handleRemoveReferenceImage}
           />
@@ -1268,6 +1317,28 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
           </DialogContent>
         </Dialog>
       ) : null}
+
+      {/* Library image picker modal */}
+      {libraryOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setLibraryOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-[720px] max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-stone-100">
+              <h3 className="text-[15px] font-bold text-slate-900">Chọn ảnh từ thư viện</h3>
+              <button onClick={() => setLibraryOpen(false)} className="rounded-lg p-1.5 text-stone-400 hover:bg-stone-100"><X className="size-5" /></button>
+            </div>
+            <div className="overflow-y-auto p-4 grid grid-cols-4 gap-3">
+              {libraryImages.length === 0 ? (
+                <p className="col-span-4 text-center py-8 text-sm text-stone-400">Chưa có ảnh nào trong thư viện</p>
+              ) : libraryImages.map((img, i) => (
+                <button key={i} onClick={() => handleSelectLibraryImage(img.url)}
+                  className="aspect-square rounded-xl overflow-hidden border-2 border-stone-200 hover:border-indigo-400 transition cursor-pointer bg-stone-100">
+                  <img src={img.url} alt={img.name} className="w-full h-full object-cover" loading="lazy" />
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -1278,7 +1349,7 @@ export default function ImagePage() {
   if (isCheckingAuth || !session) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center">
-        <LoaderCircle className="size-5 animate-spin text-stone-400" />
+        <LoaderCircle className="size-5 animate-spin text-stone-500" />
       </div>
     );
   }
