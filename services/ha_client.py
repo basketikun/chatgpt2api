@@ -318,7 +318,7 @@ def get_ha_tools() -> list[dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "ha_get_state",
-                "description": "Lấy trạng thái 1 thiết bị Home Assistant theo entity_id.",
+                "description": "Lấy TRẠNG THÁI HIỆN TẠI của 1 thiết bị (đang bật/tắt, nhiệt độ, độ ẩm...). CHỈ DÙNG khi user hỏi về trạng thái cụ thể (ví dụ: 'đèn bếp đang bật không', 'nhiệt độ phòng ngủ'). KHÔNG dùng cho câu hỏi liệt kê.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -332,11 +332,11 @@ def get_ha_tools() -> list[dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "ha_search_entities",
-                "description": "Tìm kiếm entity_id của thiết bị Home Assistant dựa vào tên hoặc từ khóa (vd: 'đèn', 'phòng ngủ', 'nhiệt độ'). Rất hữu ích khi không biết chính xác entity_id.",
+                "description": "LIỆT KÊ thiết bị theo từ khóa. DÙNG cho câu hỏi 'danh sách', 'có những X nào', 'liệt kê'. Trả về name + entity_id (KHÔNG có trạng thái). Tự động lọc theo domain (đèn → light.*, quạt → fan.*, công tắc → switch.*). Để xem automation/scene của thứ gì, thêm 'tự động hóa' / 'scene' vào query (vd: 'tự động hóa đèn'). KHÔNG cần gọi ha_get_state sau đó nếu user chỉ hỏi danh sách.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "query": {"type": "string", "description": "Từ khóa tìm kiếm (vd: đèn ban công)"}
+                        "query": {"type": "string", "description": "Từ khóa tìm kiếm (vd: đèn, quạt, đèn ban công, tự động hóa đèn)"}
                     },
                     "required": ["query"],
                 },
@@ -346,7 +346,7 @@ def get_ha_tools() -> list[dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "ha_call_service",
-                "description": "Gọi Home Assistant service để điều khiển thiết bị (bật/tắt đèn, khóa cửa, v.v.)",
+                "description": "Gọi Home Assistant service để ĐIỀU KHIỂN thiết bị (bật/tắt đèn, khóa cửa, đặt nhiệt độ). CHỈ DÙNG khi user yêu cầu hành động (ví dụ: 'tắt đèn bếp', 'mở rèm').",
                 "parameters": {
                     "type": "object",
                     "properties": {
