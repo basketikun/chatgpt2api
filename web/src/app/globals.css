@@ -4,8 +4,9 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ═══════════════════════════════════════════════
-   chatgpt2api — Adminator-inspired Design System
-   Professional · Scan-first · Restrained color
+   chatgpt2api — Modern Dashboard Design System
+   Glassmorphism · Dark Elevation · Subtle Gradients
+   Research: Adminator + OpsPulse + Zenith + Flux
    ═══════════════════════════════════════════════ */
 
 @theme inline {
@@ -84,34 +85,65 @@
   --sidebar-ring: #4e73df;
 }
 
-/* ═══ Dark Theme ═══ */
+/* ═══ Dark Theme — Elevation-based, not flat black ═══ */
 .dark {
-  --background: #1a1f2e;
-  --foreground: #e2e4ed;
-  --card: #222838;
-  --card-foreground: #e2e4ed;
-  --popover: #222838;
-  --popover-foreground: #e2e4ed;
-  --primary: #5e8af7;
+  --background: #0f1117;
+  --foreground: #e4e6ed;
+  --card: #181a21;
+  --card-foreground: #e4e6ed;
+  --popover: #1c1e27;
+  --popover-foreground: #e4e6ed;
+  --primary: #6c8aff;
   --primary-foreground: #ffffff;
-  --secondary: #2a3040;
-  --secondary-foreground: #e2e4ed;
-  --muted: #2a3040;
-  --muted-foreground: #8b8fa3;
-  --accent: #1cc88a;
-  --accent-foreground: #ffffff;
-  --destructive: #e74a3b;
-  --border: #2d3344;
-  --input: #2d3344;
-  --ring: #5e8af7;
-  --sidebar: #161b28;
+  --secondary: #1e2130;
+  --secondary-foreground: #c8cad4;
+  --muted: #1a1d28;
+  --muted-foreground: #7e8192;
+  --accent: #34d399;
+  --accent-foreground: #0f1117;
+  --destructive: #f87171;
+  --border: #232635;
+  --input: #232635;
+  --ring: #6c8aff;
+  --chart-1: #6c8aff;
+  --chart-2: #34d399;
+  --chart-3: #fbbf24;
+  --chart-4: #f87171;
+  --chart-5: #a78bfa;
+  --sidebar: #0c0e14;
   --sidebar-foreground: #b0b4c0;
-  --sidebar-primary: #5e8af7;
+  --sidebar-primary: #6c8aff;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #1e2535;
+  --sidebar-accent: #161822;
   --sidebar-accent-foreground: #ffffff;
-  --sidebar-border: #1e2535;
-  --sidebar-ring: #5e8af7;
+  --sidebar-border: #1e2130;
+  --sidebar-ring: #6c8aff;
+}
+
+/* ═══ Glassmorphism Card ═══ */
+.glass {
+  background: rgba(255,255,255,0.6);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255,255,255,0.4);
+  border-radius: var(--radius-lg);
+}
+.dark .glass {
+  background: rgba(24,26,33,0.75);
+  border: 1px solid rgba(255,255,255,0.06);
+}
+
+/* ═══ Gradient accent cards ═══ */
+.card-gradient {
+  position: relative; overflow: hidden;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.card-gradient::before {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: linear-gradient(90deg, var(--primary), var(--accent), #a78bfa);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 }
 
 /* ═══ Base ═══ */
@@ -270,17 +302,30 @@ table.data-table { width: 100%; border-collapse: collapse; }
 .trend-down { color: var(--destructive); }
 .trend-flat { color: var(--muted-foreground); }
 
-/* ═══ Legacy card classes (used by dashboard) ═══ */
+/* ═══ Legacy card classes (dashboard) ═══ */
 .card-3d {
-  background: var(--card);
-  border: 1px solid var(--border);
+  background: var(--card); border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06);
   transition: box-shadow 0.2s ease, transform 0.2s ease;
 }
 .card-main {
-  background: var(--card);
-  border: 1px solid var(--border);
+  background: var(--card); border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: 0 1px 3px rgba(0,0,0,0.04);
 }
+
+/* ═══ Elevation system (MD3 dark theme pattern — surface brightness replaces shadow) ═══ */
+.dark .card { box-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+.dark .card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+.dark .card-3d { box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+.dark .card-main { box-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+.dark .card-gradient { box-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+
+/* ═══ Table — Clean, sticky-header, monospace data ═══ */
+.sticky-table-header th { position: sticky; top: 0; z-index: 10; }
+.data-table .mono { font-family: "JetBrains Mono", "SF Mono", "Fira Code", monospace; font-size: 0.75rem; }
+
+/* ═══ ReactFlow dark canvas ═══ */
+.dark .react-flow { background: transparent !important; }
+.dark .react-flow__controls button { background: var(--card) !important; border-color: var(--border) !important; color: var(--foreground) !important; fill: var(--foreground) !important; }
