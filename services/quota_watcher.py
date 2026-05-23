@@ -42,6 +42,11 @@ REFRESH_FAILURE_COOLDOWN = 300  # 5 minutes
 # reset them so the rotation pool can try again.
 DISABLED_RESET_AFTER = 6 * 3600  # 6 hours
 
+# Fallback cooldown for accounts marked "limited" without a restore_at hint
+# (e.g. older 429s from before we started parsing x-codex-primary-reset-at).
+# Slightly longer than Codex's typical daily window so we don't slam reset.
+LIMITED_FALLBACK_TTL = 26 * 3600  # 26 hours
+
 
 @dataclass(order=True)
 class QuotaCheckItem:
@@ -242,6 +247,41 @@ class QuotaWatcher:
 
                 if not account:
                     return  # Account was removed
+
+                # Fast path: account is limited but restore_at has passed —
+                # just flip status to "active". The next real request will
+                # learn if the quota is genuinely back; no need to burn an
+                # upstream refresh call for every account when 17 of them
+                # all reset at the same time.
+                if account.get("status") == "limited":
+                    restore_at = account.get("restore_at")
+                    should_restore = False
+                    reason = ""
+                    if restore_at:
+                        restore_ts = _parse_iso_timestamp(restore_at)
+                        if restore_ts and time.time() >= restore_ts:
+                            should_restore = True
+                            reason = "restore_at_reached"
+                    else:
+                        # No restore_at recorded (older limited accounts, or
+                        # 429s where the upstream omitted the header). Fall
+                        # back to a conservative 26h cooldown from last_used
+                        # so the pool doesn't get permanently stuck "limited".
+                        last_used = _parse_iso_timestamp(account.get("last_used_at") or "")
+                        if last_used and (time.time() - last_used) >= LIMITED_FALLBACK_TTL:
+                            should_restore = True
+                            reason = "fallback_ttl"
+                    if should_restore:
+                        account_service.update_account(
+                            account_id, {"status": "active", "restore_at": None},
+                        )
+                        logger.info({
+                            "event": "quota_watcher_auto_restore",
+                            "account_id": account_id[:20] + "...",
+                            "reason": reason,
+                            "was_limited_until": restore_at,
+                        })
+                        account["status"] = "active"  # for re-scheduling logic
 
                 # Check if we should refresh
                 if self._should_refresh(account):

@@ -374,9 +374,28 @@ class CodexOAuthProvider:
                         logger.warning({"event": "codex_account_disabled",
                                         "reason": "403_forbidden"})
                     elif resp.status_code == 429 or "quota" in err_lower or "rate" in err_lower:
-                        account_service.update_account(access_token, {"status": "limited"})
+                        # Read the exact reset time Codex tells us — `x-codex-primary-reset-at`
+                        # is a unix-epoch second when this account regains its primary
+                        # window. Stash it as ISO restore_at so quota_watcher auto-flips
+                        # the account back to "active" once it passes instead of leaving
+                        # it stuck "limited" forever.
+                        restore_iso = None
+                        reset_at_hdr = resp_headers.get("x-codex-primary-reset-at") or ""
+                        try:
+                            if reset_at_hdr and str(reset_at_hdr).strip().isdigit():
+                                from datetime import datetime, timezone as _tz
+                                restore_iso = datetime.fromtimestamp(
+                                    int(reset_at_hdr), tz=_tz.utc
+                                ).isoformat()
+                        except Exception:
+                            restore_iso = None
+                        updates = {"status": "limited"}
+                        if restore_iso:
+                            updates["restore_at"] = restore_iso
+                        account_service.update_account(access_token, updates)
                         logger.warning({"event": "codex_account_limited",
-                                        "reason": "429_quota"})
+                                        "reason": "429_quota",
+                                        "restore_at": restore_iso})
                     msg = f"Codex error {resp.status_code}: {error_text[:200]}"
                     # Plan-level quota exhaustion → trying other models on the SAME
                     # already-burnt token yields the same 429. Abort the model
