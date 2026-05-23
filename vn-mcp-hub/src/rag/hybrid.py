@@ -38,15 +38,17 @@ def hybrid_query(collection: str, text: str, top_k: int = DEFAULT_TOP_K, force_r
     if not force_refresh:
         rag_results = retriever.query(collection, text, top_k)
 
-    # Check staleness
+    # Check staleness + structured status (used by the formatter to render
+    # the right "should refresh" hint).
     stale = False
     stale_msg = ""
     last_updated = None
+    status: dict | None = None
     try:
-        from src.rag.meta import is_stale as _stale
+        from src.rag.meta import is_stale as _stale, get_status, read_meta
         stale, stale_msg = _stale(collection)
-        from src.rag.meta import read_meta
         last_updated = read_meta(collection).get("last_updated")
+        status = get_status(collection)
     except Exception:
         pass
 
@@ -65,6 +67,8 @@ def hybrid_query(collection: str, text: str, top_k: int = DEFAULT_TOP_K, force_r
         "stale": stale,
         "stale_msg": stale_msg,
         "last_updated": last_updated,
+        "status": status,
+        "collection": collection,
     }
 
 
@@ -124,7 +128,18 @@ def format_hybrid_results(result: dict[str, Any]) -> str:
         # RAG hit, no web search — prompt user if they want fresh results
         parts.append("---\n💡 *Dữ liệu từ kho tri thức. Bạn có muốn tôi tìm thêm thông tin mới nhất từ web không?*")
 
-    if result.get("stale") and rag:
-        parts.append("🔄 *Dữ liệu có thể đã cũ. Auto-update sẽ chạy theo lịch, hoặc bạn có thể yêu cầu tôi tìm ngay.*")
+    # Soft / hard refresh hint based on get_status. This replaces the old
+    # generic "data may be stale" line so users actually see the age + a
+    # one-liner on how to reset the 3-month refresh timer immediately.
+    if rag:
+        status = result.get("status")
+        try:
+            from src.rag.meta import render_refresh_hint
+            hint = render_refresh_hint(result.get("collection") or "", status)
+            if hint:
+                parts.append(hint.strip())
+        except Exception:
+            if result.get("stale"):
+                parts.append("🔄 *Dữ liệu có thể đã cũ. Auto-update sẽ chạy theo lịch.*")
 
     return "\n\n".join(parts)

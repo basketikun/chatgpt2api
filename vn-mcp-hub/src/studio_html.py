@@ -110,7 +110,26 @@ STUDIO_HTML = r"""<!DOCTYPE html>
       </select>
       <label for="autoUpdateInterval">Kiem tra auto-update (gio)</label>
       <input id="autoUpdateInterval" type="number" min="1" max="720" value="1">
-      
+      <p style="color:var(--muted);font-size:.75rem;margin-bottom:1rem">Scheduler kiem tra moi X gio. Co the de cao (24h) vi viec refresh that su xay ra theo "So ngay" o duoi.</p>
+
+      <h3 style="margin-top:1.5rem">KB auto-refresh</h3>
+      <label for="refreshIntervalDays">So ngay giua moi lan refresh KB</label>
+      <input id="refreshIntervalDays" type="number" min="1" max="365" value="90">
+      <p style="color:var(--muted);font-size:.75rem;margin-bottom:1rem">Khi KB nay den han, scheduler se goi AI tong hop lai. Mac dinh 90 ngay (3 thang) cho tri thuc on dinh.</p>
+
+      <label for="softNotifyDays">Goi y refresh khi KB cu hon (ngay)</label>
+      <input id="softNotifyDays" type="number" min="1" max="365" value="60">
+      <p style="color:var(--muted);font-size:.75rem;margin-bottom:1rem">Khi tra ket qua KB cu hon X ngay, them thong bao "co the can refresh" cho user. Phai &lt; so ngay refresh.</p>
+
+      <label>Khung gio cho phep refresh (24h)</label>
+      <div style="display:flex; gap:8px; align-items:center; margin-bottom:.5rem">
+        <input id="refreshWindowStart" type="number" min="0" max="23" value="0" style="width:80px">
+        <span>→</span>
+        <input id="refreshWindowEnd" type="number" min="0" max="23" value="0" style="width:80px">
+        <span style="color:var(--muted);font-size:.75rem">gio</span>
+      </div>
+      <p style="color:var(--muted);font-size:.75rem;margin-bottom:1rem">Chi cho refresh trong khung gio nay (vd 0→5 = nua dem den 5h sang). De 0→0 = bat ky luc nao.</p>
+
       <h3 style="margin-top:1.5rem">AI Settings</h3>
       <label for="apiBaseUrl">API Base URL</label>
       <input id="apiBaseUrl" placeholder="http://chatgpt2api:3030/v1">
@@ -272,12 +291,70 @@ function toggleSources(name) { const row = document.getElementById('src-row-'+na
 async function toggleSource(mcp, source, enabled) { await fetch(API+'/sources/'+encodeURIComponent(mcp),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({[source]:enabled})}); toast(source+' '+(enabled?'ON':'OFF'),true); }
 async function saveKey(source, value) { if (!value) return; const r = await fetch(API+'/key/'+encodeURIComponent(source),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:value})}); if ((await r.json()).ok) toast('Da luu API key cho '+source, true); }
 async function del(name) { if (!confirm('Xoa KB '+name+'?')) return; const r = await fetch(API+'/kb/'+encodeURIComponent(name),{method:'DELETE'}); const d = await r.json(); if (d.ok) { toast('Da xoa '+name,true); refresh(); } else toast(d.error||'Loi',false); }
-function showSettings(name, interval, autoUpdate) { const h = prompt('Chu ky cap nhat (gio):', interval); if (h === null) return; const auto = confirm('Bat tu dong cap nhat?'); fetch(API+'/collection/'+encodeURIComponent(name)+'/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({update_interval_hours:parseInt(h),auto_update:auto})}).then(r=>r.json()).then(d=>{if(d.ok)toast('Da luu',true);refresh();}); }
+async function showSettings(name, interval, autoUpdate) {
+  const intervalDays = Math.round((interval||2160) / 24);
+  const days = prompt(
+    'KB "' + name + '"\n\n' +
+    'So ngay giua moi lan refresh (1-365):',
+    intervalDays
+  );
+  if (days === null) return;
+  const d = parseInt(days);
+  if (!d || d < 1 || d > 365) { toast('Gia tri khong hop le', false); return; }
+  const auto = confirm('Bat tu dong cap nhat cho KB nay?\n\nOK = bat scheduler tu refresh moi ' + d + ' ngay\nCancel = chi refresh thu cong khi ban yeu cau');
+  const r = await fetch(API+'/collection/'+encodeURIComponent(name)+'/settings', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({update_interval_hours: d * 24, auto_update: auto})
+  });
+  if ((await r.json()).ok) toast('Da luu cai dat cho ' + name, true);
+  refresh();
+}
 document.getElementById('createForm').onsubmit = async (e) => { e.preventDefault(); const body = JSON.stringify({name:document.getElementById('name').value.trim(),label:document.getElementById('label').value.trim(),content:document.getElementById('content').value}); const r = await fetch(API+'/kb',{method:'POST',headers:{'Content-Type':'application/json'},body}); const d = await r.json(); if (d.ok) { toast('Da tao '+d.name+' ('+d.chunks+' chunks)',true); document.getElementById('createForm').reset(); refresh(); } else toast((d.errors||['Loi']).join('. '),false); };
 refresh();
 // ── Settings ──
-(async function(){ try { const r = await fetch(API+'/settings'); const d = await r.json(); document.getElementById('syncInterval').value = d.sync_interval_minutes || 360; document.getElementById('storageMode').value = d.storage_mode || 'local'; document.getElementById('autoUpdateInterval').value = d.auto_update_interval_hours || 1; document.getElementById('apiBaseUrl').value = d.api_base_url || 'http://chatgpt2api:3030/v1'; document.getElementById('aiModel').value = d.ai_model || 'cx/auto'; document.getElementById('apiKey').value = d.api_key || 'AnhNhi@0610'; fetchModels(); } catch(e) {} })();
-document.getElementById('settingsForm').onsubmit = async (e) => { e.preventDefault(); const body = JSON.stringify({sync_interval_minutes:parseInt(document.getElementById('syncInterval').value),storage_mode:document.getElementById('storageMode').value,auto_update_interval_hours:parseInt(document.getElementById('autoUpdateInterval').value),api_base_url:document.getElementById('apiBaseUrl').value.trim()||'http://chatgpt2api:3030/v1',ai_model:document.getElementById('aiModel').value.trim()||'cx/auto',api_key:document.getElementById('apiKey').value.trim()}); const r = await fetch(API+'/settings',{method:'POST',headers:{'Content-Type':'application/json'},body}); if ((await r.json()).ok) { document.getElementById('settingsStatus').textContent = 'Da luu!'; toast('Cai dat da luu',true); fetchModels(); } };
+(async function(){
+  try {
+    const r = await fetch(API+'/settings'); const d = await r.json();
+    document.getElementById('syncInterval').value = d.sync_interval_minutes || 360;
+    document.getElementById('storageMode').value = d.storage_mode || 'local';
+    document.getElementById('autoUpdateInterval').value = d.auto_update_interval_hours || 1;
+    document.getElementById('refreshIntervalDays').value = d.refresh_interval_days || 90;
+    document.getElementById('softNotifyDays').value = d.soft_notify_days || 60;
+    document.getElementById('refreshWindowStart').value = d.refresh_window_start_hour ?? 0;
+    document.getElementById('refreshWindowEnd').value = d.refresh_window_end_hour ?? 0;
+    document.getElementById('apiBaseUrl').value = d.api_base_url || 'http://chatgpt2api:3030/v1';
+    document.getElementById('aiModel').value = d.ai_model || 'cx/auto';
+    document.getElementById('apiKey').value = d.api_key || 'AnhNhi@0610';
+    fetchModels();
+  } catch(e) {}
+})();
+document.getElementById('settingsForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const refreshDays = parseInt(document.getElementById('refreshIntervalDays').value) || 90;
+  const softDays    = parseInt(document.getElementById('softNotifyDays').value) || 60;
+  if (softDays >= refreshDays) {
+    toast('"Goi y" phai NHO HON "So ngay refresh"', false);
+    return;
+  }
+  const body = JSON.stringify({
+    sync_interval_minutes: parseInt(document.getElementById('syncInterval').value),
+    storage_mode: document.getElementById('storageMode').value,
+    auto_update_interval_hours: parseInt(document.getElementById('autoUpdateInterval').value),
+    refresh_interval_days: refreshDays,
+    soft_notify_days: softDays,
+    refresh_window_start_hour: (parseInt(document.getElementById('refreshWindowStart').value)||0) % 24,
+    refresh_window_end_hour:   (parseInt(document.getElementById('refreshWindowEnd').value)||0) % 24,
+    api_base_url: document.getElementById('apiBaseUrl').value.trim()||'http://chatgpt2api:3030/v1',
+    ai_model: document.getElementById('aiModel').value.trim()||'cx/auto',
+    api_key: document.getElementById('apiKey').value.trim()
+  });
+  const r = await fetch(API+'/settings',{method:'POST',headers:{'Content-Type':'application/json'},body});
+  if ((await r.json()).ok) {
+    document.getElementById('settingsStatus').textContent = 'Da luu!';
+    toast('Cai dat da luu',true);
+    fetchModels();
+  }
+};
 async function fetchModels() {
   try {
     const select = document.getElementById('aiModel');

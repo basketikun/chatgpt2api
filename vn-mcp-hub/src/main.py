@@ -653,12 +653,18 @@ def create_app() -> FastAPI:
 
     @app.post("/api/studio/collection/{name}/settings")
     async def studio_collection_settings(name: str, request: Request):
-        """Update collection settings. Body: {update_interval_hours, auto_update}"""
+        """Update collection settings. Body may carry:
+            update_interval_hours: int    (how many hours before forced refresh)
+            soft_notify_days:      int    (when to show "refresh hint" to user)
+            auto_update:           bool   (let the scheduler refresh this KB)
+        """
         from src.rag.meta import read_meta, write_meta
         body = await request.json()
         meta = read_meta(name)
         if "update_interval_hours" in body:
-            meta["update_interval_hours"] = int(body["update_interval_hours"])
+            meta["update_interval_hours"] = max(1, int(body["update_interval_hours"]))
+        if "soft_notify_days" in body:
+            meta["soft_notify_days"] = max(1, int(body["soft_notify_days"]))
         if "auto_update" in body:
             meta["auto_update"] = bool(body["auto_update"])
         write_meta(name, meta)

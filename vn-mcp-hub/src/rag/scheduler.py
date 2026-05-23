@@ -247,10 +247,19 @@ def _scheduler_loop(stop_event: threading.Event) -> None:
 
 def _check_all_collections() -> None:
     from src.rag.meta import read_meta, is_stale, touch
+    from src.rag.settings import is_within_refresh_window, get_refresh_window
     from pathlib import Path
 
     data_dir = Path("/app/data")
     if not data_dir.exists():
+        return
+
+    # Honour the global "refresh allowed only between X-Y hours" setting.
+    # When the user restricts heavy work to overnight (e.g. 0-5h) we
+    # silently skip the cycle if it fires outside that window.
+    if not is_within_refresh_window():
+        start, end = get_refresh_window()
+        logger.info("Scheduler skipped: outside refresh window %02d:00-%02d:00", start, end)
         return
 
     refreshed_any = False
