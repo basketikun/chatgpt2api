@@ -393,9 +393,14 @@ class CodexOAuthProvider:
                         if restore_iso:
                             updates["restore_at"] = restore_iso
                         account_service.update_account(access_token, updates)
+                        # Demote to back of queue — user's requested rotation:
+                        # account #1 burns out → goes to #N, #2 becomes the
+                        # new #1 for the next request.
+                        account_service.demote_account(access_token)
                         logger.warning({"event": "codex_account_limited",
                                         "reason": "429_quota",
-                                        "restore_at": restore_iso})
+                                        "restore_at": restore_iso,
+                                        "action": "demoted_to_tail"})
                     msg = f"Codex error {resp.status_code}: {error_text[:200]}"
                     # Plan-level quota exhaustion → trying other models on the SAME
                     # already-burnt token yields the same 429. Abort the model
@@ -538,7 +543,14 @@ class CodexOAuthProvider:
         }
 
     def get_token_for_request(self, exclude_tokens: set[str] | None = None) -> str:
-        """Get next available JWT token for Codex OAuth. Accepts any JWT token."""
+        """Priority-FIFO token picker for Codex OAuth.
+
+        Returns the FIRST eligible JWT token from the ordered pool. When a
+        token returns 429 the caller demotes it via
+        `account_service.demote_account()` so the next request lands on the
+        next account in order. Limited accounts are skipped here — the
+        quota_watcher flips them back to "active" once `restore_at` passes.
+        """
         excluded = set(exclude_tokens or set())
         with account_service._lock:
             all_items = list(account_service._accounts.values())
@@ -549,21 +561,18 @@ class CodexOAuthProvider:
                 "types": [i.get("type") for i in all_items],
                 "has_jwt": sum(1 for i in all_items if str(i.get("access_token","")).startswith("eyJ")),
             })
-            candidates = [
-                token
-                for item in all_items
-                if item.get("status") not in ("disabled", "error")
-                and (token := item.get("access_token") or "")
-                and token.startswith("eyJ")
-                and token not in excluded
-                # Skip tokens that only work with api.openai.com (web session)
-                and not _is_openai_api_only(token)
-            ]
-            if not candidates:
-                raise RuntimeError("No Codex OAuth tokens available. Add via OAuth login or import 9router backup.")
-            token = candidates[account_service._index % len(candidates)]
-            account_service._index += 1
-            return token
+            for item in all_items:
+                if item.get("status") in ("disabled", "error", "limited"):
+                    continue
+                token = item.get("access_token") or ""
+                if not token or not token.startswith("eyJ"):
+                    continue
+                if token in excluded:
+                    continue
+                if _is_openai_api_only(token):
+                    continue
+                return token
+            raise RuntimeError("No Codex OAuth tokens available. Add via OAuth login or import 9router backup.")
 
 
 def _try_refresh_token(stale_access_token: str) -> str | None:

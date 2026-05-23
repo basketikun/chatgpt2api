@@ -187,21 +187,24 @@ class AccountService:
             self.release_image_slot(access_token)
 
     def get_text_access_token(self, excluded_tokens: set[str] | None = None) -> str:
+        """Priority-FIFO selection: always return the FIRST eligible token
+        from the ordered pool. Combined with `demote_account()` on 429 this
+        gives the user's requested rotation: account #1 is tried until it
+        burns out, then it rotates to #N and the previous #2 becomes #1.
+        """
         excluded = set(excluded_tokens or set())
         with self._lock:
-            candidates = [
-                token
-                for account in self._accounts.values()
-                if account.get("status") not in {"disabled", "error"}
-                   and "antigravity" not in str(account.get("type") or "").split(",")
-                   and (token := account.get("access_token") or "")
-                   and token not in excluded
-            ]
-            if not candidates:
-                return ""
-            access_token = candidates[self._index % len(candidates)]
-            self._index += 1
-            return access_token
+            for account in self._accounts.values():
+                status = account.get("status")
+                if status in {"disabled", "error", "limited"}:
+                    continue
+                if "antigravity" in str(account.get("type") or "").split(","):
+                    continue
+                token = account.get("access_token") or ""
+                if not token or token in excluded:
+                    continue
+                return token
+            return ""
 
     def mark_text_used(self, access_token: str) -> None:
         if not access_token:
@@ -236,6 +239,44 @@ class AccountService:
         with self._lock:
             account = self._accounts.get(access_token)
             return dict(account) if account else None
+
+    def demote_account(self, access_token: str) -> None:
+        """Move this account to the END of the ordered pool.
+
+        Used after a 429/quota burn so the next request lands on a fresh
+        account at the front of the queue. When the demoted account is
+        auto-restored later, it stays at the back until older accounts
+        also fail and rotate down — guaranteeing "always prefer #1" with
+        FIFO demotion, exactly the rotation the user asked for.
+
+        No-op if the token isn't in the pool.
+        """
+        if not access_token:
+            return
+        with self._lock:
+            current = self._accounts.pop(access_token, None)
+            if current is None:
+                return
+            self._accounts[access_token] = current  # re-insert at tail
+            self._save_accounts()
+
+    def promote_account(self, access_token: str) -> None:
+        """Move this account to the FRONT of the ordered pool.
+
+        Inverse of demote_account — used after an explicit user action
+        ("set this account as primary") or by quota_watcher when an
+        account is auto-restored and you want it back at #1.
+        """
+        if not access_token:
+            return
+        with self._lock:
+            current = self._accounts.pop(access_token, None)
+            if current is None:
+                return
+            new_accounts = {access_token: current}
+            new_accounts.update(self._accounts)
+            self._accounts = new_accounts
+            self._save_accounts()
 
     def list_accounts(self) -> list[dict]:
         with self._lock:
