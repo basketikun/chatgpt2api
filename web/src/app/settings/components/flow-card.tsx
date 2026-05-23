@@ -200,13 +200,32 @@ export function FlowCard() {
           <p className="text-xs font-semibold text-emerald-800">+ Thêm tài khoản mới</p>
           <div className="grid gap-2 sm:grid-cols-3">
             <div>
-              <label className="text-[11px] text-stone-500">Label (tuỳ chọn)</label>
+              <label className="text-[11px] text-stone-500">Label (chọn hoặc gõ)</label>
               <Input
                 value={draft.label || ""}
                 onChange={(e) => setDraft({ ...draft, label: e.target.value })}
                 placeholder="VD: Main / Work / Backup"
                 className="mt-1 h-8 rounded-lg border-stone-200 text-xs"
+                list="flow-label-presets"
+                autoComplete="off"
               />
+              {/* Native HTML5 datalist — gõ thoải mái, dropdown gợi ý 6 preset
+                  phổ biến + bất kỳ label nào đã dùng trước đó để khỏi đặt
+                  trùng. */}
+              <datalist id="flow-label-presets">
+                <option value="Main" />
+                <option value="Backup" />
+                <option value="Work" />
+                <option value="Personal" />
+                <option value="Family" />
+                <option value="Team" />
+                {cfg.accounts
+                  .map((a) => a.label || "")
+                  .filter((v, i, arr) => v && arr.indexOf(v) === i)
+                  .map((v) => (
+                    <option key={`used-${v}`} value={v} />
+                  ))}
+              </datalist>
             </div>
             <div>
               <label className="text-[11px] text-stone-500">Profile (browser context)</label>
