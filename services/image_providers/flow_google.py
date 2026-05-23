@@ -57,14 +57,26 @@ _MODEL_ALIASES = {
     "banana": "NARWHAL",
     "banana-2": "NARWHAL",
     "narwhal": "NARWHAL",
-    "auto": "NARWHAL",
-    "": "NARWHAL",
+    # `auto` and empty fall through to the strongest model so users get
+    # Nano Banana Pro out of the box without having to know the alias.
+    "auto": "NANO_BANANA_PRO",
+    "": "NANO_BANANA_PRO",
+    "best": "NANO_BANANA_PRO",
     "banana-pro": "NANO_BANANA_PRO",
     "nano-banana-pro": "NANO_BANANA_PRO",
     "imagen-4": "IMAGEN_4",
     "imagen4": "IMAGEN_4",
     "imagen": "IMAGEN_4",
 }
+
+# All Flow models we expose. Used by list_models() so the chatgpt2api UI
+# dropdown shows the same options the Flow website does.
+FLOW_MODELS = [
+    {"id": "flow/banana-pro", "label": "Nano Banana Pro",   "internal": "NANO_BANANA_PRO"},
+    {"id": "flow/banana-2",   "label": "Nano Banana 2",     "internal": "NARWHAL"},
+    {"id": "flow/imagen-4",   "label": "Imagen 4",          "internal": "IMAGEN_4"},
+    {"id": "flow/auto",       "label": "Auto (Pro)",        "internal": "NANO_BANANA_PRO"},
+]
 
 _ASPECT_FROM_SIZE: dict[tuple[int, int], str] = {
     (1024, 1024): "IMAGE_ASPECT_RATIO_SQUARE",
@@ -74,32 +86,51 @@ _ASPECT_FROM_SIZE: dict[tuple[int, int], str] = {
     (896, 1280):  "IMAGE_ASPECT_RATIO_PORTRAIT",
 }
 
+# Friendly aspect strings ("16:9", "4:3", ...) → Flow API constant.
+_ASPECT_FROM_LABEL: dict[str, str] = {
+    "16:9":     "IMAGE_ASPECT_RATIO_LANDSCAPE",
+    "4:3":      "IMAGE_ASPECT_RATIO_LANDSCAPE_4_3",
+    "1:1":      "IMAGE_ASPECT_RATIO_SQUARE",
+    "square":   "IMAGE_ASPECT_RATIO_SQUARE",
+    "3:4":      "IMAGE_ASPECT_RATIO_PORTRAIT_3_4",
+    "9:16":     "IMAGE_ASPECT_RATIO_PORTRAIT",
+    "portrait": "IMAGE_ASPECT_RATIO_PORTRAIT",
+    "landscape": "IMAGE_ASPECT_RATIO_LANDSCAPE",
+}
+
 
 def _resolve_model(model: str) -> str:
     """Map a 'flow/<alias>' model string to the Flow imageModelName."""
     raw = (model or "").strip().lower()
     if raw.startswith("flow/"):
         raw = raw[len("flow/"):]
-    return _MODEL_ALIASES.get(raw, raw.upper() if raw else "NARWHAL")
+    # Default to the strongest model when no alias is given.
+    return _MODEL_ALIASES.get(raw, raw.upper() if raw else "NANO_BANANA_PRO")
 
 
 def _resolve_aspect(size: str | None) -> str:
+    """Convert size string OR aspect label to Flow's IMAGE_ASPECT_RATIO_*.
+
+    Accepts: "16:9", "4:3", "1:1", "3:4", "9:16", "1024x1024" (WxH),
+    "landscape" / "portrait" / "square". Default is 16:9 landscape.
+    """
     if not size:
         return "IMAGE_ASPECT_RATIO_LANDSCAPE"
-    if size in {"square", "1:1", "1024x1024"}:
-        return "IMAGE_ASPECT_RATIO_SQUARE"
-    if size in {"portrait", "9:16", "3:4", "1024x1792", "896x1280"}:
-        return "IMAGE_ASPECT_RATIO_PORTRAIT"
-    if size in {"landscape", "16:9", "4:3", "1792x1024", "1280x896"}:
-        return "IMAGE_ASPECT_RATIO_LANDSCAPE"
-    # Try WxH
-    try:
-        w, h = (int(x) for x in size.split("x"))
-        if w == h:
-            return "IMAGE_ASPECT_RATIO_SQUARE"
-        return "IMAGE_ASPECT_RATIO_LANDSCAPE" if w > h else "IMAGE_ASPECT_RATIO_PORTRAIT"
-    except (TypeError, ValueError):
-        return "IMAGE_ASPECT_RATIO_LANDSCAPE"
+    s = str(size).strip().lower()
+    if s in _ASPECT_FROM_LABEL:
+        return _ASPECT_FROM_LABEL[s]
+    if "x" in s:
+        try:
+            w, h = (int(x) for x in s.split("x"))
+            mapped = _ASPECT_FROM_SIZE.get((w, h))
+            if mapped:
+                return mapped
+            if w == h:
+                return "IMAGE_ASPECT_RATIO_SQUARE"
+            return "IMAGE_ASPECT_RATIO_LANDSCAPE" if w > h else "IMAGE_ASPECT_RATIO_PORTRAIT"
+        except (TypeError, ValueError):
+            pass
+    return "IMAGE_ASPECT_RATIO_LANDSCAPE"
 
 
 # ── Account pool (in-process state) ───────────────────────────────────────
@@ -214,20 +245,52 @@ class FlowImageAdapter(BaseImageAdapter):
         return f"{base}/v1/google/flow/generate-image"
 
     def build_body(self, model: str, body: dict[str, Any]) -> dict[str, Any]:
+        """Build the captcha-solver Flow request.
+
+        Accepts standard OpenAI image params (`size`, `n`, `model`) plus
+        a few Flow-specific overrides via `extra_body` so HA/n8n callers
+        can pick aspect ratio / model / count without learning the Flow
+        constants:
+
+            "extra_body": {
+                "aspect_ratio": "16:9",       # or "4:3" / "1:1" / "3:4" / "9:16"
+                "flow_model":   "banana-pro", # alias from _MODEL_ALIASES
+                "count":        1             # 1-4
+            }
+
+        Defaults: 16:9 landscape, Nano Banana Pro, 1 image.
+        """
         prompt = str(body.get("prompt") or "")
-        size = body.get("size") or "1792x1024"
-        flow_model = _resolve_model(model)
-        aspect = _resolve_aspect(str(size) if size else None)
-        # Caller passes credentials separately, but build_body has no access
-        # to them — the account choice lives on credentials, looked up via
-        # build_headers right after. We add account here too if available.
+        extra = body.get("extra_body") or {}
+        if not isinstance(extra, dict):
+            extra = {}
+
+        # Aspect: prefer explicit extra_body.aspect_ratio, else fall back to
+        # standard OpenAI `size` (defaults to landscape 16:9).
+        aspect_in = extra.get("aspect_ratio") or extra.get("aspect") or body.get("size")
+        aspect = _resolve_aspect(str(aspect_in) if aspect_in else None)
+
+        # Model: extra_body.flow_model wins over the top-level model (since
+        # callers using OpenAI clients often hard-code model="flow/auto"
+        # but still want to override per-call from HA).
+        model_in = extra.get("flow_model") or extra.get("model") or model
+        flow_model = _resolve_model(str(model_in))
+
+        # Count: extra_body.count or OpenAI `n`, clamped 1-4.
+        count_in = extra.get("count") or extra.get("n") or body.get("n") or 1
+        try:
+            count = max(1, min(4, int(count_in)))
+        except (TypeError, ValueError):
+            count = 1
+
         return {
             "prompt": prompt,
             "aspect_ratio": aspect,
             "model": flow_model,
-            # binary mode for inline base64; the dispatch layer expects raw
-            # JPEG/PNG and will base64-encode it.
-            "return_binary": True,
+            "count": count,
+            # binary mode returns the FIRST image's bytes; for count > 1 the
+            # rest are in the JSON manifest. Set False if you want all URLs.
+            "return_binary": count == 1,
             "timeout": 180,
             "headless": False,
         }

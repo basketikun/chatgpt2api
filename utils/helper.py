@@ -11,7 +11,18 @@ from curl_cffi import requests
 from fastapi import HTTPException
 from utils.log import logger
 
-IMAGE_MODELS = {"gpt-image-2", "codex-gpt-image-2", "gemini-image/imagen-3.0-generate-001", "gemini-image/gemini-2.5-flash-image", "gemini-image/gemini-3.1-flash-image-preview"}
+IMAGE_MODELS = {
+    "gpt-image-2",
+    "codex-gpt-image-2",
+    "gemini-image/imagen-3.0-generate-001",
+    "gemini-image/gemini-2.5-flash-image",
+    "gemini-image/gemini-3.1-flash-image-preview",
+    # Google Labs Flow (driven via captcha-solver)
+    "flow/auto",            # → Nano Banana Pro
+    "flow/banana-pro",      # → Nano Banana Pro
+    "flow/banana-2",        # → Nano Banana 2
+    "flow/imagen-4",        # → Imagen 4
+}
 OUTPUT_DIR = Path(__file__).resolve().parent / "output"
 
 # Model capability classification

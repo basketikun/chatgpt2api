@@ -28,11 +28,29 @@ from ..browser_pool import pool
 logger = logging.getLogger(__name__)
 
 
-# Defaults sourced from the captured browser request.
-DEFAULT_MODEL = "NARWHAL"
+# Defaults — strongest model (Nano Banana Pro), 16:9 landscape, 1 image per
+# request. Override per-call by passing model / aspect_ratio / count.
+DEFAULT_MODEL = "NANO_BANANA_PRO"
 DEFAULT_TOOL = "PINHOLE"
 DEFAULT_ASPECT = "IMAGE_ASPECT_RATIO_LANDSCAPE"
+DEFAULT_COUNT = 1
 API_HOST = "https://aisandbox-pa.googleapis.com"
+
+# Aspect ratio labels in the Flow UI dropdown (Vietnamese locale).
+_ASPECT_LABELS = {
+    "IMAGE_ASPECT_RATIO_LANDSCAPE":      "16:9",
+    "IMAGE_ASPECT_RATIO_LANDSCAPE_4_3":  "4:3",
+    "IMAGE_ASPECT_RATIO_SQUARE":         "1:1",
+    "IMAGE_ASPECT_RATIO_PORTRAIT_3_4":   "3:4",
+    "IMAGE_ASPECT_RATIO_PORTRAIT":       "9:16",
+}
+
+# Flow UI model labels (matches the dropdown text in the screenshot).
+_MODEL_LABELS = {
+    "NANO_BANANA_PRO": "Nano Banana Pro",
+    "NARWHAL":         "Nano Banana 2",
+    "IMAGEN_4":        "Imagen 4",
+}
 
 
 def _fingerprint(image_url_obj: dict) -> str:
@@ -199,17 +217,53 @@ async def _get_recaptcha_token(page, action: str = "flow_generate") -> tuple[str
     return token, sitekey
 
 
+async def _set_dropdown(page, label_text: str, log_what: str) -> bool:
+    """Best-effort: click a Flow UI dropdown button matching `label_text`.
+
+    Flow renders aspect/count/model as pill-style toggle buttons whose
+    accessible name matches the visible label ("16:9", "1x", "Nano Banana
+    Pro", etc). We click the first one we find. If the dropdown was
+    already at that value the click is a no-op (Flow doesn't toggle off).
+
+    Returns True if a click landed, False if no match (we keep going —
+    Flow will use the project's last setting).
+    """
+    if not label_text:
+        return False
+    candidates = [
+        page.get_by_role("button", name=label_text, exact=True),
+        page.locator(f"button:has-text('{label_text}')"),
+        page.locator(f"[aria-label='{label_text}']"),
+    ]
+    for loc in candidates:
+        try:
+            await loc.first.click(timeout=1500)
+            logger.info("flow_dropdown_set %s=%s", log_what, label_text)
+            return True
+        except Exception:
+            continue
+    logger.warning("flow_dropdown_skip %s=%s (no match — using project default)",
+                   log_what, label_text)
+    return False
+
+
 async def generate_image(
     project_id: str,
     prompt: str,
     aspect_ratio: str = DEFAULT_ASPECT,
     model: str = DEFAULT_MODEL,
+    count: int = DEFAULT_COUNT,
     tool: str = DEFAULT_TOOL,
     profile: str = "google-fx",
     headless: bool = True,
     timeout: int = 90,
 ) -> dict:
     """Run the full Flow batchGenerateImages flow and return image refs.
+
+    Args:
+        count: 1-4. Flow's UI supports 1x/2x/3x/4x. We best-effort drive
+            the dropdown; if Flow stored a different default on the project
+            you may get a different number back.
 
     Returns:
         {
@@ -219,6 +273,7 @@ async def generate_image(
           "model": str,
         }
     """
+    count = max(1, min(4, int(count or 1)))
     started = time.time()
     flow_url = f"https://labs.google/fx/vi/tools/flow/project/{project_id}"
     api_url = f"{API_HOST}/v1/projects/{project_id}/flowMedia:batchGenerateImages"
@@ -254,10 +309,17 @@ async def generate_image(
         # Give React a tick to register the change.
         await asyncio.sleep(0.5)
 
-        # 2) Driving aspect-ratio / model dropdowns is brittle (DOM keeps
-        # changing) — for now we accept whatever the project's last setting
-        # was. The defaults the user picks once in the UI persist across
-        # generations because Flow stores them in the project state.
+        # 2) Best-effort drive the aspect/count/model dropdowns. The DOM
+        # changes occasionally so we don't fail on miss — we just log it
+        # and fall back to whatever the project's last UI selection was
+        # (Flow persists picker state per project).
+        try:
+            await _set_dropdown(page, _ASPECT_LABELS.get(aspect_ratio, "16:9"), "aspect")
+            await _set_dropdown(page, f"{count}x", "count")
+            await _set_dropdown(page, _MODEL_LABELS.get(model, ""), "model")
+            await asyncio.sleep(0.3)
+        except Exception as exc:
+            logger.warning("flow_dropdown_set_failed: %s", exc)
 
         # 3) Locate the "Tạo" (Create) submit button — it's an icon button
         # whose accessible name is "Tạo". Multiple "Tạo" elements exist on

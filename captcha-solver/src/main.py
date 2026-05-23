@@ -113,8 +113,15 @@ class PhatNguoiReq(BaseModel):
 class FlowImageReq(BaseModel):
     project_id: str
     prompt: str
-    aspect_ratio: str = "IMAGE_ASPECT_RATIO_LANDSCAPE"  # ..._SQUARE, _PORTRAIT
-    model: str = "NARWHAL"
+    # Default 16:9 landscape. Other supported values matching Flow's pill
+    # buttons: IMAGE_ASPECT_RATIO_LANDSCAPE_4_3, _SQUARE, _PORTRAIT_3_4,
+    # _PORTRAIT (9:16).
+    aspect_ratio: str = "IMAGE_ASPECT_RATIO_LANDSCAPE"
+    # Strongest model by default. NARWHAL = Nano Banana 2, IMAGEN_4 = Imagen 4.
+    model: str = "NANO_BANANA_PRO"
+    # 1-4 images per request. Best-effort — Flow uses project default if
+    # the dropdown click misses.
+    count: int = Field(default=1, ge=1, le=4)
     tool: str = "PINHOLE"
     profile: str = "google-fx"
     # Flow's React app doesn't hydrate in true headless mode, so we default
@@ -193,6 +200,7 @@ async def api_flow_generate(req: FlowImageReq):
             prompt=req.prompt,
             aspect_ratio=req.aspect_ratio,
             model=req.model,
+            count=req.count,
             tool=req.tool,
             profile=req.profile,
             headless=req.headless,
