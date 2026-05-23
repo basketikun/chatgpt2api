@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from .browser_pool import pool
 from .settings import settings
 from .solvers.browser_run import browser_run
+from .solvers.phatnguoi import lookup_phatnguoi
 from .solvers.recaptcha import solve_recaptcha_v2, solve_recaptcha_v3
 from .solvers.turnstile import solve_turnstile
 
@@ -98,6 +99,14 @@ class ManualLoginReq(BaseModel):
     profile: str = "default"
 
 
+class PhatNguoiReq(BaseModel):
+    plate: str
+    vehicle_type: int = Field(default=1, ge=1, le=3)
+    profile: str = "phatnguoi"
+    headless: bool = True
+    timeout: int | None = Field(default=None, ge=10, le=300)
+
+
 @app.post("/v1/solve/turnstile", dependencies=[Depends(require_api_key)])
 async def api_solve_turnstile(req: TurnstileReq) -> dict[str, Any]:
     try:
@@ -146,6 +155,23 @@ async def api_solve_recaptcha2(req: Recaptcha2Req) -> dict[str, Any]:
         raise HTTPException(status_code=504, detail=str(exc)) from exc
     except Exception as exc:
         logger.exception("recaptcha2 solve failed")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/v1/forms/phatnguoi", dependencies=[Depends(require_api_key)])
+async def api_phatnguoi(req: PhatNguoiReq) -> dict[str, Any]:
+    try:
+        return await lookup_phatnguoi(
+            plate=req.plate,
+            vehicle_type=req.vehicle_type,
+            profile=req.profile,
+            headless=req.headless,
+            timeout=req.timeout,
+        )
+    except TimeoutError as exc:
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("phatnguoi lookup failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 

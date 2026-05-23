@@ -6,8 +6,14 @@ latency:
 1. api.checkphatnguoi.vn — fast JSON endpoint (~1s), no captcha. Primary.
 2. api.phatnguoi.vn       — secondary. Often rate-limited from server IPs
                             ("Hệ thống đang quá tải" with empty data).
+3. captcha-solver         — tertiary, slow (~10-30s). Drives a real browser
+                            with a persistent profile so the official
+                            phatnguoi.vn form can be submitted past
+                            Cloudflare Turnstile. Catches violations the
+                            JSON APIs miss. Only enabled when env
+                            CAPTCHA_SOLVER_URL is set.
 
-If both backends return empty, we DO NOT claim "no violations" — we tell
+If all backends return empty, we DO NOT claim "no violations" — we tell
 the user to check manually, because the upstream may simply be blocking us
 or the violation may be very recent and not yet indexed.
 """
@@ -16,9 +22,11 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import threading
 import time
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
@@ -190,6 +198,69 @@ def _lookup_phatnguoi_vn(plate: str, vtype: int) -> tuple[list[dict] | None, str
     return None, f"phatnguoi.vn: status={data.get('status')!r} msg={msg[:80]!r}"
 
 
+# ── Backend 3: captcha-solver (real browser via Patchright + Turnstile) ─────
+
+def _solver_endpoint() -> tuple[str, str] | None:
+    """Return (base_url, api_key) for the captcha-solver service, or None
+    if the env isn't configured. Called per-request so config changes pick
+    up without a restart."""
+    base = (os.environ.get("CAPTCHA_SOLVER_URL") or "").strip().rstrip("/")
+    key = (os.environ.get("CAPTCHA_SOLVER_API_KEY") or "").strip()
+    if not base:
+        return None
+    return base, key
+
+
+def _lookup_via_solver(plate: str, vtype: int) -> tuple[list[dict] | None, str]:
+    """Drive the captcha-solver service to submit phatnguoi.vn's real form.
+
+    Slow path: a fresh browser flow takes ~10-30 s end-to-end. We give it
+    SOLVER_TIMEOUT so it can do its job; the caller still races it against
+    the fast JSON APIs and uses whichever returns first.
+    """
+    endpoint = _solver_endpoint()
+    if endpoint is None:
+        return None, "captcha-solver: not configured"
+    base, key = endpoint
+    url = f"{base}/v1/forms/phatnguoi"
+
+    body = json.dumps({
+        "plate": plate.replace("-", ""),
+        "vehicle_type": vtype,
+        "profile": "phatnguoi",  # shared profile — cookies survive across calls
+        "headless": True,
+    }).encode()
+    headers = {"Content-Type": "application/json"}
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+
+    req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=SOLVER_TIMEOUT) as resp:
+            payload = json.loads(resp.read().decode("utf-8", errors="ignore"))
+    except urllib.error.HTTPError as e:
+        try:
+            detail = json.loads(e.read().decode("utf-8", errors="ignore"))
+            return None, f"captcha-solver: HTTP {e.code} {detail}"
+        except Exception:
+            return None, f"captcha-solver: HTTP {e.code}"
+    except Exception as exc:
+        return None, f"captcha-solver: {exc}"
+
+    if not isinstance(payload, dict):
+        return None, "captcha-solver: unexpected payload"
+
+    violations_raw = payload.get("violations") or []
+    if isinstance(violations_raw, list) and violations_raw:
+        return [v for v in violations_raw if isinstance(v, dict)], ""
+    if payload.get("no_violation"):
+        return [], "captcha-solver: chưa ghi nhận"
+    return None, f"captcha-solver: empty (turnstile={payload.get('turnstile')})"
+
+
+SOLVER_TIMEOUT = 35.0
+
+
 # ── Output formatter ────────────────────────────────────────────────────────
 
 def _is_resolved(v: dict) -> bool:
@@ -336,13 +407,22 @@ def check_traffic_violation(plate: str, vehicle_type: str = "oto") -> str:
         if added > 0 and src not in confirmed_sources:
             confirmed_sources.append(src)
 
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        futures = {
-            pool.submit(_lookup_checkphatnguoi, norm_plate): "checkphatnguoi.vn",
-            pool.submit(_lookup_phatnguoi_vn, norm_plate, vt_code): "phatnguoi.vn",
+    # Race fast JSON backends first; if they all come back empty we wait
+    # for the slow captcha-solver path (browser + Turnstile) since that's
+    # the only one that can see fresh fines visible on phatnguoi.vn.
+    solver_enabled = _solver_endpoint() is not None
+    workers = 3 if solver_enabled else 2
+    with ThreadPoolExecutor(max_workers=workers) as exec_pool:
+        futures: dict = {
+            exec_pool.submit(_lookup_checkphatnguoi, norm_plate): "checkphatnguoi.vn",
+            exec_pool.submit(_lookup_phatnguoi_vn, norm_plate, vt_code): "phatnguoi.vn",
         }
+        if solver_enabled:
+            futures[exec_pool.submit(_lookup_via_solver, norm_plate, vt_code)] = "captcha-solver"
+
+        overall = SOLVER_TIMEOUT + 2 if solver_enabled else OVERALL_TIMEOUT
         try:
-            for fut in as_completed(futures, timeout=OVERALL_TIMEOUT):
+            for fut in as_completed(futures, timeout=overall):
                 src = futures[fut]
                 try:
                     violations, err = fut.result()
@@ -353,6 +433,10 @@ def check_traffic_violation(plate: str, vehicle_type: str = "oto") -> str:
                     errors.append(err or f"{src}: unknown error")
                 elif violations:
                     _add_violations(violations, src)
+                    # Early-out: if the captcha-solver path returned data, no
+                    # need to wait further — it's authoritative.
+                    if src == "captcha-solver":
+                        break
                 else:
                     empty_sources.append(src)
         except Exception as exc:
