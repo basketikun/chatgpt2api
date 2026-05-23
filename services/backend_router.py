@@ -70,6 +70,7 @@ IMAGE_PROVIDER_PREFIXES: dict[str, str] = {
     "runwayml/": "runwayml",
     "nv-image/": "nvidia_nim_image",
     "gemini-image/": "gemini",
+    "flow/": "flow",
 }
 
 

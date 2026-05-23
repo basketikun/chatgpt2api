@@ -291,6 +291,30 @@ async def api_manual_login(req: ManualLoginReq) -> dict[str, Any]:
     }
 
 
+@app.get("/v1/session/list", dependencies=[Depends(require_api_key)])
+async def api_session_list() -> dict[str, Any]:
+    """List all known profiles (each is a chromium user-data-dir) along
+    with whether they're currently held open in the pool."""
+    root = settings.data_dir / "profiles"
+    profiles: list[dict[str, Any]] = []
+    if root.exists():
+        for child in sorted(root.iterdir()):
+            if not child.is_dir():
+                continue
+            size = 0
+            try:
+                size = sum(p.stat().st_size for p in child.rglob("*") if p.is_file())
+            except Exception:
+                pass
+            profiles.append({
+                "name": child.name,
+                "loaded": child.name in pool._contexts,
+                "size_bytes": size,
+                "path": str(child),
+            })
+    return {"profiles": profiles, "count": len(profiles)}
+
+
 @app.get("/v1/session/{profile}/status", dependencies=[Depends(require_api_key)])
 async def api_session_status(profile: str) -> dict[str, Any]:
     ctx = pool._contexts.get(profile)
