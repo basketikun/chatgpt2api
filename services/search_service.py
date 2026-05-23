@@ -321,22 +321,24 @@ class CustomProviderSearch(SearchBackend):
         if not models:
             return []
 
-        # Match hints on the SLUG (model name) only, not the prefixed id —
-        # otherwise "mini" appears inside provider prefixes like "geminiapi2"
-        # ("ge-MINI-api2") and matches every model, defeating the preference.
-        _FAST_HINTS = ("flash", "lite", "mini", "small", "fast")
+        # Prefer a fast variant. Substring matching ("mini" in name) is too
+        # loose: "mini" appears inside both "geMINIapi2" prefix AND "geMINI-3"
+        # model family, so every Gemini model would match and the loop would
+        # silently pick the heaviest one. Tokenize on /, -, _ and require a
+        # WHOLE token match against the hint set.
+        _FAST_HINTS = {"flash", "lite", "mini", "small", "fast", "nano"}
         prefix_lower = f"{prefix}/".lower()
+        import re as _re
 
-        def _slug(model: dict) -> str:
+        def _tokens(model: dict) -> set[str]:
             mid = str(model.get("id") or "").lower()
             if mid.startswith(prefix_lower):
                 mid = mid[len(prefix_lower):]
-            return mid
+            return set(_re.split(r"[/_\-.]", mid))
 
         chosen = None
         for m in models:
-            slug = _slug(m)
-            if any(h in slug for h in _FAST_HINTS):
+            if _tokens(m) & _FAST_HINTS:
                 chosen = m
                 break
         if chosen is None:
@@ -344,6 +346,10 @@ class CustomProviderSearch(SearchBackend):
         model_id = str(chosen.get("id") or "").replace(f"{prefix}/", "")
         if not model_id:
             return []
+        logger.info({
+            "event": "custom_provider_search_model",
+            "provider": prefix, "model": model_id,
+        })
 
         try:
             result = provider.chat_completions(
@@ -490,9 +496,14 @@ class IntentRouter:
                    "hiện nay", "2024", "2025", "2026", "gan day", "gần đây"]
 
     def _normalize(self, text: str) -> str:
-        """Lowercase + strip diacritics cua ban ban pho."""
+        """Lowercase + strip Vietnamese diacritics including đ → d."""
         import unicodedata
-        nfkd = unicodedata.normalize('NFKD', text.lower())
+        # NFKD strips most diacritic combining marks but Unicode does NOT
+        # decompose "đ" (LATIN SMALL LETTER D WITH STROKE) — it's a single
+        # codepoint without decomposition. Replace it manually so keyword
+        # checks like "dien" match the folded form of "điện".
+        s = text.lower().replace("đ", "d").replace("Đ", "d")
+        nfkd = unicodedata.normalize('NFKD', s)
         return ''.join(c for c in nfkd if not unicodedata.combining(c))
 
     def detect(self, query: str) -> dict:
