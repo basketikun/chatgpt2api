@@ -222,14 +222,25 @@ def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
     # that vision models have to scan before answering).
     is_vision_request = _messages_have_images(messages)
 
+    # Detect HA intent on the PRISTINE user message before any search/HA
+    # injection runs. Search results often contain phrases like "mở cửa"
+    # (trading session jargon) or "đèn" (news headline) that would trip
+    # the HA regex if we checked post-injection.
+    try:
+        from services.ha_client import is_ha_query as _is_ha
+        ha_query_pristine = _is_ha(messages)
+    except Exception:
+        ha_query_pristine = False
+
     # Check if this is a combo model — try each model until success
     if backend_router.is_combo(model):
         routes = backend_router.route_combo(model)
         last_error = ""
-        
-        # Only search and inject ONCE for the combo request
+
+        # Skip web search for pure HA queries — they're answered from the
+        # registry, no need to spend 8s on grounding.
         search_injected = False
-        if search_service.is_enabled:
+        if search_service.is_enabled and not ha_query_pristine and not is_vision_request:
             before_size = _messages_size(messages)
             messages_copy = search_service.process_messages(messages)
             search_injected = _messages_size(messages_copy) > before_size
@@ -242,13 +253,14 @@ def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
         # HA-related queries so the LLM can answer in ONE round-trip instead of
         # doing GetLiveContext / ha_get_state → wait → final answer (saves ~7s).
         ha_context_injected = False
-        try:
-            from services.ha_client import inject_ha_context
-            before_len = len(messages_copy)
-            messages_copy = inject_ha_context(messages_copy)
-            ha_context_injected = len(messages_copy) > before_len
-        except Exception:
-            pass
+        if ha_query_pristine:
+            try:
+                from services.ha_client import inject_ha_context
+                before_len = len(messages_copy)
+                messages_copy = inject_ha_context(messages_copy)
+                ha_context_injected = len(messages_copy) > before_len
+            except Exception:
+                pass
 
         tools_with_mcp = _inject_mcp_tools(
             tools, skip_ha_search=ha_context_injected,
@@ -286,26 +298,25 @@ def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
     # Single model — route directly
     route = backend_router.route(model, messages)
 
-    # Apply search injection for all backends
+    # Apply search injection for all backends — but skip when the user query
+    # is a pure HA command/status (answered from registry) or a vision task.
     search_injected = False
-    if search_service.is_enabled:
+    if search_service.is_enabled and not ha_query_pristine and not is_vision_request:
         before_size = _messages_size(messages)
         messages = search_service.process_messages(messages)
         search_injected = _messages_size(messages) > before_size
 
-    # Inject HA smart home context (Long-Lived Token). Returns a flag so we
-    # can suppress the ha_search_entities tool when the full device registry
-    # has already been added to the prompt — otherwise the LLM wastes an
-    # entire round-trip calling ha_search_entities even though every entity
-    # is already visible in the system context.
+    # Inject HA smart home context only when the PRISTINE user message looked
+    # like an HA query. This avoids false positives from search-result text.
     ha_context_injected = False
-    try:
-        from services.ha_client import inject_ha_context
-        before_len = len(messages)
-        messages = inject_ha_context(messages)
-        ha_context_injected = len(messages) > before_len
-    except Exception:
-        pass
+    if ha_query_pristine:
+        try:
+            from services.ha_client import inject_ha_context
+            before_len = len(messages)
+            messages = inject_ha_context(messages)
+            ha_context_injected = len(messages) > before_len
+        except Exception:
+            pass
 
     # Inject MCP tools from enabled presets
     tools = _inject_mcp_tools(

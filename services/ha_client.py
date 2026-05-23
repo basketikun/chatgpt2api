@@ -349,6 +349,14 @@ def _fold_diacritics(text: str) -> str:
     return "".join(c for c in nfkd if not unicodedata.combining(c))
 
 
+def is_ha_query(messages: list[dict[str, Any]]) -> bool:
+    """Public wrapper for HA intent detection. Used by handle() to decide
+    on the PRISTINE user message before search/other injections so that
+    e.g. "mở cửa" appearing inside gold-price search results doesn't get
+    misread as a "mở cửa" smart-home command."""
+    return _is_ha_query(messages)
+
+
 def _is_ha_query(messages: list[dict[str, Any]]) -> bool:
     """Heuristic: is the last user message asking about smart home devices?
 
