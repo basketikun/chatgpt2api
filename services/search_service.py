@@ -321,11 +321,22 @@ class CustomProviderSearch(SearchBackend):
         if not models:
             return []
 
+        # Match hints on the SLUG (model name) only, not the prefixed id —
+        # otherwise "mini" appears inside provider prefixes like "geminiapi2"
+        # ("ge-MINI-api2") and matches every model, defeating the preference.
         _FAST_HINTS = ("flash", "lite", "mini", "small", "fast")
+        prefix_lower = f"{prefix}/".lower()
+
+        def _slug(model: dict) -> str:
+            mid = str(model.get("id") or "").lower()
+            if mid.startswith(prefix_lower):
+                mid = mid[len(prefix_lower):]
+            return mid
+
         chosen = None
         for m in models:
-            mid = str(m.get("id") or "").lower()
-            if any(h in mid for h in _FAST_HINTS):
+            slug = _slug(m)
+            if any(h in slug for h in _FAST_HINTS):
                 chosen = m
                 break
         if chosen is None:
