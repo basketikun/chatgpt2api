@@ -12,18 +12,25 @@ import { cn } from "@/lib/utils";
 
 type CustomProvider = {
   name: string;
+  /** Multi-line newline-separated. First line = primary, the rest become
+      `base_urls[]` in the backend — FIFO rotation + 60s cooldown on
+      429/connection error. Use for pools like "1 Gemini Custom shared
+      API key across 4 ports". */
   base_url: string;
+  /** Multi-line newline-separated. First line = primary, the rest become
+      `api_keys[]` — multi-key rotation per request. */
   api_key: string;
   prefix: string;
   enabled: boolean;
 };
 
-// Provider presets — one-click add for popular AI APIs
+// Provider presets — one-click add for popular AI APIs. The `base_url`
+// can be multi-line ("\n"-separated) for pool providers like Gemini
+// Custom where one API key fans out to several local proxy ports.
 const PROVIDER_PRESETS: { id: string; name: string; base_url: string; prefix: string; api_style: string; icon: string; color: string }[] = [
-  { id: "geminiapi1", name: "Gemini Custom 1", base_url: "http://172.16.10.200:8000", prefix: "geminiapi1", api_style: "openai", icon: "G1", color: "#4285F4" },
-  { id: "geminiapi2", name: "Gemini Custom 2", base_url: "http://172.16.10.200:8001", prefix: "geminiapi2", api_style: "openai", icon: "G2", color: "#4285F4" },
-  { id: "geminiapi3", name: "Gemini Custom 3", base_url: "http://172.16.10.200:8002", prefix: "geminiapi3", api_style: "openai", icon: "G3", color: "#4285F4" },
-  { id: "geminiapi4", name: "Gemini Custom 4", base_url: "http://172.16.10.200:8003", prefix: "geminiapi4", api_style: "openai", icon: "G4", color: "#4285F4" },
+  { id: "geminiapi", name: "Gemini Custom (pool)",
+    base_url: "http://172.16.10.200:8000\nhttp://172.16.10.200:8001\nhttp://172.16.10.200:8002\nhttp://172.16.10.200:8003",
+    prefix: "geminiapi", api_style: "openai", icon: "G×4", color: "#4285F4" },
   { id: "openai", name: "OpenAI", base_url: "https://api.openai.com/v1", prefix: "openai", api_style: "openai", icon: "OA", color: "#10A37F" },
   { id: "deepseek", name: "DeepSeek", base_url: "https://api.deepseek.com", prefix: "deepseek", api_style: "deepseek", icon: "DS", color: "#4D6BFE" },
   { id: "groq", name: "Groq", base_url: "https://api.groq.com/openai/v1", prefix: "groq", api_style: "openai", icon: "GQ", color: "#F55036" },
@@ -59,11 +66,17 @@ export function CustomProvidersCard() {
     try {
       const data = await request.get("/api/v1/custom-providers");
       const raw = (data.data as any)?.custom_providers || {};
-      // Combine api_key + api_keys into a multi-line string for display
+      // Combine api_key + api_keys AND base_url + base_urls into multi-line
+      // strings for the textareas (same UX as multi-key).
       const merged: Record<string, CustomProvider> = {};
       for (const [id, p] of Object.entries(raw) as any) {
         const keys = [p.api_key || "", ...(p.api_keys || [])].filter(Boolean);
-        merged[id] = { ...p, api_key: [...new Set(keys)].join("\n") };
+        const urls = [p.base_url || "", ...(p.base_urls || [])].filter(Boolean);
+        merged[id] = {
+          ...p,
+          api_key: [...new Set(keys)].join("\n"),
+          base_url: [...new Set(urls)].join("\n"),
+        };
       }
       setProviders(merged);
     } catch (e) { console.error(e); }
@@ -90,8 +103,10 @@ export function CustomProvidersCard() {
     const prefix = form.prefix.trim() || form.name.trim().toLowerCase().replace(/\s+/g, "_");
     const providerId = prefix;
 
-    // Split multi-line keys
+    // Split multi-line keys and URLs — first item is primary, rest become
+    // arrays (api_keys[] / base_urls[]). Backend rotation handles both.
     const keyList = form.api_key.split("\n").map(k => k.trim()).filter(Boolean);
+    const urlList = form.base_url.split("\n").map(u => u.trim().replace(/\/$/, "")).filter(Boolean);
 
     setSaving(providerId);
     try {
@@ -99,6 +114,8 @@ export function CustomProvidersCard() {
         provider: {
           ...form,
           prefix,
+          base_url: urlList[0] || "",
+          base_urls: urlList.slice(1),
           api_key: keyList[0] || "",
           api_keys: keyList,
         },
@@ -199,16 +216,21 @@ export function CustomProvidersCard() {
                   placeholder="VD: deepseek" className="mt-1 h-9 rounded-lg border-stone-200 text-sm font-mono" />
               </div>
               <div className="sm:col-span-2">
-                <label className="text-xs text-stone-500">Base URL</label>
-                <Input value={form.base_url} onChange={(e) => setForm({ ...form, base_url: e.target.value })}
-                  placeholder="VD: https://api.deepseek.com" className="mt-1 h-9 rounded-lg border-stone-200 text-sm font-mono" />
+                <label className="text-xs text-stone-500">Base URL (mỗi dòng 1 endpoint)</label>
+                <Textarea value={form.base_url} onChange={(e) => setForm({ ...form, base_url: e.target.value })}
+                  placeholder={"https://api.deepseek.com\nhttp://host:8001\nhttp://host:8002"}
+                  className="mt-1 min-h-16 rounded-xl border-stone-200 font-mono text-xs" />
+                <p className="text-xs text-stone-500 mt-1">
+                  Nhiều URL cùng API key → priority FIFO + auto demote 60s khi 429 / connection error
+                  (vd: 4 Gemini Custom ports cùng 1 token).
+                </p>
               </div>
               <div className="sm:col-span-2">
                 <label className="text-xs text-stone-500">API Keys (mỗi dòng 1 key)</label>
                 <Textarea value={form.api_key} onChange={(e) => setForm({ ...form, api_key: e.target.value })}
                   placeholder={"sk-...\nsk-..."}
                   className="mt-1 min-h-20 rounded-xl border-stone-200 font-mono text-xs" />
-                <p className="text-xs text-stone-500 mt-1">Nhiều key → tự động round-robin khi rate limit</p>
+                <p className="text-xs text-stone-500 mt-1">Nhiều key → tự động round-robin khi rate limit (60s cooldown per key)</p>
               </div>
             </div>
             <div className="flex gap-2 justify-end">

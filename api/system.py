@@ -832,6 +832,12 @@ def create_router(app_version: str) -> APIRouter:
             raise HTTPException(status_code=400, detail={"error": "provider prefix or name is required"})
 
         base_url = str(provider.get("base_url") or "").strip().rstrip("/")
+        # Optional `base_urls[]` array — pool extra endpoints sharing the
+        # same API key. CustomOpenAIProvider rotates them in FIFO order.
+        base_urls_raw = provider.get("base_urls") or []
+        if not isinstance(base_urls_raw, list):
+            base_urls_raw = []
+        base_urls = [str(u or "").strip().rstrip("/") for u in base_urls_raw if str(u or "").strip()]
         api_key = str(provider.get("api_key") or "").strip()
         api_keys = provider.get("api_keys") or []
         if not isinstance(api_keys, list):
@@ -844,7 +850,9 @@ def create_router(app_version: str) -> APIRouter:
         enabled = provider.get("enabled", True)
         prefix = str(provider.get("prefix") or provider_id).strip().lower().replace(" ", "_")
 
-        # Validate: test connection with first key
+        # Validate: test connection with first key against the primary URL.
+        # Additional base_urls are NOT validated here — they're optional pool
+        # members and a slow/dead spare shouldn't block save.
         test_key = api_keys[0] if api_keys else api_key
         if not test_key:
             raise HTTPException(status_code=400, detail={"error": "At least one API key is required"})
@@ -875,6 +883,7 @@ def create_router(app_version: str) -> APIRouter:
         custom_providers[provider_id] = {
             "name": name,
             "base_url": base_url,
+            "base_urls": base_urls,
             "api_key": api_keys[0] if api_keys else "",
             "api_keys": api_keys,
             "prefix": prefix,
