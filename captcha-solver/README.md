@@ -20,15 +20,108 @@ is just a chromium `user-data-dir` mounted under `./data/profiles/<name>/`
 ## Endpoints (all require `Authorization: Bearer $CAPTCHA_SOLVER_API_KEY`)
 
 ```
-POST /v1/solve/turnstile        {url, sitekey?, profile?, headless?, timeout?}
-POST /v1/solve/recaptcha3       {url, sitekey, action, profile?, headless?}
-POST /v1/solve/recaptcha2       {url, profile?, headless?}
-POST /v1/browser/run            {url, script?, wait_for?, profile?, headless?}
-POST /v1/session/manual-login   {url, profile}   ← open in noVNC for human login
+POST /v1/solve/turnstile           {url, sitekey?, profile?, headless?, timeout?}
+POST /v1/solve/recaptcha3          {url, sitekey, action, profile?, headless?}
+POST /v1/solve/recaptcha2          {url, profile?, headless?}
+POST /v1/browser/run               {url, script?, wait_for?, profile?, headless?}
+POST /v1/forms/phatnguoi           {plate, vehicle_type?, profile?}
+POST /v1/google/flow/generate-image {project_id, prompt, return_binary?, ...}
+POST /v1/session/manual-login      {url, profile}   ← open in noVNC for human login
 GET  /v1/session/{profile}/status
 POST /v1/session/{profile}/close
-GET  /health                                   ← unauth liveness probe
+GET  /health                                      ← unauth liveness probe
 ```
+
+## Google Labs Flow image generation
+
+Free-tier image generation through `labs.google/fx/tools/flow` driven as a
+real user via Patchright. No paid solver, no API key, no cost beyond the
+Google account's Flow quota.
+
+### One-time setup (~1 minute)
+
+```bash
+# 1) open a headful login session
+curl -X POST http://172.16.10.38:8010/v1/session/manual-login \
+     -H "Authorization: Bearer $API_KEY" \
+     -H "Content-Type: application/json" \
+     -d '{"profile":"google-fx","url":"https://labs.google/fx/vi/tools/flow"}'
+
+# 2) open http://172.16.10.38:6080/vnc.html?host=172.16.10.38&port=6080&autoconnect=1
+#    in a browser, sign in to Google in the Chromium window, then close the tab.
+#    Cookies persist in /data/profiles/google-fx/ for months.
+```
+
+### Generate (JSON response with image URL)
+
+```bash
+curl -X POST http://172.16.10.38:8010/v1/google/flow/generate-image \
+     -H "Authorization: Bearer $API_KEY" \
+     -H "Content-Type: application/json" \
+     -d '{
+           "project_id": "54468d77-02ff-4a06-bb81-05a7d1111544",
+           "prompt": "a samurai cat in feudal Japan, cinematic"
+         }'
+# → {"images":[{"url":"https://flow-content.google/image/...","seed":...}], "elapsed_ms":45000}
+```
+
+### Generate (binary PNG straight back — for Home Assistant / n8n)
+
+```bash
+curl -X POST http://172.16.10.38:8010/v1/google/flow/generate-image \
+     -H "Authorization: Bearer $API_KEY" \
+     -H "Content-Type: application/json" \
+     -d '{"project_id":"...","prompt":"...","return_binary":true}' \
+     -o image.png
+```
+
+### Home Assistant integration
+
+Add to `configuration.yaml`:
+
+```yaml
+rest_command:
+  flow_generate:
+    url: "http://172.16.10.38:8010/v1/google/flow/generate-image"
+    method: POST
+    headers:
+      Authorization: !secret captcha_solver_key   # "Bearer ..."
+      Content-Type: "application/json"
+    payload: >
+      {
+        "project_id": "54468d77-02ff-4a06-bb81-05a7d1111544",
+        "prompt": "{{ prompt }}",
+        "return_binary": true
+      }
+    timeout: 180
+```
+
+Call from automations:
+
+```yaml
+service: rest_command.flow_generate
+data:
+  prompt: "a cyberpunk cat playing piano, neon lights"
+```
+
+### n8n integration
+
+Add an **HTTP Request** node:
+
+- Method: `POST`
+- URL: `http://172.16.10.38:8010/v1/google/flow/generate-image`
+- Authentication: Header Auth (`Authorization: Bearer <key>`)
+- Body: JSON
+  ```json
+  {
+    "project_id": "{{ $json.project_id }}",
+    "prompt": "{{ $json.prompt }}",
+    "return_binary": true
+  }
+  ```
+- Response Format: **File** (binary). The image lands in
+  `$binary.data` and you can pipe straight into "Convert to File" / upload to
+  Drive / send via Telegram, etc.
 
 ## Manual-login flow (Google labs.fx, n8n auth, etc.)
 

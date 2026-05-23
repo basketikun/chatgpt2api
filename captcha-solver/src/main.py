@@ -18,7 +18,9 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Any
 
+import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from .browser_pool import pool
@@ -115,8 +117,14 @@ class FlowImageReq(BaseModel):
     model: str = "NARWHAL"
     tool: str = "PINHOLE"
     profile: str = "google-fx"
-    headless: bool = True
-    timeout: int = Field(default=90, ge=15, le=300)
+    # Flow's React app doesn't hydrate in true headless mode, so we default
+    # to headful on Xvfb. Leave as-is unless you really know why.
+    headless: bool = False
+    timeout: int = Field(default=120, ge=15, le=300)
+    # When true, the response is a single image/png body (the first image
+    # downloaded from the Google CDN). Use this from Home Assistant or n8n
+    # binary-handling nodes so you don't need a second HTTP call.
+    return_binary: bool = False
 
 
 @app.post("/v1/solve/turnstile", dependencies=[Depends(require_api_key)])
@@ -171,11 +179,16 @@ async def api_solve_recaptcha2(req: Recaptcha2Req) -> dict[str, Any]:
 
 
 @app.post("/v1/google/flow/generate-image", dependencies=[Depends(require_api_key)])
-async def api_flow_generate(req: FlowImageReq) -> dict[str, Any]:
+async def api_flow_generate(req: FlowImageReq):
     """End-to-end Google Labs Flow image gen. Requires the `google-fx`
-    profile to be logged in first via /v1/session/manual-login."""
+    profile to be logged in first via /v1/session/manual-login.
+
+    Returns JSON by default. With `return_binary: true`, downloads the
+    first generated image and returns it as `image/png` (handy for Home
+    Assistant `rest_command`, n8n HTTP Request → Binary Data, etc).
+    """
     try:
-        return await flow_generate_image(
+        result = await flow_generate_image(
             project_id=req.project_id,
             prompt=req.prompt,
             aspect_ratio=req.aspect_ratio,
@@ -190,6 +203,39 @@ async def api_flow_generate(req: FlowImageReq) -> dict[str, Any]:
     except Exception as exc:
         logger.exception("flow generate failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    if not req.return_binary:
+        return result
+
+    images = result.get("images") or []
+    if not images:
+        raise HTTPException(status_code=502, detail="flow returned no images")
+    first = images[0]
+    url = first.get("url")
+    if not url:
+        raise HTTPException(status_code=502, detail="first image has no URL")
+    try:
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+            r = await client.get(url)
+            r.raise_for_status()
+    except Exception as exc:
+        logger.exception("download flow image failed")
+        raise HTTPException(status_code=502, detail=f"download failed: {exc}") from exc
+
+    # Prefer the CDN's actual Content-Type — Flow serves JPEG even though
+    # our extractor defaults to "image/png".
+    cdn_ct = (r.headers.get("content-type") or "").split(";")[0].strip()
+    return Response(
+        content=r.content,
+        media_type=cdn_ct or first.get("mime") or "image/png",
+        headers={
+            "x-flow-image-id": str(first.get("id") or ""),
+            "x-flow-model": str(first.get("model") or ""),
+            "x-flow-seed": str(first.get("seed") or ""),
+            "x-flow-elapsed-ms": str(result.get("elapsed_ms") or ""),
+            "content-disposition": f'inline; filename="flow_{first.get("id","image")}.png"',
+        },
+    )
 
 
 @app.post("/v1/forms/phatnguoi", dependencies=[Depends(require_api_key)])
