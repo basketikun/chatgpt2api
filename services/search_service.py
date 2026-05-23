@@ -463,6 +463,7 @@ class IntentRouter:
     _WEATHER_TOOLS = ["vn_weather"]
     _NEWS_TOOLS    = ["vn_news"]
     _FINANCE_TOOLS = ["vn_currency"]
+    _PETROL_TOOLS  = ["vn_petrol"]
     _STOCK_TOOLS   = ["vn_stock"]
     _LAW_TOOLS     = ["vn_law"]
     _SEARCH_TOOLS  = ["federated_search", "vn_search"]
@@ -487,6 +488,9 @@ class IntentRouter:
                    "thoi su", "thời sự"]
     _FINANCE_KW = ["gia vang", "giá vàng", "ty gia", "tỷ giá", "ngoai te", "ngoại tệ",
                    "do la", "đô la", "usd", "euro"]
+    _PETROL_KW  = ["gia xang", "giá xăng", "gia dau", "giá dầu", "ron 95", "ron95",
+                   "e5 ron", "xang dau", "xăng dầu", "dau do", "dầu do", "dau hoa",
+                   "dầu hỏa", "petrolimex", "mazut", "mazút"]
     _STOCK_KW   = ["co phieu", "cổ phiếu", "vn-index", "vnindex", "chung khoan",
                    "chứng khoán", "hnx", "hose"]
     _LAW_KW     = ["luat", "luật", "nghi dinh", "nghị định", "thong tu", "thông tư",
@@ -524,6 +528,8 @@ class IntentRouter:
             tools.extend(self._NEWS_TOOLS)
         if any(k in q for k in self._FINANCE_KW):
             tools.extend(self._FINANCE_TOOLS)
+        if any(k in q for k in self._PETROL_KW):
+            tools.extend(self._PETROL_TOOLS)
         if any(k in q for k in self._STOCK_KW):
             tools.extend(self._STOCK_TOOLS)
         if any(k in q for k in self._LAW_KW):
@@ -901,6 +907,7 @@ class SearchService:
                     "federated_search": "search_all",
                     "vn_weather":      "get_current_weather",
                     "vn_news":         "get_news",
+                    "vn_petrol":       "get_petrol_prices",
                     "vn_stock":        "get_stock_price",
                     "vn_law":          "search_law",
                 }
