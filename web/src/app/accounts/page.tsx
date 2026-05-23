@@ -338,10 +338,17 @@ function AccountsPageContent() {
   const buildProviderTree = async () => {
     const tree: any[] = [];
     try {
-      const healthRes = await request.get("/api/v1/health");
+      // Fetch both endpoints in parallel — /health gives per-key status,
+      // /provider-tree gives the Flow branch + custom-provider endpoints[]
+      // (multi-pool URLs). Merge so the UI shows everything.
+      const [healthRes, treeRes] = await Promise.all([
+        request.get("/api/v1/health"),
+        request.get("/api/v1/provider-tree").catch(() => ({ data: { tree: [] } })),
+      ]);
       const health = (healthRes.data as any) || {};
       const gemini = health.gemini || {};
       const instances: any[] = gemini.instances || [];
+      const ptBranches: any[] = ((treeRes?.data as any) || {}).tree || [];
 
       // ── Gemini API: separate branch like ChatGPT, each key is a row ──
       const geminiInst = instances.find((i: any) => i.id === "gemini_free");
@@ -374,6 +381,12 @@ function AccountsPageContent() {
           instances: otherInsts,
           total: otherInsts.length,
         });
+      }
+
+      // ── Flow branch — only available from /provider-tree ──
+      const flowBranch = ptBranches.find((b: any) => b.type === "flow");
+      if (flowBranch && flowBranch.instances?.length > 0) {
+        tree.push(flowBranch);
       }
     } catch (e) {
       console.error("buildProviderTree failed:", e);

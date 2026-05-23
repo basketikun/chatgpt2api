@@ -121,6 +121,23 @@ def _check_gemini_status() -> dict:
         name = cp_cfg.get("name") or cp_id
         prefix = cp_cfg.get("prefix") or cp_id
 
+        # Multi-endpoint support — a provider can pool several base_urls
+        # (e.g. 4 Gemini Custom instances on different ports sharing one
+        # API key). We surface each as a numbered endpoint so the UI can
+        # render the rotation order with #1..#N pills.
+        base_urls_extra = cp_cfg.get("base_urls") if isinstance(cp_cfg.get("base_urls"), list) else []
+        all_urls_ordered: list[str] = []
+        if base_url:
+            all_urls_ordered.append(base_url.rstrip("/"))
+        for u in base_urls_extra:
+            u = str(u or "").strip().rstrip("/")
+            if u and u not in all_urls_ordered:
+                all_urls_ordered.append(u)
+        endpoints_payload = [
+            {"ordinal": i + 1, "url": u, "is_primary": i == 0}
+            for i, u in enumerate(all_urls_ordered)
+        ]
+
         # Collect all API keys (single + multi)
         single_key = str(cp_cfg.get("api_key") or "").strip()
         multi_keys = cp_cfg.get("api_keys") or []
@@ -204,6 +221,9 @@ def _check_gemini_status() -> dict:
             "name": name,
             "prefix": prefix,
             "base_url": base_url,
+            "base_urls": [u for u in all_urls_ordered if u != base_url],
+            "endpoints": endpoints_payload,
+            "endpoint_count": len(endpoints_payload),
             "status": overall_status,
             "port": base_url.split(":")[-1].rstrip("/") if ":" in base_url else "—",
             "models": sum(k.get("models", 0) for k in key_statuses),
