@@ -1249,6 +1249,31 @@ function AccountsPageContent() {
                                     </div>
                                   )}
 
+                                  {Array.isArray(inst.endpoints) && inst.endpoints.length > 1 && (
+                                    <div className="pt-2 border-t border-slate-200 space-y-1">
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Endpoints (multi-pool)</span>
+                                        <span className="text-[10px] text-slate-400">{inst.endpoints.length} URLs</span>
+                                      </div>
+                                      {inst.endpoints.map((ep: any, ei: number) => (
+                                        <div key={ei} className="flex items-center gap-2 text-[11px]">
+                                          <span
+                                            className={cn(
+                                              "shrink-0 inline-flex items-center justify-center min-w-[28px] h-5 px-1.5 rounded-md font-mono font-bold tabular-nums",
+                                              ep.is_primary
+                                                ? "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-300"
+                                                : "bg-slate-100 text-slate-500"
+                                            )}
+                                            title={ep.is_primary ? "Endpoint ưu tiên #1 — try first" : `Vị trí #${ep.ordinal} trong rotation`}
+                                          >
+                                            #{ep.ordinal}
+                                          </span>
+                                          <code className="text-slate-600 font-mono truncate">{ep.url}</code>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+
                                   {inst.error && (
                                     <div className="rounded-[8px] bg-rose-50 border border-rose-100 px-3 py-2 text-[11px]">
                                       <p className="font-medium text-rose-700">Lỗi kết nối</p>

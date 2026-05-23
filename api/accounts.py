@@ -297,11 +297,29 @@ def create_router() -> APIRouter:
                 except Exception as e:
                     status = "offline"
                     error_msg = str(e)[:60]
+            # Multi-endpoint support — providers can pool several base_urls
+            # (e.g. 4 Gemini Custom instances on different ports/IPs). Show
+            # each as a sub-row with ordinal so the user sees the rotation.
+            extras = cp_cfg.get("base_urls") if isinstance(cp_cfg.get("base_urls"), list) else []
+            all_urls = []
+            if base_url:
+                all_urls.append(base_url)
+            for u in extras:
+                u = str(u or "").strip().rstrip("/")
+                if u and u not in all_urls:
+                    all_urls.append(u)
+            endpoints_payload = [
+                {"ordinal": i + 1, "url": u, "is_primary": i == 0}
+                for i, u in enumerate(all_urls)
+            ]
             custom_list.append({
                 "id": cp_id,
                 "name": cp_cfg.get("name") or cp_id,
                 "prefix": cp_cfg.get("prefix") or cp_id,
                 "base_url": base_url,
+                "base_urls": all_urls,
+                "endpoints": endpoints_payload,
+                "endpoint_count": len(all_urls),
                 "port": port,
                 "status": status,
                 "models": models_count,

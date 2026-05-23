@@ -55,12 +55,49 @@ def resolve_custom_provider(model: str) -> tuple[dict[str, Any] | None, str]:
 
 
 class CustomOpenAIProvider:
-    """Generic OpenAI-compatible provider — proxies to any OpenAI-compatible endpoint."""
+    """Generic OpenAI-compatible provider — proxies to any OpenAI-compatible endpoint.
+
+    Supports a SINGLE provider definition with MULTIPLE base_urls so users can
+    pool 4 Gemini Custom instances (different ports/IPs) under one provider
+    instead of 4 separate entries. The first base_url is also exposed as
+    `self.base_url` for backwards compatibility.
+
+    Pool config:
+        {"base_url": "http://host:8000",            # primary
+         "base_urls": ["http://host:8001",          # additional endpoints
+                       "http://host:8002",
+                       "http://host:8003"]}
+
+    On 429 / connection error from one base_url we mark it cooled-down for
+    60s and rotate to the next; FIFO within the ordered list.
+    """
+
+    # Per-class registry so independent instantiations of the same provider
+    # (which happens — `CustomOpenAIProvider(cfg)` runs per request) share
+    # base-url cooldown state. Keyed by provider name.
+    _base_url_cooldown: dict[str, dict[str, float]] = {}
+    _base_url_index: dict[str, int] = {}
+    _BASE_URL_COOLDOWN_S = 60.0
 
     def __init__(self, provider_config: dict[str, Any]):
         self.cfg = provider_config
-        self.base_url = str(provider_config.get("base_url") or "").rstrip("/")
         self.name = str(provider_config.get("name") or "Custom")
+        # Build ordered base_url list — first is `base_url`, then `base_urls[]`
+        # (deduped). `self.base_url` always returns the next healthy one for
+        # backwards-compat with callers that read it directly.
+        primary = str(provider_config.get("base_url") or "").rstrip("/")
+        extras_raw = provider_config.get("base_urls") or []
+        if not isinstance(extras_raw, list):
+            extras_raw = []
+        extras = [str(u or "").rstrip("/") for u in extras_raw if str(u or "").strip()]
+        ordered: list[str] = []
+        if primary:
+            ordered.append(primary)
+        for u in extras:
+            if u and u not in ordered:
+                ordered.append(u)
+        self._base_urls = ordered
+        self.base_url = self._next_healthy_base_url() if ordered else ""
         self._key_index = 0
         self._rate_limited: dict[str, float] = {}
 
@@ -88,6 +125,43 @@ class CustomOpenAIProvider:
             # Standard OpenAI format: base_url has no /v1 suffix
             self._models_path = "/v1/models"
             self._chat_path = "/v1/chat/completions"
+
+    def _next_healthy_base_url(self) -> str:
+        """Pick the next non-cooled-down base_url in FIFO order, skipping any
+        currently in cooldown. Returns first URL if all are in cooldown."""
+        if not self._base_urls:
+            return ""
+        if len(self._base_urls) == 1:
+            return self._base_urls[0]
+        cooldown = CustomOpenAIProvider._base_url_cooldown.setdefault(self.name, {})
+        now = time.time()
+        # Always start from index 0 — true priority FIFO. Demoted URLs will
+        # have been moved to the back via _demote_base_url and stay there.
+        for url in self._base_urls:
+            if cooldown.get(url, 0) < now:
+                return url
+        return self._base_urls[0]
+
+    def _demote_base_url(self, url: str) -> None:
+        """Move a base_url to the END of the order + cool it down for
+        BASE_URL_COOLDOWN_S so the next picker skips past it."""
+        if not url or url not in self._base_urls:
+            return
+        # Cooldown so _next_healthy_base_url skips it.
+        cooldown = CustomOpenAIProvider._base_url_cooldown.setdefault(self.name, {})
+        cooldown[url] = time.time() + CustomOpenAIProvider._BASE_URL_COOLDOWN_S
+        # Reorder in-memory list — pop + append at tail.
+        try:
+            self._base_urls.remove(url)
+            self._base_urls.append(url)
+        except ValueError:
+            pass
+        logger.warning({
+            "event": "custom_provider_base_url_demoted",
+            "provider": self.name,
+            "url": url,
+            "cooldown_s": CustomOpenAIProvider._BASE_URL_COOLDOWN_S,
+        })
 
     def _get_keys(self) -> list[str]:
         """Get all configured API keys (supports multi-key).
@@ -199,6 +273,12 @@ class CustomOpenAIProvider:
             "stream": stream,
         })
 
+        # Refresh `self.base_url` each call so multi-endpoint providers
+        # rotate as endpoints fail. Single-endpoint providers always return
+        # the same URL.
+        if len(self._base_urls) > 1:
+            self.base_url = self._next_healthy_base_url()
+
         try:
             resp = requests.post(
                 f"{self.base_url}{self._chat_path}",
@@ -216,6 +296,17 @@ class CustomOpenAIProvider:
                 attempted.add(current_key)
                 self._attempted_keys = attempted
                 if len(attempted) < len(self._get_keys()):
+                    return self.chat_completions(
+                        messages=messages, model=model, stream=stream,
+                        temperature=temperature, max_tokens=max_tokens,
+                        tools=tools, tool_choice=tool_choice, **kwargs,
+                    )
+                # All keys exhausted on this base_url — demote it and retry
+                # on the next endpoint in the pool (if any).
+                if len(self._base_urls) > 1:
+                    self._demote_base_url(self.base_url)
+                    self.base_url = self._next_healthy_base_url()
+                    self._attempted_keys = set()  # reset key tracker for new endpoint
                     return self.chat_completions(
                         messages=messages, model=model, stream=stream,
                         temperature=temperature, max_tokens=max_tokens,
@@ -259,6 +350,23 @@ class CustomOpenAIProvider:
                 return self._non_stream_response(resp, model)
 
         except requests.RequestsError as exc:
+            # Connection error — most common when a Gemini Custom port is
+            # down. Demote this base_url and try the next one in the pool.
+            if len(self._base_urls) > 1:
+                self._demote_base_url(self.base_url)
+                self.base_url = self._next_healthy_base_url()
+                if self.base_url:
+                    logger.warning({
+                        "event": "custom_provider_retry_next_url",
+                        "provider": self.name,
+                        "next_url": self.base_url,
+                        "error": str(exc)[:200],
+                    })
+                    return self.chat_completions(
+                        messages=messages, model=model, stream=stream,
+                        temperature=temperature, max_tokens=max_tokens,
+                        tools=tools, tool_choice=tool_choice, **kwargs,
+                    )
             raise RuntimeError(f"[{self.name}] Connection failed: {exc}") from exc
 
     def _stream_response(self, response, model: str) -> Iterator[dict[str, Any]]:
