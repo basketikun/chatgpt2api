@@ -63,5 +63,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # NOTE: gha cache previously served a stale services/ layer even
+          # after the COPY step ran. Disabled until we figure out the actual
+          # cache key bug. With this off each build is ~1m slower but the
+          # image actually contains the committed code.
+          no-cache: true
