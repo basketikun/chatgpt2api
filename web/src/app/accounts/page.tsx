@@ -1091,6 +1091,41 @@ function AccountsPageContent() {
                         );
                       })}
 
+                      {/* Google Labs Flow accounts — profile + project_id rows with ordinals */}
+                      {provider.type === "flow" && provider.instances?.map((flow: any) => (
+                        <div key={`flow:${flow.profile}:${flow.project_id}`}>
+                          <div className="flex items-center gap-3 px-5 py-3 hover:bg-slate-50/60 transition-colors">
+                            <span
+                              className={cn(
+                                "shrink-0 inline-flex items-center justify-center min-w-[28px] h-5 px-1.5 rounded-md text-[11px] font-mono font-bold tabular-nums",
+                                flow.is_primary
+                                  ? "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-300"
+                                  : "bg-slate-100 text-slate-500"
+                              )}
+                              title={flow.is_primary ? "Tài khoản Flow ưu tiên #1" : `Vị trí #${flow.ordinal} trong hàng đợi`}
+                            >
+                              #{flow.ordinal}
+                            </span>
+                            <div className="size-8 shrink-0 rounded-full flex items-center justify-center bg-gradient-to-br from-emerald-500 to-teal-600">
+                              <span className="text-[10px] font-bold text-white">FL</span>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[13px] font-semibold text-slate-800 truncate">{flow.label || flow.profile}</span>
+                                <Badge variant="secondary" className="rounded text-[10px] px-1 py-0 bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                  Flow
+                                </Badge>
+                              </div>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <code className="text-[10px] text-slate-400">profile: {flow.profile}</code>
+                                <span className="text-[10px] text-slate-300">·</span>
+                                <code className="text-[10px] text-slate-400">project: {flow.project_preview}</code>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+
                       {/* Providers / Custom APIs: rows like ChatGPT accounts */}
                       {(provider.type === "providers" || provider.type === "custom") && provider.instances?.map((inst: any) => {
                         const isInstOpen = expandedId === `inst:${inst.id}`;
@@ -1176,7 +1211,7 @@ function AccountsPageContent() {
                                       <span className="text-slate-500">Port</span>
                                       <span className="ml-auto text-[11px] font-bold text-slate-700">{inst.port || "—"}</span>
                                     </div>
-                                    {inst.has_key !== undefined && (
+                                    {inst.has_key !== undefined && !inst.keys?.length && (
                                       <div className="flex items-center gap-1.5">
                                         <span className="size-2 rounded-full bg-violet-500" />
                                         <span className="text-slate-500">API Key</span>
@@ -1184,6 +1219,35 @@ function AccountsPageContent() {
                                       </div>
                                     )}
                                   </div>
+
+                                  {/* Multi-key listing with ordinals — Gemini /
+                                      NVIDIA / OpenAI / DeepSeek frequently have
+                                      multiple API keys with FIFO rotation. Show
+                                      #1 (primary, emerald) through #N. */}
+                                  {Array.isArray(inst.keys) && inst.keys.length > 0 && (
+                                    <div className="pt-2 border-t border-slate-200 space-y-1">
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">API Keys</span>
+                                        <span className="text-[10px] text-slate-400">{inst.keys.length} key{inst.keys.length > 1 ? "s" : ""}</span>
+                                      </div>
+                                      {inst.keys.map((k: any, ki: number) => (
+                                        <div key={ki} className="flex items-center gap-2 text-[11px]">
+                                          <span
+                                            className={cn(
+                                              "shrink-0 inline-flex items-center justify-center min-w-[28px] h-5 px-1.5 rounded-md font-mono font-bold tabular-nums",
+                                              k.is_primary
+                                                ? "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-300"
+                                                : "bg-slate-100 text-slate-500"
+                                            )}
+                                            title={k.is_primary ? "Key ưu tiên #1 — luôn được dùng trước" : `Vị trí #${k.ordinal} trong hàng đợi`}
+                                          >
+                                            #{k.ordinal}
+                                          </span>
+                                          <code className="text-slate-600 font-mono truncate">{k.preview}</code>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
 
                                   {inst.error && (
                                     <div className="rounded-[8px] bg-rose-50 border border-rose-100 px-3 py-2 text-[11px]">

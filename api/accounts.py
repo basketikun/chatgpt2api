@@ -163,10 +163,14 @@ def create_router() -> APIRouter:
         # ── ChatGPT branch ──
         chatgpt_accounts = [a for a in accounts if str(a.get("type") or "").lower() not in ("", "custom")]
         if chatgpt_accounts:
-            # Group by type
+            # Group by type — but merge "go" plan into "free" since they're
+            # both consumer chatgpt accounts using the same rotation logic.
+            # The "go" badge stays on each individual account via account.type.
+            def _group_key(t: str) -> str:
+                return "free" if t == "go" else t
             type_groups: dict[str, list] = {}
             for acc in chatgpt_accounts:
-                acc_type = str(acc.get("type") or "free")
+                acc_type = _group_key(str(acc.get("type") or "free"))
                 type_groups.setdefault(acc_type, []).append(acc)
             groups = []
             for acc_type, accs in sorted(type_groups.items()):
@@ -188,17 +192,37 @@ def create_router() -> APIRouter:
             })
 
         # ── Built-in providers branch (Gemini, NVIDIA, etc.) ──
+        # For each provider we expand the `api_keys` array into one row per
+        # key with an ordinal (#1, #2, ...) — same priority-FIFO concept as
+        # ChatGPT accounts but for API-key providers. Falls back to the
+        # single `api_key` field if `api_keys` is missing.
         builtin_list = []
         for p_id, p_cfg in providers_cfg.items():
             if not isinstance(p_cfg, dict) or not p_cfg.get("enabled", False):
                 continue
-            api_key = p_cfg.get("api_key") or ""
             base_url = p_cfg.get("base_url") or ""
+            keys_arr = p_cfg.get("api_keys") if isinstance(p_cfg.get("api_keys"), list) else []
+            single = p_cfg.get("api_key") or ""
+            # De-dup while preserving order: api_keys first, then single if not in.
+            ordered_keys = [k for k in keys_arr if isinstance(k, str) and k.strip()]
+            if single and single not in ordered_keys:
+                ordered_keys.insert(0, single)
+            keys_payload = [
+                {
+                    "ordinal": idx + 1,
+                    "preview": (k[:12] + "..." + k[-4:]) if len(k) > 16 else k,
+                    "is_primary": idx == 0,
+                }
+                for idx, k in enumerate(ordered_keys)
+            ]
             builtin_list.append({
                 "id": p_id,
                 "name": p_cfg.get("name") or p_id,
-                "has_key": bool(api_key),
-                "key_preview": (api_key[:12] + "..." + api_key[-4:]) if len(api_key) > 16 else (api_key or "—"),
+                "has_key": bool(ordered_keys),
+                "key_count": len(ordered_keys),
+                "keys": keys_payload,
+                # Back-compat for older UI builds:
+                "key_preview": keys_payload[0]["preview"] if keys_payload else "—",
                 "base_url": base_url or "—",
                 "status": "configured",
             })
@@ -209,6 +233,32 @@ def create_router() -> APIRouter:
                 "type": "providers",
                 "instances": builtin_list,
                 "total": len(builtin_list),
+            })
+
+        # ── Google Labs Flow accounts branch ──
+        flow_cfg = providers_cfg.get("flow") or {}
+        flow_accounts = flow_cfg.get("accounts") if isinstance(flow_cfg.get("accounts"), list) else []
+        if flow_accounts:
+            items = []
+            for idx, acc in enumerate(flow_accounts):
+                if not isinstance(acc, dict):
+                    continue
+                project_id = str(acc.get("project_id") or "")
+                items.append({
+                    "ordinal": idx + 1,
+                    "is_primary": idx == 0,
+                    "profile": str(acc.get("profile") or ""),
+                    "label": str(acc.get("label") or acc.get("name") or acc.get("profile") or "—"),
+                    "project_id": project_id,
+                    "project_preview": (project_id[:8] + "..." + project_id[-4:]) if len(project_id) > 12 else project_id,
+                })
+            tree.append({
+                "provider": "Google Labs Flow",
+                "icon": "flow",
+                "type": "flow",
+                "instances": items,
+                "total": len(items),
+                "captcha_solver_url": flow_cfg.get("captcha_solver_url") or "",
             })
 
         # ── Custom providers branch ──

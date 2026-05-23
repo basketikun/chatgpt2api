@@ -38,12 +38,12 @@ const PROVIDER_PRESETS: { id: string; name: string; base_url: string; prefix: st
   { id: "hyperbolic", name: "Hyperbolic", base_url: "https://api.hyperbolic.xyz/v1", prefix: "hyperbolic", api_style: "openai", icon: "HY", color: "#00D4FF" },
   { id: "nebius", name: "Nebius AI", base_url: "https://api.studio.nebius.ai/v1", prefix: "nebius", api_style: "openai", icon: "NB", color: "#6C5CE7" },
   { id: "openrouter", name: "OpenRouter", base_url: "https://openrouter.ai/api/v1", prefix: "openrouter", api_style: "openai", icon: "OR", color: "#F97316" },
-  // Google Labs Flow proxied via captcha-solver microservice. Default URL
-  // points at the in-house solver; change if you're running it elsewhere.
-  // After adding, configure providers.flow.accounts (profile + project_id)
-  // in the raw config — see services/image_providers/flow_google.py.
-  { id: "flow", name: "Google Labs Flow", base_url: "http://172.16.10.38:8010", prefix: "flow", api_style: "openai", icon: "FL", color: "#34A853" },
 ];
+// NOTE: Google Labs Flow is configured separately under `providers.flow`
+// (captcha_solver_url + api_key + accounts[{profile, project_id}]) because
+// it requires per-account browser profile + Flow project ID — the generic
+// OpenAI-compatible preset above wouldn't capture those fields. Use the
+// Settings → Providers → Flow tab, or edit config.json directly.
 
 export function CustomProvidersCard() {
   const [providers, setProviders] = useState<Record<string, CustomProvider>>({});
