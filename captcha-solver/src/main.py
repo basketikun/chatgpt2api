@@ -193,19 +193,49 @@ async def api_flow_generate(req: FlowImageReq):
     Returns JSON by default. With `return_binary: true`, downloads the
     first generated image and returns it as `image/png` (handy for Home
     Assistant `rest_command`, n8n HTTP Request → Binary Data, etc).
+
+    For `count > 1` we fan out N parallel calls to Flow (the API itself
+    only generates 1 image per request — there's no batch field — so we
+    parallelise the requests instead). Each call uses the same profile
+    + project; the BrowserPool will serialise them if the profile only
+    has one Chromium context, which keeps the same upper bound on
+    parallelism as the user has logged-in accounts.
     """
-    try:
-        result = await flow_generate_image(
+    import asyncio
+
+    async def _one() -> dict:
+        return await flow_generate_image(
             project_id=req.project_id,
             prompt=req.prompt,
             aspect_ratio=req.aspect_ratio,
             model=req.model,
-            count=req.count,
+            count=1,  # always 1 per call — count handled at this layer
             tool=req.tool,
             profile=req.profile,
             headless=req.headless,
             timeout=req.timeout,
         )
+
+    try:
+        n = max(1, min(4, int(req.count or 1)))
+        if n == 1:
+            result = await _one()
+        else:
+            # Fan-out, gather all (and surface the first exception if any).
+            results = await asyncio.gather(*[_one() for _ in range(n)], return_exceptions=True)
+            ok_results = [r for r in results if isinstance(r, dict)]
+            failures = [r for r in results if not isinstance(r, dict)]
+            if not ok_results:
+                raise RuntimeError(f"all {n} parallel calls failed: {failures[0]}")
+            # Merge: keep first result's metadata, concatenate `images`.
+            result = dict(ok_results[0])
+            merged_images = []
+            for r in ok_results:
+                merged_images.extend(r.get("images") or [])
+            result["images"] = merged_images
+            if failures:
+                logger.warning("flow_partial_failure ok=%d failed=%d first_error=%s",
+                                len(ok_results), len(failures), failures[0])
     except TimeoutError as exc:
         raise HTTPException(status_code=504, detail=str(exc)) from exc
     except Exception as exc:
