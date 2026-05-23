@@ -187,7 +187,53 @@ shell_command:
     curl -s -X POST http://YOUR_SERVER_IP:8010/v1/google/flow/generate-image
     -H "Authorization: Bearer !secret captcha_solver_key"
     -H "Content-Type: application/json"
-    -d '{"project_id":"<UUID>","prompt":"{{ prompt }}","return_binary":true}'
+    -d '{"project_id":"<UUID>","prompt":"{{ prompt }}","return_binary":true,
+         "aspect_ratio":"IMAGE_ASPECT_RATIO_LANDSCAPE",
+         "model":"NANO_BANANA_PRO","count":1}'
+    --max-time 180
+    -o /config/www/flow_latest.jpg
+```
+
+**Optional params** (all default to the strongest setup):
+
+| Param | Default | Other values |
+|---|---|---|
+| `model` | `NANO_BANANA_PRO` | `NARWHAL` (Nano Banana 2), `IMAGEN_4` |
+| `aspect_ratio` | `IMAGE_ASPECT_RATIO_LANDSCAPE` (16:9) | `IMAGE_ASPECT_RATIO_SQUARE` (1:1), `IMAGE_ASPECT_RATIO_LANDSCAPE_4_3` (4:3), `IMAGE_ASPECT_RATIO_PORTRAIT_3_4` (3:4), `IMAGE_ASPECT_RATIO_PORTRAIT` (9:16) |
+| `count` | `1` | 2 / 3 / 4 |
+
+Want a UI in Home Assistant to pick model / aspect / count without
+editing YAML? Use `input_select` entities:
+
+```yaml
+input_select:
+  flow_model:
+    name: Model
+    options: [NANO_BANANA_PRO, NARWHAL, IMAGEN_4]
+    initial: NANO_BANANA_PRO
+  flow_aspect:
+    name: Tỷ lệ
+    options:
+      - "IMAGE_ASPECT_RATIO_LANDSCAPE"       # 16:9
+      - "IMAGE_ASPECT_RATIO_LANDSCAPE_4_3"   # 4:3
+      - "IMAGE_ASPECT_RATIO_SQUARE"          # 1:1
+      - "IMAGE_ASPECT_RATIO_PORTRAIT_3_4"    # 3:4
+      - "IMAGE_ASPECT_RATIO_PORTRAIT"        # 9:16
+    initial: "IMAGE_ASPECT_RATIO_LANDSCAPE"
+  flow_count:
+    name: Số ảnh
+    options: ["1", "2", "3", "4"]
+    initial: "1"
+
+shell_command:
+  flow_generate_v2: >
+    curl -s -X POST http://YOUR_SERVER_IP:8010/v1/google/flow/generate-image
+    -H "Authorization: Bearer !secret captcha_solver_key"
+    -H "Content-Type: application/json"
+    -d '{"project_id":"<UUID>","prompt":"{{ prompt }}","return_binary":true,
+         "model":"{{ states('input_select.flow_model') }}",
+         "aspect_ratio":"{{ states('input_select.flow_aspect') }}",
+         "count":{{ states('input_select.flow_count') | int }}}'
     --max-time 180
     -o /config/www/flow_latest.jpg
 ```
@@ -273,11 +319,23 @@ directly into Telegram / Discord / Drive / etc.
 | Put Output In Field | `data` |
 | Timeout | `180000` ms |
 
-Body JSON:
+Body JSON (default — Nano Banana Pro, 16:9, 1 image):
 ```json
 {
   "project_id": "{{ $json.project_id }}",
   "prompt": "{{ $json.prompt }}",
+  "return_binary": true
+}
+```
+
+Body JSON with all overrides:
+```json
+{
+  "project_id": "{{ $json.project_id }}",
+  "prompt": "{{ $json.prompt }}",
+  "model": "NANO_BANANA_PRO",
+  "aspect_ratio": "IMAGE_ASPECT_RATIO_LANDSCAPE",
+  "count": 1,
   "return_binary": true
 }
 ```
