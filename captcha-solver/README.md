@@ -42,12 +42,12 @@ Google account's Flow quota.
 
 ```bash
 # 1) open a headful login session
-curl -X POST http://172.16.10.38:8010/v1/session/manual-login \
+curl -X POST http://YOUR_SERVER_IP:8010/v1/session/manual-login \
      -H "Authorization: Bearer $API_KEY" \
      -H "Content-Type: application/json" \
      -d '{"profile":"google-fx","url":"https://labs.google/fx/vi/tools/flow"}'
 
-# 2) open http://172.16.10.38:6080/vnc.html?host=172.16.10.38&port=6080&autoconnect=1
+# 2) open http://YOUR_SERVER_IP:6080/vnc.html?host=172.16.10.38&port=6080&autoconnect=1
 #    in a browser, sign in to Google in the Chromium window, then close the tab.
 #    Cookies persist in /data/profiles/google-fx/ for months.
 ```
@@ -55,7 +55,7 @@ curl -X POST http://172.16.10.38:8010/v1/session/manual-login \
 ### Generate (JSON response with image URL)
 
 ```bash
-curl -X POST http://172.16.10.38:8010/v1/google/flow/generate-image \
+curl -X POST http://YOUR_SERVER_IP:8010/v1/google/flow/generate-image \
      -H "Authorization: Bearer $API_KEY" \
      -H "Content-Type: application/json" \
      -d '{
@@ -68,7 +68,7 @@ curl -X POST http://172.16.10.38:8010/v1/google/flow/generate-image \
 ### Generate (binary PNG straight back — for Home Assistant / n8n)
 
 ```bash
-curl -X POST http://172.16.10.38:8010/v1/google/flow/generate-image \
+curl -X POST http://YOUR_SERVER_IP:8010/v1/google/flow/generate-image \
      -H "Authorization: Bearer $API_KEY" \
      -H "Content-Type: application/json" \
      -d '{"project_id":"...","prompt":"...","return_binary":true}' \
@@ -82,7 +82,7 @@ Add to `configuration.yaml`:
 ```yaml
 rest_command:
   flow_generate:
-    url: "http://172.16.10.38:8010/v1/google/flow/generate-image"
+    url: "http://YOUR_SERVER_IP:8010/v1/google/flow/generate-image"
     method: POST
     headers:
       Authorization: !secret captcha_solver_key   # "Bearer ..."
@@ -109,7 +109,7 @@ data:
 Add an **HTTP Request** node:
 
 - Method: `POST`
-- URL: `http://172.16.10.38:8010/v1/google/flow/generate-image`
+- URL: `http://YOUR_SERVER_IP:8010/v1/google/flow/generate-image`
 - Authentication: Header Auth (`Authorization: Bearer <key>`)
 - Body: JSON
   ```json
@@ -127,16 +127,16 @@ Add an **HTTP Request** node:
 
 ```bash
 # 1) Tell the service to open a Chromium window inside Xvfb pointed at the site.
-curl -X POST http://172.16.10.38:8010/v1/session/manual-login \
+curl -X POST http://YOUR_SERVER_IP:8010/v1/session/manual-login \
      -H "Authorization: Bearer $CAPTCHA_SOLVER_API_KEY" \
      -H "Content-Type: application/json" \
      -d '{"profile": "google-fx", "url": "https://labs.google/fx/vi/tools/flow"}'
 
-# 2) Open http://172.16.10.38:6080/vnc.html in your browser. You will see
+# 2) Open http://YOUR_SERVER_IP:6080/vnc.html in your browser. You will see
 #    the Chromium window. Click through Google's sign-in flow once.
 
 # 3) Later, automated calls reuse the cookies headlessly:
-curl -X POST http://172.16.10.38:8010/v1/browser/run \
+curl -X POST http://YOUR_SERVER_IP:8010/v1/browser/run \
      -H "Authorization: Bearer $CAPTCHA_SOLVER_API_KEY" \
      -H "Content-Type: application/json" \
      -d '{
@@ -150,7 +150,7 @@ curl -X POST http://172.16.10.38:8010/v1/browser/run \
 ## Quick Turnstile solve (phatnguoi.vn)
 
 ```bash
-curl -X POST http://172.16.10.38:8010/v1/solve/turnstile \
+curl -X POST http://YOUR_SERVER_IP:8010/v1/solve/turnstile \
      -H "Authorization: Bearer $CAPTCHA_SOLVER_API_KEY" \
      -H "Content-Type: application/json" \
      -d '{
@@ -161,15 +161,43 @@ curl -X POST http://172.16.10.38:8010/v1/solve/turnstile \
 # → {"token": "0.xxx...", "expires_at": 1779.., "profile": "phatnguoi"}
 ```
 
-## Deploy on 172.16.10.38
+## Deploy
+
+### Option A — pull prebuilt image from GHCR (recommended)
 
 ```bash
-cd /opt/captcha-solver
-docker compose up -d --build
+mkdir -p captcha-solver/data && cd captcha-solver
+curl -O https://raw.githubusercontent.com/TriTue2011/chatgpt2api/main/captcha-solver/docker-compose.yml
+
+cat > .env <<EOF
+CAPTCHA_SOLVER_API_KEY=$(openssl rand -hex 16)
+# replace YOUR_SERVER_IP with whatever address your phone/browser can hit
+CAPTCHA_SOLVER_NOVNC_EXTERNAL_URL=http://YOUR_SERVER_IP:6080/vnc.html?host=YOUR_SERVER_IP&port=6080&autoconnect=1
+EOF
+
+docker compose up -d
 ```
 
-After first build (~3 min — Chromium download), restart is fast. The
-container exposes port `8010` (API) and `6080` (noVNC).
+The image is auto-built by `.github/workflows/captcha-solver-build.yml`
+on every push to `main`, tagged `ghcr.io/<owner>/captcha-solver:latest`.
+
+### Option B — build locally
+
+```bash
+git clone https://github.com/TriTue2011/chatgpt2api.git
+cd chatgpt2api/captcha-solver
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+```
+
+First build takes ~3 min (Chromium + Patchright download). Subsequent
+restarts are instant.
+
+### Ports
+
+| Port | Purpose | Expose publicly? |
+|---|---|---|
+| `8010` | FastAPI (API key required) | only to trusted clients |
+| `6080` | noVNC web UI (for manual login) | only when you actually need to log in — proxy through Cloudflare Tunnel or SSH tunnel; do NOT expose to the open internet |
 
 ## Environment
 

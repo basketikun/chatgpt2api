@@ -1,0 +1,9 @@
+# Overlay used when you want to build the image locally instead of pulling
+# the prebuilt GHCR image. Usage:
+#     docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+services:
+  captcha-solver:
+    image: captcha-solver:local
+    build:
+      context: .
+      dockerfile: Dockerfile

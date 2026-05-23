@@ -1,7 +1,9 @@
 services:
   captcha-solver:
-    build: .
-    image: captcha-solver:latest
+    # Pull the prebuilt image from GHCR (auto-built by .github/workflows/captcha-solver-build.yml
+    # on every push to main). To build locally instead, run
+    #     docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+    image: ${CAPTCHA_SOLVER_IMAGE:-ghcr.io/tritue2011/captcha-solver:latest}
     container_name: captcha-solver
     restart: unless-stopped
     ports:
@@ -9,9 +11,12 @@ services:
       - "6080:6080"   # noVNC web UI
     environment:
       CAPTCHA_SOLVER_API_KEY: "${CAPTCHA_SOLVER_API_KEY:-change-me}"
-      CAPTCHA_SOLVER_NOVNC_EXTERNAL_URL: "${CAPTCHA_SOLVER_NOVNC_EXTERNAL_URL:-http://172.16.10.38:6080/vnc.html?host=172.16.10.38&port=6080&autoconnect=1}"
+      # External URL used in /v1/session/manual-login responses. Set to
+      # whatever the user's phone/browser can actually reach. Defaults to
+      # the docker host IP — override in .env for cloud setups.
+      CAPTCHA_SOLVER_NOVNC_EXTERNAL_URL: "${CAPTCHA_SOLVER_NOVNC_EXTERNAL_URL:-http://localhost:6080/vnc.html?host=localhost&port=6080&autoconnect=1}"
     volumes:
       - ./data:/data
-    # Chromium with --disable-dev-shm-usage works, but mounting more shm avoids
-    # tab crashes during heavy JS / WebGL scenes (e.g. Google Flow editor).
+    # Chromium with --disable-dev-shm-usage works, but mounting more shm
+    # avoids tab crashes during heavy JS / WebGL scenes (e.g. Google Flow editor).
     shm_size: "1gb"
