@@ -229,8 +229,20 @@ def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
             _curate_search_results(messages_copy)
         else:
             messages_copy = messages
-            
-        tools_with_mcp = _inject_mcp_tools(tools)
+
+        # Mirror the non-combo path: inject HA registry as a system message for
+        # HA-related queries so the LLM can answer in ONE round-trip instead of
+        # doing GetLiveContext / ha_get_state → wait → final answer (saves ~7s).
+        ha_context_injected = False
+        try:
+            from services.ha_client import inject_ha_context
+            before_len = len(messages_copy)
+            messages_copy = inject_ha_context(messages_copy)
+            ha_context_injected = len(messages_copy) > before_len
+        except Exception:
+            pass
+
+        tools_with_mcp = _inject_mcp_tools(tools, skip_ha_search=ha_context_injected)
         
         for route in routes:
             try:
@@ -1522,18 +1534,29 @@ def _inject_mcp_tools(
     """Inject tools from enabled MCP servers + HA into the tools list.
 
     Args:
-        skip_ha_search: When True, drop ha_search_entities from the injected
-            HA toolset. Set this when the full HA device registry has already
-            been added to the system prompt — otherwise the LLM calls
-            ha_search_entities purely to re-list devices it can already see,
-            burning a full extra LLM round-trip (~4-5s).
+        skip_ha_search: When True, the full HA device registry (names + states)
+            has already been added to the system prompt by inject_ha_context().
+            In that case we strip every READ-ONLY HA tool (ha_search_entities,
+            ha_get_state, HA-native GetLiveContext) AND skip MCP injection
+            entirely — none of Wikipedia / Exa / etc. is useful for a "trạng
+            thái đèn" query, and dropping them removes ~23 distracting tools
+            plus the 2.5s MCP discovery cost on cache miss. Control tools
+            (ha_call_service, HassTurn*) are preserved.
     """
     logger.info({"event": "mcp_inject_start", "input_tools": len(tools or [])})
     try:
         from services.mcp_client import get_enabled_mcp_tools
         from services.ha_client import get_ha_tools
-        mcp_tools = get_enabled_mcp_tools()
-        logger.info({"event": "mcp_inject_got_tools", "count": len(mcp_tools)})
+
+        # Skip the MCP discovery + injection when the prompt already carries the
+        # HA registry — those tools won't be useful here and the LLM may waste
+        # a round-trip calling one.
+        if skip_ha_search:
+            mcp_tools = []
+            logger.info({"event": "mcp_inject_skipped", "reason": "ha_context_injected"})
+        else:
+            mcp_tools = get_enabled_mcp_tools()
+            logger.info({"event": "mcp_inject_got_tools", "count": len(mcp_tools)})
 
         tools = list(tools or [])
         existing_names = {t.get("function", {}).get("name", "") for t in tools}
@@ -1546,14 +1569,25 @@ def _inject_mcp_tools(
         if client_is_ha:
             mcp_tools = []
 
-        # Drop ha_search_entities when the registry is already in the prompt.
-        # Keep ha_get_state (real-time status) and ha_call_service (control).
-        if skip_ha_search and ha_tools:
-            ha_tools = [
-                t for t in ha_tools
-                if t.get("function", {}).get("name", "") != "ha_search_entities"
-            ]
-            logger.info({"event": "ha_search_entities_skipped", "reason": "registry_in_context"})
+        # When HA context is in the prompt, strip every read-only HA tool so the
+        # LLM answers from context in 1 round instead of 2-3. Keep ha_call_service
+        # / HassTurn* — control still needs a round-trip.
+        if skip_ha_search:
+            drop_ha_tool_names = {"ha_search_entities", "ha_get_state"}
+            if ha_tools:
+                ha_tools = [
+                    t for t in ha_tools
+                    if t.get("function", {}).get("name", "") not in drop_ha_tool_names
+                ]
+            # Strip HA-native GetLiveContext from the incoming tools array too
+            # (HA's auto_ai_agent always sends it; without this the LLM still
+            # calls it even though state is in context).
+            if "GetLiveContext" in existing_names:
+                tools = [
+                    t for t in tools
+                    if t.get("function", {}).get("name", "") != "GetLiveContext"
+                ]
+            logger.info({"event": "ha_read_tools_stripped", "reason": "registry_in_context"})
 
         all_new_tools = mcp_tools + ha_tools
         if not all_new_tools:
