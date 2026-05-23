@@ -613,6 +613,17 @@ def needs_search(messages: list[dict[str, Any]]) -> bool:
         if re.search(pattern, last_text):
             return True
 
+    # KB hit check — knowledge questions like "điện ba pha là gì" don't trip
+    # the live-search patterns but a local KB collection may have the answer.
+    # Detect via the intent router's KB keyword map (diacritic-folded match).
+    try:
+        folded = _intent_router._normalize(last_text)
+        for kw in _intent_router._KB_MAP:
+            if kw in folded:
+                return True
+    except Exception:
+        pass
+
     return False
 
 
