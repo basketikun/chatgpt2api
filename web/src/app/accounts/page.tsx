@@ -1165,6 +1165,14 @@ function AccountsPageContent() {
                               </div>
                             </div>
                             <div className="hidden sm:flex items-center gap-3 text-[11px]">
+                              {(inst.endpoint_count ?? 0) > 1 && (
+                                <span
+                                  className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-1.5 py-0.5 text-emerald-700 ring-1 ring-emerald-200 font-mono font-semibold"
+                                  title={`${inst.endpoint_count} endpoints pool — click row để xem chi tiết + ordinal`}
+                                >
+                                  ×{inst.endpoint_count}
+                                </span>
+                              )}
                               {inst.models > 0 && <span className="text-slate-500">{inst.models} models</span>}
                               {inst.clients > 0 && <span className="text-sky-600">{inst.clients} clients</span>}
                             </div>

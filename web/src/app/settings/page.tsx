@@ -13,6 +13,7 @@ import { ConfigCard } from "./components/config-card";
 import { GeminiCard } from "./components/gemini-card";
 import { NvidiaNimCard } from "./components/nvidia-nim-card";
 import { CustomProvidersCard } from "./components/custom-providers-card";
+import { FlowCard } from "./components/flow-card";
 import { CPAPoolDialog } from "./components/cpa-pool-dialog";
 import { CPAPoolsCard } from "./components/cpa-pools-card";
 import { ImportBrowserDialog } from "./components/import-browser-dialog";
@@ -92,6 +93,14 @@ function SettingsPageContent() {
           icon={<Link className="size-5" />}
         >
           <CustomProvidersCard />
+        </SettingsSection>
+
+        <SettingsSection
+          title="Google Labs Flow"
+          description="Sinh ảnh qua labs.google/fx (Nano Banana Pro / 2 / Imagen 4). Mỗi tài khoản = 1 browser profile + 1 Flow project — dùng FIFO rotation."
+          icon={<Link className="size-5" />}
+        >
+          <FlowCard />
         </SettingsSection>
 
         <SettingsSection
