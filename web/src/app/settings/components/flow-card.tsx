@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { LoaderCircle, Plus, Save, Trash2, ExternalLink, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,44 @@ type FlowConfig = {
   accounts: FlowAccount[];
 };
 
-const EMPTY_ACCOUNT: FlowAccount = { profile: "google-fx", project_id: "", label: "Main" };
+const DEFAULT_BASE_PROFILE = "google-fx";
+const EMPTY_ACCOUNT: FlowAccount = { profile: DEFAULT_BASE_PROFILE, project_id: "", label: "Main" };
+
+/** Find the next unused suffix for a base profile name.
+ *
+ *   existing: ["google-fx"]                        → "google-fx-1"
+ *   existing: ["google-fx", "google-fx-1"]         → "google-fx-2"
+ *   existing: ["google-fx-1", "google-fx-3"]       → "google-fx" (base free)
+ *   existing: ["google-fx", "google-fx-1", "google-fx-2"] → "google-fx-3"
+ *   existing: []                                   → "google-fx"
+ */
+function nextProfileName(existing: string[], base = DEFAULT_BASE_PROFILE): string {
+  const set = new Set(existing);
+  if (!set.has(base)) return base;
+  for (let i = 1; i < 1000; i++) {
+    const candidate = `${base}-${i}`;
+    if (!set.has(candidate)) return candidate;
+  }
+  return `${base}-${Date.now()}`;
+}
+
+/** Suggest the next label that fits the FIFO fallback chain. Order:
+ *  Main → Backup → Spare 1 → Spare 2 → Spare 3 → Standby → Spare 4 ...
+ *  Skips labels already in use so two accounts never collide.
+ */
+function nextLabel(existing: string[]): string {
+  const used = new Set(existing.map((s) => s.trim()).filter(Boolean));
+  const preset = ["Main", "Backup", "Spare 1", "Spare 2", "Spare 3", "Standby"];
+  for (const label of preset) {
+    if (!used.has(label)) return label;
+  }
+  // Pool past the preset list — keep generating Spare N.
+  for (let i = 4; i < 1000; i++) {
+    const candidate = `Spare ${i}`;
+    if (!used.has(candidate)) return candidate;
+  }
+  return `Account ${used.size + 1}`;
+}
 
 export function FlowCard() {
   const [cfg, setCfg] = useState<FlowConfig>({
@@ -33,8 +70,33 @@ export function FlowCard() {
   const [draft, setDraft] = useState<FlowAccount>({ ...EMPTY_ACCOUNT });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // Track which fields the user has manually edited so we don't
+  // overwrite custom entries when accounts change. Sticky once typed.
+  const [manuallyEditedProfile, setManuallyEditedProfile] = useState(false);
+  const [manuallyEditedLabel, setManuallyEditedLabel] = useState(false);
 
   useEffect(() => { fetchCfg(); }, []);
+
+  // Suggested values based on what's already in the pool. Both
+  // re-compute whenever cfg.accounts changes (after add/remove/save).
+  const suggestedProfile = useMemo(
+    () => nextProfileName(cfg.accounts.map((a) => a.profile)),
+    [cfg.accounts]
+  );
+  const suggestedLabel = useMemo(
+    () => nextLabel(cfg.accounts.map((a) => a.label || "")),
+    [cfg.accounts]
+  );
+
+  // Auto-fill draft with the suggestion unless the user has typed their
+  // own. Triggers on every account-list update.
+  useEffect(() => {
+    setDraft((d) => ({
+      ...d,
+      profile: manuallyEditedProfile ? d.profile : suggestedProfile,
+      label:   manuallyEditedLabel   ? d.label   : suggestedLabel,
+    }));
+  }, [suggestedProfile, suggestedLabel, manuallyEditedProfile, manuallyEditedLabel]);
 
   async function fetchCfg() {
     setLoading(true);
@@ -71,7 +133,11 @@ export function FlowCard() {
     }
     const next = { ...cfg, accounts: [...cfg.accounts, { ...draft, label: draft.label?.trim() || draft.profile }] };
     void save(next);
+    // Reset draft and clear manual-edit flags so the useEffect re-suggests
+    // the next available profile + label after the save completes.
     setDraft({ ...EMPTY_ACCOUNT });
+    setManuallyEditedProfile(false);
+    setManuallyEditedLabel(false);
   }
 
   function removeAccount(idx: number) {
@@ -200,11 +266,19 @@ export function FlowCard() {
           <p className="text-xs font-semibold text-emerald-800">+ Thêm tài khoản mới</p>
           <div className="grid gap-2 sm:grid-cols-3">
             <div>
-              <label className="text-[11px] text-stone-500">Label (chọn hoặc gõ)</label>
+              <label className="text-[11px] text-stone-500">
+                Label (chọn hoặc gõ)
+                {!manuallyEditedLabel && cfg.accounts.length > 0 && (
+                  <span className="ml-1 text-emerald-600">· gợi ý: {suggestedLabel}</span>
+                )}
+              </label>
               <Input
                 value={draft.label || ""}
-                onChange={(e) => setDraft({ ...draft, label: e.target.value })}
-                placeholder="VD: Main / Work / Backup"
+                onChange={(e) => {
+                  setDraft({ ...draft, label: e.target.value });
+                  setManuallyEditedLabel(true);
+                }}
+                placeholder={suggestedLabel}
                 className="mt-1 h-8 rounded-lg border-stone-200 text-xs"
                 list="flow-label-presets"
                 autoComplete="off"
@@ -212,13 +286,16 @@ export function FlowCard() {
               {/* Native HTML5 datalist — gõ thoải mái, dropdown gợi ý 6 preset
                   phổ biến + bất kỳ label nào đã dùng trước đó để khỏi đặt
                   trùng. */}
+              {/* Preset labels phản ánh thứ tự fallback FIFO — Main luôn
+                  #1, Backup là dự phòng đầu tiên, Spare N là các slot dự
+                  bị tiếp theo trong rotation, Standby là account chờ. */}
               <datalist id="flow-label-presets">
                 <option value="Main" />
                 <option value="Backup" />
-                <option value="Work" />
-                <option value="Personal" />
-                <option value="Family" />
-                <option value="Team" />
+                <option value="Spare 1" />
+                <option value="Spare 2" />
+                <option value="Spare 3" />
+                <option value="Standby" />
                 {cfg.accounts
                   .map((a) => a.label || "")
                   .filter((v, i, arr) => v && arr.indexOf(v) === i)
@@ -228,11 +305,19 @@ export function FlowCard() {
               </datalist>
             </div>
             <div>
-              <label className="text-[11px] text-stone-500">Profile (browser context)</label>
+              <label className="text-[11px] text-stone-500">
+                Profile (browser context)
+                {!manuallyEditedProfile && cfg.accounts.length > 0 && (
+                  <span className="ml-1 text-emerald-600">· gợi ý: {suggestedProfile}</span>
+                )}
+              </label>
               <Input
                 value={draft.profile}
-                onChange={(e) => setDraft({ ...draft, profile: e.target.value })}
-                placeholder="google-fx"
+                onChange={(e) => {
+                  setDraft({ ...draft, profile: e.target.value });
+                  setManuallyEditedProfile(true);
+                }}
+                placeholder={suggestedProfile}
                 className="mt-1 h-8 rounded-lg border-stone-200 text-xs font-mono"
               />
             </div>
