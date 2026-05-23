@@ -46,10 +46,23 @@ _ASPECT_LABELS = {
 }
 
 # Flow UI model labels (matches the dropdown text in the screenshot).
+# IMPORTANT: Flow's API uses IMAGEN_3_5 internally even though the UI
+# shows "Imagen 4" — the user's captured request body confirmed this.
 _MODEL_LABELS = {
     "NANO_BANANA_PRO": "Nano Banana Pro",
     "NARWHAL":         "Nano Banana 2",
-    "IMAGEN_4":        "Imagen 4",
+    "IMAGEN_3_5":      "Imagen 4",
+    "IMAGEN_4":        "Imagen 4",  # back-compat alias
+}
+
+# When the request interceptor overrides imageModelName, map our friendly
+# constants to the actual Flow API enum values. IMAGEN_4 isn't recognized
+# by the Flow API — it must be IMAGEN_3_5.
+_MODEL_API_VALUE = {
+    "NANO_BANANA_PRO": "NANO_BANANA_PRO",
+    "NARWHAL":         "NARWHAL",
+    "IMAGEN_4":        "IMAGEN_3_5",   # UI alias → real API value
+    "IMAGEN_3_5":      "IMAGEN_3_5",
 }
 
 
@@ -309,24 +322,50 @@ async def generate_image(
         # Give React a tick to register the change.
         await asyncio.sleep(0.5)
 
-        # 2) Best-effort drive the aspect/count/model dropdowns. The DOM
-        # changes occasionally so we don't fail on miss — we just log it
-        # and fall back to whatever the project's last UI selection was
-        # (Flow persists picker state per project).
-        try:
-            await _set_dropdown(page, _ASPECT_LABELS.get(aspect_ratio, "16:9"), "aspect")
-            await _set_dropdown(page, f"{count}x", "count")
-            await _set_dropdown(page, _MODEL_LABELS.get(model, ""), "model")
-            await asyncio.sleep(0.3)
-        except Exception as exc:
-            logger.warning("flow_dropdown_set_failed: %s", exc)
+        # 2) Intercept the outbound batchGenerateImages POST and rewrite
+        # its body so aspect/model/count come from THIS request, not from
+        # whatever the project's last dropdown selection happened to be.
+        # This is the robust path — DOM clicks (previous approach) miss
+        # whenever Flow's React re-skins the pickers, but the API contract
+        # is stable. User captured the actual body structure: keys are
+        # imageAspectRatio / imageModelName / structuredPrompt.parts[].
+        api_pattern = "flowMedia:batchGenerateImages"
+        api_model = _MODEL_API_VALUE.get(model, model)
+
+        async def _rewrite_request(route) -> None:
+            try:
+                original = route.request.post_data_json or {}
+                # Some Flow builds wrap the payload in `clientContext`/`request`,
+                # so walk shallow to find the keys we want and override in place.
+                def _patch(d):
+                    if not isinstance(d, dict):
+                        return
+                    if "imageAspectRatio" in d:
+                        d["imageAspectRatio"] = aspect_ratio
+                    if "imageModelName" in d:
+                        d["imageModelName"] = api_model
+                    if "imageCount" in d:
+                        d["imageCount"] = count
+                    # Flow uses `sampleCount` in some payload variants.
+                    if "sampleCount" in d:
+                        d["sampleCount"] = count
+                _patch(original)
+                for v in (original.values() if isinstance(original, dict) else []):
+                    _patch(v)
+                logger.info("flow_request_rewrite aspect=%s model=%s count=%d",
+                            aspect_ratio, api_model, count)
+                await route.continue_(post_data=json.dumps(original))
+            except Exception as exc:
+                logger.warning("flow_request_rewrite_failed: %s — sending original",
+                                exc)
+                await route.continue_()
+
+        await page.route(f"**/{api_pattern}**", _rewrite_request)
 
         # 3) Locate the "Tạo" (Create) submit button — it's an icon button
         # whose accessible name is "Tạo". Multiple "Tạo" elements exist on
         # the page (section heading + submit), so prefer the one that is
         # a real button with a click target.
-        api_pattern = "flowMedia:batchGenerateImages"
-
         async def _click_generate() -> None:
             # Try several locator strategies in order.
             candidates = [
@@ -344,9 +383,9 @@ async def generate_image(
             await prompt_input.focus()
             await page.keyboard.press("Enter")
 
-        # 4) Intercept the outbound flowMedia:batchGenerateImages POST and
-        # wait for the response — that's the real API call the page makes
-        # with its own (valid) recaptcha + browser headers.
+        # 4) Wait for the response — the rewritten request goes out under
+        # the page's normal flow (with valid recaptcha + browser headers)
+        # but with OUR aspect/model/count substituted.
         try:
             async with page.expect_response(
                 lambda r: api_pattern in r.url and r.request.method == "POST",

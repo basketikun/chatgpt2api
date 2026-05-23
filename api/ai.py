@@ -18,6 +18,10 @@ from services.protocol import (
 
 
 class ImageGenerationRequest(BaseModel):
+    # Allow extra fields so adapters (Flow) can read `extra_body` /
+    # per-provider overrides without each new field requiring a schema
+    # change here. Without this, Pydantic silently strips unknown keys.
+    model_config = ConfigDict(extra="allow")
     prompt: str = Field(..., min_length=1)
     model: str = "gpt-image-2"
     n: int = Field(default=1, ge=1, le=4)
@@ -25,6 +29,9 @@ class ImageGenerationRequest(BaseModel):
     response_format: str = "b64_json"
     history_disabled: bool = True
     stream: bool | None = None
+    # OpenAI-style escape hatch: clients can stuff provider-specific
+    # params under `extra_body` and the adapter pulls them out.
+    extra_body: dict[str, object] | None = None
 
 
 class ChatCompletionRequest(BaseModel):

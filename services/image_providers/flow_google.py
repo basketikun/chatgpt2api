@@ -64,9 +64,14 @@ _MODEL_ALIASES = {
     "best": "NANO_BANANA_PRO",
     "banana-pro": "NANO_BANANA_PRO",
     "nano-banana-pro": "NANO_BANANA_PRO",
-    "imagen-4": "IMAGEN_4",
-    "imagen4": "IMAGEN_4",
-    "imagen": "IMAGEN_4",
+    # Flow's API enum is IMAGEN_3_5 even though the UI labels it "Imagen 4".
+    # Captured request body confirms. captcha-solver maps either form to
+    # the real enum, so any of these aliases works.
+    "imagen-4": "IMAGEN_3_5",
+    "imagen4": "IMAGEN_3_5",
+    "imagen": "IMAGEN_3_5",
+    "imagen-3-5": "IMAGEN_3_5",
+    "imagen3_5": "IMAGEN_3_5",
 }
 
 # All Flow models we expose. Used by list_models() so the chatgpt2api UI
