@@ -19,7 +19,9 @@ _state_cache_ts: float = 0.0
 _context_cache: str = ""
 _context_cache_ts: float = 0.0
 _state_cache_lock = threading.Lock()
-_DEFAULT_TTL = 3600  # 1 hour default (only refresh at scheduled times or interval)
+_DEFAULT_TTL = 60  # 60s — short enough that registry state stays fresh
+                   # for "trạng thái đèn X?" answers, long enough that 985
+                   # entities don't cost more than ~1 HA call per minute.
 _scheduler_started = False
 
 
