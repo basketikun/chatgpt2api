@@ -537,6 +537,60 @@ class IntentRouter:
 _intent_router = IntentRouter()
 
 
+# Common Vietnamese cities (folded) so we can extract them from queries like
+# "thời tiết Hà Nội" → "Hà Nội". Order matters — longer phrases first so
+# "Hồ Chí Minh" matches before "Chí".
+_KNOWN_CITIES = [
+    ("ho chi minh", "Hồ Chí Minh"),
+    ("tp hcm", "Hồ Chí Minh"),
+    ("sai gon", "Hồ Chí Minh"),
+    ("ha noi", "Hà Nội"),
+    ("da nang", "Đà Nẵng"),
+    ("can tho", "Cần Thơ"),
+    ("hai phong", "Hải Phòng"),
+    ("nha trang", "Nha Trang"),
+    ("vung tau", "Vũng Tàu"),
+    ("hue", "Huế"),
+    ("da lat", "Đà Lạt"),
+    ("quy nhon", "Quy Nhơn"),
+    ("vinh", "Vinh"),
+    ("nam dinh", "Nam Định"),
+    ("ha long", "Hạ Long"),
+    ("london", "London"),
+    ("new york", "New York"),
+    ("tokyo", "Tokyo"),
+    ("bangkok", "Bangkok"),
+    ("singapore", "Singapore"),
+]
+
+
+def _extract_city(query: str) -> str | None:
+    """Strip "thời tiết / dự báo / weather" prefix + return the city name.
+    Falls back to known-city scan if no prefix is found."""
+    if not query:
+        return None
+    q = query.strip()
+    qlow = q.lower()
+    # Strip common Vietnamese weather prefixes
+    for prefix in (
+        "thời tiết tại ", "thời tiết ở ", "thời tiết ",
+        "dự báo thời tiết ", "dự báo ",
+        "weather in ", "weather at ", "weather ",
+    ):
+        if qlow.startswith(prefix):
+            return q[len(prefix):].strip().rstrip("?.,!")
+    # Otherwise try matching a known city anywhere in the (folded) query
+    import unicodedata
+    folded = "".join(
+        c for c in unicodedata.normalize("NFKD", qlow)
+        if not unicodedata.combining(c)
+    )
+    for kw, city in _KNOWN_CITIES:
+        if kw in folded:
+            return city
+    return None
+
+
 def get_all_search_backends() -> dict[str, dict[str, str]]:
     """Get all available search backends including custom providers."""
     backends = dict(SEARCH_BACKENDS)
@@ -850,8 +904,13 @@ class SearchService:
                     else:
                         tool_name = "get_exchange_rate"
                 elif server_id == "vn_weather":
+                    # vn_weather.get_current_weather takes `city`, not `location`,
+                    # and expects just the city name — passing the full query
+                    # ("thời tiết Hà Nội") makes wttr.in 404 and falls back to URL-only
+                    # results in our search synthesis.
                     tool_name = _TOOL_MAP[server_id]
-                    args = {"location": query}
+                    city = _extract_city(query) or "Hà Nội"
+                    args = {"city": city}
                 else:
                     tool_name = _TOOL_MAP.get(server_id, "search_web")
                     args = {"query": query}
@@ -936,7 +995,11 @@ class SearchService:
                     if job_type == "mcp":
                         sid, text = future.result()
                         if text and len(text) > 20:
-                            _add([{"title": f"[{sid}]", "snippet": text[:2000], "url": ""}], sid)
+                            # Bumped from 2000 → 4000 so structured MCP results
+                            # (price tables with SJC + DOJI + multiple gold types,
+                            # weather details, full law articles) don't get truncated
+                            # before the LLM can extract numbers from them.
+                            _add([{"title": f"[{sid}]", "snippet": text[:4000], "url": ""}], sid)
                     else:
                         _, results = future.result()
                         _add(results, name)
