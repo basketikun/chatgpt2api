@@ -341,6 +341,33 @@ def create_router() -> APIRouter:
             raise HTTPException(status_code=404, detail={"error": "account not found"})
         return {"item": account, "items": account_service.list_accounts()}
 
+    @router.post("/api/accounts/promote")
+    async def promote_account(body: AccountRefreshRequest, authorization: str | None = Header(default=None)):
+        """Move an account to position #1 in its type's priority queue.
+
+        Backend will try this account first on the next request. Useful when
+        you've added a fresh paid account and want it used before older ones.
+        """
+        require_admin(authorization)
+        tokens = [str(t or "").strip() for t in body.access_tokens if str(t or "").strip()]
+        if not tokens:
+            raise HTTPException(status_code=400, detail={"error": "access_tokens is required"})
+        # Reverse so the final element is at the very front after the loop.
+        for token in reversed(tokens):
+            account_service.promote_account(token)
+        return {"promoted": tokens, "items": account_service.list_accounts()}
+
+    @router.post("/api/accounts/demote")
+    async def demote_account(body: AccountRefreshRequest, authorization: str | None = Header(default=None)):
+        """Move an account to the BACK of its type's priority queue."""
+        require_admin(authorization)
+        tokens = [str(t or "").strip() for t in body.access_tokens if str(t or "").strip()]
+        if not tokens:
+            raise HTTPException(status_code=400, detail={"error": "access_tokens is required"})
+        for token in tokens:
+            account_service.demote_account(token)
+        return {"demoted": tokens, "items": account_service.list_accounts()}
+
     @router.get("/api/cpa/pools")
     async def list_cpa_pools(authorization: str | None = Header(default=None)):
         require_admin(authorization)

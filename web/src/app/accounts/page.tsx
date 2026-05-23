@@ -893,12 +893,16 @@ function AccountsPageContent() {
                             </button>
 
                             {/* Level 3: Individual accounts */}
-                            {isGroupOpen && group.items?.map((account: Account) => {
+                            {isGroupOpen && group.items?.map((account: Account, accountIdx: number) => {
                               const accountExpanded = expandedId === account.access_token;
                               const status = statusMeta[account.status];
                               const StatusIcon = status.icon;
                               const isUnlimited = isUnlimitedImageQuotaAccount(account);
                               const quotaVal = Math.max(0, account.quota);
+                              // Per-type ordinal: account #1 = primary in this
+                              // type's priority queue (always tried first by the
+                              // backend until it 429s). 1-indexed for humans.
+                              const ordinal = accountIdx + 1;
                               return (
                                 <div key={account.access_token}>
                                   <div
@@ -920,6 +924,17 @@ function AccountsPageContent() {
                                         }
                                       }}
                                     />
+                                    <span
+                                      className={cn(
+                                        "shrink-0 inline-flex items-center justify-center min-w-[28px] h-5 px-1.5 rounded-md text-[11px] font-mono font-bold tabular-nums",
+                                        ordinal === 1
+                                          ? "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-300"
+                                          : "bg-slate-100 text-slate-500"
+                                      )}
+                                      title={ordinal === 1 ? "Tài khoản ưu tiên #1 — luôn được dùng trước" : `Vị trí #${ordinal} trong hàng đợi`}
+                                    >
+                                      #{ordinal}
+                                    </span>
                                     <div className={cn(
                                       "size-7 shrink-0 rounded-full flex items-center justify-center",
                                       account.status === "active" ? "bg-gradient-to-br from-indigo-500 to-blue-600"

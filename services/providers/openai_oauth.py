@@ -543,25 +543,29 @@ class CodexOAuthProvider:
         }
 
     def get_token_for_request(self, exclude_tokens: set[str] | None = None) -> str:
-        """Priority-FIFO token picker for Codex OAuth.
+        """Priority-FIFO Codex token picker — filtered to codex-typed accounts.
 
-        Returns the FIRST eligible JWT token from the ordered pool. When a
-        token returns 429 the caller demotes it via
-        `account_service.demote_account()` so the next request lands on the
-        next account in order. Limited accounts are skipped here — the
-        quota_watcher flips them back to "active" once `restore_at` passes.
+        Free-typed JWT accounts (ChatGPT-free) are skipped here so codex
+        retries don't burn through them. The chatgpt provider picks free
+        tokens via `account_service.get_text_access_token(account_type="free")`.
         """
         excluded = set(exclude_tokens or set())
         with account_service._lock:
             all_items = list(account_service._accounts.values())
+            # Filter to codex pool first so the debug log reflects what we
+            # actually search through.
+            codex_items = [
+                i for i in all_items
+                if "codex" in str(i.get("type") or "").split(",")
+            ]
             logger.info({
                 "event": "codex_debug",
                 "total_accounts": len(all_items),
-                "statuses": [i.get("status") for i in all_items],
-                "types": [i.get("type") for i in all_items],
-                "has_jwt": sum(1 for i in all_items if str(i.get("access_token","")).startswith("eyJ")),
+                "codex_count": len(codex_items),
+                "statuses": [i.get("status") for i in codex_items],
+                "has_jwt": sum(1 for i in codex_items if str(i.get("access_token","")).startswith("eyJ")),
             })
-            for item in all_items:
+            for item in codex_items:
                 if item.get("status") in ("disabled", "error", "limited"):
                     continue
                 token = item.get("access_token") or ""

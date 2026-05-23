@@ -186,11 +186,19 @@ class AccountService:
                 return access_token
             self.release_image_slot(access_token)
 
-    def get_text_access_token(self, excluded_tokens: set[str] | None = None) -> str:
-        """Priority-FIFO selection: always return the FIRST eligible token
-        from the ordered pool. Combined with `demote_account()` on 429 this
-        gives the user's requested rotation: account #1 is tried until it
-        burns out, then it rotates to #N and the previous #2 becomes #1.
+    def get_text_access_token(
+        self,
+        excluded_tokens: set[str] | None = None,
+        account_type: str | None = None,
+    ) -> str:
+        """Priority-FIFO selection. Optionally filter to one account type.
+
+        Codex and ChatGPT-free are separate logical pools — each maintains
+        its own #1 because demote_account() moves items within the shared
+        ordered dict but type-filtered iteration only sees its own type.
+        Pass `account_type="free"` for ChatGPT-free only, `"codex"` for
+        codex JWT only, or omit (default) to scan any non-antigravity type
+        — the chatgpt provider auto-routes by token format after selection.
         """
         excluded = set(excluded_tokens or set())
         with self._lock:
@@ -198,7 +206,10 @@ class AccountService:
                 status = account.get("status")
                 if status in {"disabled", "error", "limited"}:
                     continue
-                if "antigravity" in str(account.get("type") or "").split(","):
+                types = str(account.get("type") or "").split(",")
+                if "antigravity" in types:
+                    continue
+                if account_type and account_type not in types:
                     continue
                 token = account.get("access_token") or ""
                 if not token or token in excluded:
