@@ -20,6 +20,7 @@ from typing import Any
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
@@ -57,6 +58,19 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="captcha-solver", version="0.1.0", lifespan=lifespan)
+
+# Allow cross-origin POST from chatgpt2api's Settings UI (Flow tab) so the
+# "Open noVNC + start Google login" button can call /v1/session/manual-login
+# directly from the browser. Auth still required (Bearer header forwarded).
+# allow_origins=["*"] is OK here because every protected endpoint
+# enforces require_api_key — the Origin header alone never authenticates.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["x-flow-image-id", "x-flow-model", "x-flow-seed", "x-flow-elapsed-ms"],
+)
 
 
 @app.get("/health")
