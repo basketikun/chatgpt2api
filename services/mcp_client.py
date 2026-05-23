@@ -213,9 +213,12 @@ _sessions: dict[str, MCPSession] = {}
 _sessions_lock = threading.Lock()
 
 # Tools cache: shared across the request pipeline so we don't iterate 20+
-# servers three times per chat completion. The TTL matches the per-session
-# session_id TTL (5 min) so we don't reprobe before sessions actually expire.
-_TOOLS_CACHE_TTL = 300.0
+# servers three times per chat completion. The tool schemas almost never
+# change at runtime — bump to 15 min so the first request after the previous
+# 5-min TTL doesn't pay a 2.5s re-discovery cost (visible in chat traces).
+# A new MCP server appearing in config still triggers an immediate re-probe
+# via invalidate_tools_cache().
+_TOOLS_CACHE_TTL = 900.0
 _tools_cache: list[dict[str, Any]] | None = None
 _tools_cache_ts: float = 0.0
 _tools_cache_signature: str = ""

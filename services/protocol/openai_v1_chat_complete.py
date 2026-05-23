@@ -228,8 +228,11 @@ def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
         last_error = ""
         
         # Only search and inject ONCE for the combo request
+        search_injected = False
         if search_service.is_enabled:
+            before_size = _messages_size(messages)
             messages_copy = search_service.process_messages(messages)
+            search_injected = _messages_size(messages_copy) > before_size
             # Auto-curate search results to RAG after response (best-effort bg)
             _curate_search_results(messages_copy)
         else:
@@ -248,7 +251,8 @@ def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
             pass
 
         tools_with_mcp = _inject_mcp_tools(
-            tools, skip_ha_search=ha_context_injected, is_vision=is_vision_request,
+            tools, skip_ha_search=ha_context_injected,
+            is_vision=is_vision_request, search_injected=search_injected,
         )
 
         for route in routes:
@@ -283,8 +287,11 @@ def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
     route = backend_router.route(model, messages)
 
     # Apply search injection for all backends
+    search_injected = False
     if search_service.is_enabled:
+        before_size = _messages_size(messages)
         messages = search_service.process_messages(messages)
+        search_injected = _messages_size(messages) > before_size
 
     # Inject HA smart home context (Long-Lived Token). Returns a flag so we
     # can suppress the ha_search_entities tool when the full device registry
@@ -302,7 +309,8 @@ def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
 
     # Inject MCP tools from enabled presets
     tools = _inject_mcp_tools(
-        tools, skip_ha_search=ha_context_injected, is_vision=is_vision_request,
+        tools, skip_ha_search=ha_context_injected,
+        is_vision=is_vision_request, search_injected=search_injected,
     )
 
     result = _dispatch(route, messages, tools, tool_choice, body)
@@ -1536,6 +1544,23 @@ def _handle_antigravity_chat(
     raise RuntimeError(f"Antigravity error: {last_error}")
 
 
+def _messages_size(messages: list[dict[str, Any]] | None) -> int:
+    """Total character count across all message content — used to detect
+    whether search_service or HA context injected anything new."""
+    if not messages:
+        return 0
+    total = 0
+    for m in messages:
+        c = m.get("content")
+        if isinstance(c, str):
+            total += len(c)
+        elif isinstance(c, list):
+            for part in c:
+                if isinstance(part, dict):
+                    total += len(str(part.get("text", "")))
+    return total
+
+
 def _messages_have_images(messages: list[dict[str, Any]] | None) -> bool:
     """True when any message carries an image_url / input_image part.
 
@@ -1558,6 +1583,7 @@ def _inject_mcp_tools(
     tools: list[dict[str, Any]] | None,
     skip_ha_search: bool = False,
     is_vision: bool = False,
+    search_injected: bool = False,
 ) -> list[dict[str, Any]] | None:
     """Inject tools from enabled MCP servers + HA into the tools list.
 
@@ -1575,12 +1601,22 @@ def _inject_mcp_tools(
             search/control tools, so we skip the entire injection — saves
             ~2.5s of MCP discovery on cache miss and prevents the LLM from
             scanning a 60+ tool list before answering "what's in this image".
+        search_injected: When True search_service has already executed MCP
+            searches + grounding and dropped the results into the prompt.
+            The LLM's only job left is to summarize — adding 60+ more MCP
+            tools just bloats the prompt and tempts the LLM into a second
+            search round-trip. Skip injection.
     """
     logger.info({"event": "mcp_inject_start", "input_tools": len(tools or [])})
     try:
         # Vision request — skip all injection. Return the caller's tools as-is.
         if is_vision:
             logger.info({"event": "mcp_inject_skipped", "reason": "vision_request"})
+            return tools if tools else None
+
+        # Search results already injected — LLM just needs to summarize.
+        if search_injected:
+            logger.info({"event": "mcp_inject_skipped", "reason": "search_injected"})
             return tools if tools else None
 
         from services.mcp_client import get_enabled_mcp_tools

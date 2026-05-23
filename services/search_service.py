@@ -313,13 +313,24 @@ class CustomProviderSearch(SearchBackend):
         provider = CustomOpenAIProvider(cfg)
         prefix = str(cfg.get("prefix") or self.provider_id)
 
-        # Get first available model from this provider
+        # Get available models and prefer a fast variant. "First model" is
+        # often the heaviest (gemini-3-pro) and burns 7-8s on a simple search
+        # synthesis. Prefer flash/lite/mini if the provider exposes one —
+        # they're 3-4× faster for grounding queries with no real quality loss.
         models = provider.list_models()
         if not models:
             return []
 
-        # Pick the first model (usually the best/fastest one)
-        model_id = str(models[0].get("id") or "").replace(f"{prefix}/", "")
+        _FAST_HINTS = ("flash", "lite", "mini", "small", "fast")
+        chosen = None
+        for m in models:
+            mid = str(m.get("id") or "").lower()
+            if any(h in mid for h in _FAST_HINTS):
+                chosen = m
+                break
+        if chosen is None:
+            chosen = models[0]
+        model_id = str(chosen.get("id") or "").replace(f"{prefix}/", "")
         if not model_id:
             return []
 
@@ -788,27 +799,39 @@ class SearchService:
         })
 
         def _call_mcp_server(server_id: str) -> tuple[str, str | None]:
-            """Goi mot MCP server, tra ve (server_id, ket_qua_text)."""
+            """Goi mot MCP server, tra ve (server_id, ket_qua_text).
+
+            vn_currency exposes 3 tools (get_gold_prices / get_exchange_rate /
+            get_vcb_rates). Pick by query so "giá vàng" gets the gold tool and
+            "tỷ giá USD" gets the exchange-rate tool — previously we always
+            called the non-existent "get_exchange_rates" and got
+            `Unknown tool` back, leaving the LLM with no real numbers.
+            """
             try:
                 from services.mcp_client import call_mcp_tool
-                # Map server ID sang ten tool MCP tuong ung
                 _TOOL_MAP = {
                     "vn_search":       "search_web",
                     "federated_search": "search_all",
                     "vn_weather":      "get_current_weather",
                     "vn_news":         "get_news",
-                    "vn_currency":     "get_exchange_rates",
                     "vn_stock":        "get_stock_price",
                     "vn_law":          "search_law",
                 }
-                tool_name = _TOOL_MAP.get(server_id, "search_web")
-                
-                args = {}
-                if server_id == "vn_weather":
+
+                args: dict = {}
+                if server_id == "vn_currency":
+                    ql = query.lower()
+                    if any(k in ql for k in ("vàng", "vang", "gold", "sjc", "doji", "pnj", "9999", "24k", "18k")):
+                        tool_name = "get_gold_prices"
+                    elif "vcb" in ql or "vietcombank" in ql:
+                        tool_name = "get_vcb_rates"
+                    else:
+                        tool_name = "get_exchange_rate"
+                elif server_id == "vn_weather":
+                    tool_name = _TOOL_MAP[server_id]
                     args = {"location": query}
-                elif server_id == "vn_currency":
-                    args = {"query": query} # Not structured, hope it works
                 else:
+                    tool_name = _TOOL_MAP.get(server_id, "search_web")
                     args = {"query": query}
                     if server_id in ("vn_search", "vn_news", "vn_law", "vn_stock"):
                         args["limit"] = max(2, self.max_results)
