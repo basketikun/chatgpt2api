@@ -226,48 +226,62 @@ def _scheduler_loop() -> None:
             pass
 
 def _build_context(states: list[dict]) -> str:
-    """Build context string from state list. Pure computation, no I/O."""
-    # Group by domain
+    """Build context string from state list. Pure computation, no I/O.
+
+    Format per entity: `name | entity_id | state` (state included so the LLM
+    can answer "trạng thái đèn X?" without calling ha_get_state — saves a
+    full round-trip). For sensors with units the unit is appended:
+    `Nhiệt độ phòng học | sensor.nhiet_am_phong_hoc_temperature | 28.5 °C`.
+    """
     by_domain: dict[str, list[dict]] = {}
     for s in states:
         eid = s.get("entity_id", "")
         domain = eid.split(".")[0] if "." in eid else ""
         by_domain.setdefault(domain, []).append(s)
 
-    # Show ALL devices with name + entity_id
     lines = [
         "## Smart Home — Device Registry (DỮ LIỆU ĐÃ ĐẦY ĐỦ Ở DƯỚI)",
-        f"{len(states)} thiết bị. Dùng entity_id để điều khiển/lấy trạng thái.",
-        "Không có trạng thái trong này — gọi `ha_get_state` để biết real-time.",
-        "**QUAN TRỌNG: Khi user hỏi 'liệt kê / có những X nào / danh sách X', "
-        "TRẢ LỜI TRỰC TIẾP từ registry bên dưới. KHÔNG được gọi tool tìm kiếm "
-        "thiết bị — registry đã có đủ tên + entity_id.**",
+        f"{len(states)} thiết bị. Mỗi dòng: `tên | entity_id | trạng thái`.",
+        "**QUAN TRỌNG:**",
+        "- Khi user hỏi trạng thái / liệt kê / có những X nào → TRẢ LỜI TRỰC TIẾP "
+        "từ registry. KHÔNG gọi `ha_get_state` / `ha_search_entities` — dữ liệu đã "
+        "có đủ ở dưới (tên + entity_id + state).",
+        "- Khi user yêu cầu điều khiển (bật/tắt/mở/đóng/đặt) → tìm entity trong "
+        "registry bằng tên, rồi gọi `ha_call_service` MỘT LẦN với entity_id chính xác.",
         "",
     ]
 
-    total_shown = 0
     for domain in sorted(by_domain.keys()):
         entities = by_domain[domain]
-        # Show up to _MAX_PER_DOMAIN per domain
         lines.append(f"[{domain}] ({len(entities)})")
         for s in entities[:_MAX_PER_DOMAIN]:
             eid = s.get("entity_id", "")
-            name = s.get("attributes", {}).get("friendly_name", "")
-            label = f"{name} | {eid}" if name else eid
-            lines.append(f"  {label}")
-            total_shown += 1
+            attrs = s.get("attributes", {}) or {}
+            name = attrs.get("friendly_name", "")
+            state = str(s.get("state", "") or "").strip()
+            unit = str(attrs.get("unit_of_measurement", "") or "").strip()
+            if state and unit:
+                state_str = f"{state} {unit}"
+            elif state:
+                state_str = state
+            else:
+                state_str = "unknown"
+            if name:
+                lines.append(f"  {name} | {eid} | {state_str}")
+            else:
+                lines.append(f"  {eid} | {state_str}")
         if len(entities) > _MAX_PER_DOMAIN:
             lines.append(f"  ... còn {len(entities) - _MAX_PER_DOMAIN} thiết bị [{domain}]")
 
     lines.append("")
-    lines.append("## Available Services")
+    lines.append("## Available Services (chỉ dùng cho điều khiển)")
     svc = _get_services()
     for domain in sorted(by_domain.keys()):
         svc_list = svc.get(domain, [])
         if svc_list:
             lines.append(f"  {domain}: {', '.join(svc_list[:10])}")
     lines.append("")
-    lines.append(f"Dùng `ha_get_state` để lấy trạng thái real-time. `ha_call_service` để điều khiển.")
+    lines.append("`ha_call_service` là tool DUY NHẤT cần dùng khi điều khiển.")
 
     return "\n".join(lines)
 

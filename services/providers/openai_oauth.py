@@ -365,6 +365,10 @@ class CodexOAuthProvider:
                     # Auto-mark account state for quota/forbidden errors so the pool
                     # rotates away from this token without manual intervention.
                     err_lower = error_text.lower()
+                    is_quota_burnt = (
+                        resp.status_code == 429
+                        and ("usage_limit_reached" in err_lower or "quota" in err_lower)
+                    )
                     if resp.status_code == 403 or "forbidden" in err_lower:
                         account_service.update_account(access_token, {"status": "disabled"})
                         logger.warning({"event": "codex_account_disabled",
@@ -374,6 +378,15 @@ class CodexOAuthProvider:
                         logger.warning({"event": "codex_account_limited",
                                         "reason": "429_quota"})
                     msg = f"Codex error {resp.status_code}: {error_text[:200]}"
+                    # Plan-level quota exhaustion → trying other models on the SAME
+                    # already-burnt token yields the same 429. Abort the model
+                    # fallback chain immediately so the caller (combo) can move
+                    # to a different provider — saves ~2s per skipped retry.
+                    if is_quota_burnt:
+                        logger.info({"event": "codex_quota_burnt_fast_fail",
+                                     "model": resolved_model,
+                                     "remaining_models": len(models_to_try) - try_idx - 1})
+                        raise RuntimeError(msg)
                     if try_idx < len(models_to_try) - 1:
                         last_error = msg
                         continue

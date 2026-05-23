@@ -217,6 +217,11 @@ def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
 
     model, messages, tools, tool_choice = text_chat_parts(body)
 
+    # Detect vision request once — both combo and single-model paths use this
+    # to skip MCP/HA tool injection (saves ~2.5s discovery + removes 60+ tools
+    # that vision models have to scan before answering).
+    is_vision_request = _messages_have_images(messages)
+
     # Check if this is a combo model — try each model until success
     if backend_router.is_combo(model):
         routes = backend_router.route_combo(model)
@@ -242,8 +247,10 @@ def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
         except Exception:
             pass
 
-        tools_with_mcp = _inject_mcp_tools(tools, skip_ha_search=ha_context_injected)
-        
+        tools_with_mcp = _inject_mcp_tools(
+            tools, skip_ha_search=ha_context_injected, is_vision=is_vision_request,
+        )
+
         for route in routes:
             try:
                 cooldown = model_cooldown.get_cooldown_info(route.model)
@@ -294,7 +301,9 @@ def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
         pass
 
     # Inject MCP tools from enabled presets
-    tools = _inject_mcp_tools(tools, skip_ha_search=ha_context_injected)
+    tools = _inject_mcp_tools(
+        tools, skip_ha_search=ha_context_injected, is_vision=is_vision_request,
+    )
 
     result = _dispatch(route, messages, tools, tool_choice, body)
 
@@ -1527,9 +1536,28 @@ def _handle_antigravity_chat(
     raise RuntimeError(f"Antigravity error: {last_error}")
 
 
+def _messages_have_images(messages: list[dict[str, Any]] | None) -> bool:
+    """True when any message carries an image_url / input_image part.
+
+    Used to detect vision requests so we can skip MCP/HA tool injection — a
+    "phân tích ảnh" task never needs Wikipedia / weather / device control,
+    and the 60+ tool definitions just bloat the prompt + slow vision models
+    that have to scan the tool list before answering.
+    """
+    for m in messages or []:
+        content = m.get("content")
+        if not isinstance(content, list):
+            continue
+        for part in content:
+            if isinstance(part, dict) and part.get("type") in ("image_url", "input_image"):
+                return True
+    return False
+
+
 def _inject_mcp_tools(
     tools: list[dict[str, Any]] | None,
     skip_ha_search: bool = False,
+    is_vision: bool = False,
 ) -> list[dict[str, Any]] | None:
     """Inject tools from enabled MCP servers + HA into the tools list.
 
@@ -1542,9 +1570,19 @@ def _inject_mcp_tools(
             thái đèn" query, and dropping them removes ~23 distracting tools
             plus the 2.5s MCP discovery cost on cache miss. Control tools
             (ha_call_service, HassTurn*) are preserved.
+        is_vision: When True the request carries image attachments (camera
+            snapshot, ai_task.generate_data, etc.). Vision tasks never use
+            search/control tools, so we skip the entire injection — saves
+            ~2.5s of MCP discovery on cache miss and prevents the LLM from
+            scanning a 60+ tool list before answering "what's in this image".
     """
     logger.info({"event": "mcp_inject_start", "input_tools": len(tools or [])})
     try:
+        # Vision request — skip all injection. Return the caller's tools as-is.
+        if is_vision:
+            logger.info({"event": "mcp_inject_skipped", "reason": "vision_request"})
+            return tools if tools else None
+
         from services.mcp_client import get_enabled_mcp_tools
         from services.ha_client import get_ha_tools
 
