@@ -2,11 +2,22 @@
 
 - Bước 4: Tự động refresh KB, dùng AI (ChatGPT) tổng hợp nội dung trước khi lưu.
 - Bước 5: Sync R2 an toàn cho 2 server cài chung (Merge trước khi upload).
+
+Performance note: each refresh issues an LLM synthesis call that takes
+30-80 s through chatgpt2api's codex pool. With the previous defaults
+(check every hour, no spacing) a single tick could fire 14 synthesis
+calls back-to-back (7 collections × 2 queries) and saturate the codex
+pool for ~10 minutes, making interactive HA / Telegram requests crawl.
+We now:
+  - check once a day (env override RAG_SCHEDULER_INTERVAL_SEC)
+  - sleep RAG_REFRESH_COOLDOWN_SEC between consecutive synthesis calls
+  - skip the loop entirely when RAG_SCHEDULER_DISABLED=1
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import time
 import threading
 import json
@@ -16,7 +27,24 @@ from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
-CHECK_INTERVAL_SEC = 3600
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, "") or default)
+    except (TypeError, ValueError):
+        return default
+
+
+# How often the loop wakes up to check for stale collections. 24 h means
+# each KB refreshes at most once a day — well within Wikipedia / law /
+# news update cadence and easy on the codex pool.
+CHECK_INTERVAL_SEC = _env_int("RAG_SCHEDULER_INTERVAL_SEC", 86400)
+# Pause between two synthesis calls so a multi-collection refresh doesn't
+# saturate chatgpt2api's codex slots.
+REFRESH_COOLDOWN_SEC = _env_int("RAG_REFRESH_COOLDOWN_SEC", 60)
+# Hard kill switch — set to 1 if you want to run refreshes only via the
+# manual /api/rag/refresh/{collection} endpoint.
+SCHEDULER_DISABLED = os.environ.get("RAG_SCHEDULER_DISABLED", "").lower() in {"1", "true", "yes"}
 
 DEFAULT_REFRESH_QUERIES: dict[str, list[str]] = {
     "xa_hoi": [
@@ -225,6 +253,7 @@ def _check_all_collections() -> None:
     if not data_dir.exists():
         return
 
+    refreshed_any = False
     for folder in sorted(data_dir.iterdir()):
         if not folder.is_dir():
             continue
@@ -235,10 +264,18 @@ def _check_all_collections() -> None:
         if not stale:
             continue
 
+        # Spread synthesis calls so we don't slam the codex pool. The
+        # first stale collection of the cycle goes immediately; every one
+        # after that waits REFRESH_COOLDOWN_SEC.
+        if refreshed_any and REFRESH_COOLDOWN_SEC > 0:
+            logger.info("Scheduler: cooldown %ds before next refresh", REFRESH_COOLDOWN_SEC)
+            time.sleep(REFRESH_COOLDOWN_SEC)
+
         logger.info("Scheduler: %s is stale (%s), auto-refreshing with AI...", folder.name, msg)
         try:
             queries = _get_refresh_queries(folder.name, meta)
             total_chunks = _run_refresh(folder.name, queries)
+            refreshed_any = True
 
             if total_chunks > 0:
                 touch(folder.name, chunks=total_chunks, source=f"auto_ai/{datetime.now(timezone.utc).strftime('%Y-%m-%d')}")
@@ -260,6 +297,9 @@ def _check_all_collections() -> None:
 
 def start_scheduler() -> threading.Event:
     stop = threading.Event()
+    if SCHEDULER_DISABLED:
+        logger.info("RAG scheduler disabled via RAG_SCHEDULER_DISABLED env")
+        return stop
     t = threading.Thread(target=_scheduler_loop, args=(stop,), daemon=True, name="rag-scheduler")
     t.start()
     return stop

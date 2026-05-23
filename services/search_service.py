@@ -566,6 +566,26 @@ def needs_search(messages: list[dict[str, Any]]) -> bool:
     if len(last_text) > 500 and ("{" in last_text and "}" in last_text and "json" in last_text.lower()):
         return False
 
+    # Skip RAG / knowledge-synthesis / HA-vision prompts — the caller
+    # already has all the raw context inline, running our own search
+    # would just cost the 8 s OVERALL_TIMEOUT (gemini-block + fan-out
+    # to MCP tools) for nothing useful. Matches vn-mcp-hub's scheduler
+    # synthesis prompt and HA's camera-snapshot assistant prompt.
+    _SKIP_MARKERS = (
+        "chuyên gia tổng hợp",
+        "tổng hợp tri thức",
+        "knowledge base",
+        "knowledge-base",
+        "synthesize the following",
+        "summarize the search results",
+        "dựa vào các kết quả tìm kiếm",
+        "raw search results",
+        "đây là chuỗi hình ảnh",
+        "you are a home assistant expert",
+    )
+    if len(last_text) > 300 and any(m in last_text for m in _SKIP_MARKERS):
+        return False
+
     # Check against search intent patterns
     for pattern in SEARCH_INTENT_PATTERNS:
         if re.search(pattern, last_text):
