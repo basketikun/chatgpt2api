@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from .browser_pool import pool
 from .settings import settings
 from .solvers.browser_run import browser_run
+from .solvers.flow_google import generate_image as flow_generate_image
 from .solvers.phatnguoi import lookup_phatnguoi
 from .solvers.recaptcha import solve_recaptcha_v2, solve_recaptcha_v3
 from .solvers.turnstile import solve_turnstile
@@ -107,6 +108,17 @@ class PhatNguoiReq(BaseModel):
     timeout: int | None = Field(default=None, ge=10, le=300)
 
 
+class FlowImageReq(BaseModel):
+    project_id: str
+    prompt: str
+    aspect_ratio: str = "IMAGE_ASPECT_RATIO_LANDSCAPE"  # ..._SQUARE, _PORTRAIT
+    model: str = "NARWHAL"
+    tool: str = "PINHOLE"
+    profile: str = "google-fx"
+    headless: bool = True
+    timeout: int = Field(default=90, ge=15, le=300)
+
+
 @app.post("/v1/solve/turnstile", dependencies=[Depends(require_api_key)])
 async def api_solve_turnstile(req: TurnstileReq) -> dict[str, Any]:
     try:
@@ -155,6 +167,28 @@ async def api_solve_recaptcha2(req: Recaptcha2Req) -> dict[str, Any]:
         raise HTTPException(status_code=504, detail=str(exc)) from exc
     except Exception as exc:
         logger.exception("recaptcha2 solve failed")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/v1/google/flow/generate-image", dependencies=[Depends(require_api_key)])
+async def api_flow_generate(req: FlowImageReq) -> dict[str, Any]:
+    """End-to-end Google Labs Flow image gen. Requires the `google-fx`
+    profile to be logged in first via /v1/session/manual-login."""
+    try:
+        return await flow_generate_image(
+            project_id=req.project_id,
+            prompt=req.prompt,
+            aspect_ratio=req.aspect_ratio,
+            model=req.model,
+            tool=req.tool,
+            profile=req.profile,
+            headless=req.headless,
+            timeout=req.timeout,
+        )
+    except TimeoutError as exc:
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("flow generate failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
