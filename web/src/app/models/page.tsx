@@ -18,6 +18,7 @@ const PROVIDER_LABELS: Record<string, { label: string; color: string; tint: stri
   openai_oauth: { label: "Codex OAuth", color: "#00A67E", tint: "emerald" },
   antigravity: { label: "Antigravity", color: "#1A73E8", tint: "indigo" },
   chatgpt2api: { label: "Hệ thống (combo)", color: "#F59E0B", tint: "amber" },
+  flow: { label: "Google Labs Flow", color: "#34A853", tint: "emerald" },
 };
 
 const CORE_MODELS = ["ha-agent", "chatgpt/auto", "oc/auto", "gemini_free/auto", "cx/auto", "ag/auto"];

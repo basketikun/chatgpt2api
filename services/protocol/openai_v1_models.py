@@ -592,13 +592,24 @@ def list_models(force_refresh: bool = False, apply_filter: bool = False) -> dict
             seen.add(mid)
             data.append({"id": mid, "object": "model", "created": 0, "owned_by": "chatgpt"})
 
-    # Add image models
+    # Add image models — group by their natural prefix so the UI shows
+    # them under their own provider section (e.g. flow/* under "Google
+    # Labs Flow", gemini-image/* under Gemini) instead of all dumped into
+    # the generic "chatgpt2api" combo bucket.
+    def _model_owner(mid: str) -> str:
+        if "/" in mid:
+            prefix = mid.split("/", 1)[0]
+            if prefix.startswith("gemini-image"):
+                return "gemini_free"
+            return prefix
+        return "chatgpt2api"
+
     for model in sorted(IMAGE_MODELS):
         if model not in seen:
             seen.add(model)
             data.append({
                 "id": model, "object": "model", "created": 0,
-                "owned_by": "chatgpt2api", "permission": [],
+                "owned_by": _model_owner(model), "permission": [],
                 "root": model, "parent": None,
             })
 
