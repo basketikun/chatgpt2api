@@ -929,6 +929,18 @@ class SearchService:
                     tool_name = _TOOL_MAP[server_id]
                     city = _extract_city(query) or "Hà Nội"
                     args = {"city": city}
+                elif server_id == "vn_petrol":
+                    # get_petrol_prices(region) — extract Vùng 1/2 hint from
+                    # the query, default "all" so the LLM sees both zones.
+                    tool_name = _TOOL_MAP[server_id]
+                    ql = query.lower()
+                    if "vùng 1" in ql or "vung 1" in ql or "đô thị" in ql:
+                        region = "vung1"
+                    elif "vùng 2" in ql or "vung 2" in ql or "vùng sâu" in ql:
+                        region = "vung2"
+                    else:
+                        region = "all"
+                    args = {"region": region}
                 else:
                     tool_name = _TOOL_MAP.get(server_id, "search_web")
                     args = {"query": query}
