@@ -495,19 +495,37 @@ async def analyze_image(
             await page.goto(_GEMINI_HOME, wait_until="domcontentloaded", timeout=30_000)
             await _wait_for_ready(page, timeout=30)
 
-            # 2. Upload via the first <input type="file"> on the page.
-            #    Gemini's upload input is hidden but Playwright can still
-            #    push files into it without clicking the visible "Add file"
-            #    button.
+            # 2. Gemini's file input is created LAZILY by the + menu's
+            #    'Tải tệp lên' / 'Thêm ảnh và tệp' items — it doesn't
+            #    exist in the DOM at page load. We use Playwright's
+            #    expect_file_chooser to intercept the native file dialog
+            #    that opens when we click the menu item, then upload via
+            #    that chooser (works even when the underlying <input>
+            #    never makes it into the visible DOM).
             try:
-                await page.locator('input[type="file"]').first.set_input_files(tmp.name)
-                logger.info("gemini_web: uploaded image %s (mime=%s)", tmp.name, mime)
+                async with page.expect_file_chooser(timeout=15_000) as fc_info:
+                    activated = await _activate_tool(page, "Tải tệp lên")
+                    if not activated:
+                        # Some Gemini builds label it 'Thêm ảnh và tệp'.
+                        activated = await _activate_tool(page, "Thêm ảnh")
+                file_chooser = await fc_info.value
+                await file_chooser.set_files(tmp.name)
+                logger.info("gemini_web: uploaded image %s (mime=%s) via file chooser",
+                            tmp.name, mime)
             except Exception as exc:
-                raise RuntimeError(f"Không tìm thấy file input trên Gemini: {exc}") from exc
+                # Fall back: maybe the input IS in the DOM after we open
+                # the + menu. Try direct set_input_files.
+                logger.warning("gemini_web: file_chooser flow failed (%s) — trying direct input", str(exc)[:120])
+                try:
+                    await page.locator('input[type="file"]').first.set_input_files(tmp.name, timeout=5000)
+                    logger.info("gemini_web: uploaded image %s via input[type=file]", tmp.name)
+                except Exception as exc2:
+                    raise RuntimeError(
+                        f"Không upload được ảnh: chooser={exc} | input={exc2}"
+                    ) from exc2
 
-            # 3. Wait for thumbnail / preview to appear (so Send isn't
-            #    disabled when we click).
-            await asyncio.sleep(3.0)
+            # 3. Wait for thumbnail / preview to appear.
+            await asyncio.sleep(4.0)
 
             # 4. Type prompt + send.
             await _inject_prompt(page, prompt)
