@@ -292,30 +292,7 @@ async def generate_image(
     api_url = f"{API_HOST}/v1/projects/{project_id}/flowMedia:batchGenerateImages"
 
     async with pool.page(profile=profile, headless=headless) as page:
-        # ── Warmup: first hit /tools/flow root so Google's session +
-        # entitlement check completes before we open a project URL.
-        # Going straight to /project/<id> on a freshly-launched Chrome
-        # frequently redirects to the marketing landing page (no
-        # contenteditable) until the session is "primed". The root URL
-        # is cheap and always-cacheable.
-        try:
-            await page.goto(
-                "https://labs.google/fx/vi/tools/flow",
-                wait_until="domcontentloaded",
-                timeout=20_000,
-            )
-            # Wait briefly for hydration (PRO badge / Dự án mới button).
-            try:
-                await page.wait_for_function(
-                    """() => Array.from(document.querySelectorAll('button,a'))
-                      .some(b => /pro|dự án mới|new project|add_2/i.test(b.innerText||b.getAttribute('aria-label')||''))""",
-                    timeout=15_000,
-                )
-            except Exception:
-                pass  # warmup is best-effort
-        except Exception:
-            pass
-
+        await _prime_flow_session(page)
         await page.goto(flow_url, wait_until="domcontentloaded", timeout=30_000)
 
         # Flow renders the prompt input as a contenteditable DIV (not a
@@ -460,6 +437,83 @@ async def generate_image(
         }
 
 
+async def _prime_flow_session(page) -> None:
+    """Prime the Flow session so subsequent project URLs render the app
+    (not the marketing landing page).
+
+    Without this, navigating straight to /tools/flow/project/<id> on a
+    just-launched Chrome — even with valid Google login cookies — shows
+    Google's marketing CTA page. The session has to be "warmed" by
+    visiting /tools/flow root AND interacting with it.
+
+    Strategy:
+      1. Navigate to /tools/flow root.
+      2. Wait up to 20s for the actual app to appear (PRO badge, project
+         list, or "Dự án mới" button). If it does → return; session is
+         already primed.
+      3. If only the marketing landing rendered, click "Create with
+         Google Flow" — Google's entitlement check fires and a project
+         is opened, which marks the session as primed for the next nav.
+      4. Wait for /project/<uuid> URL OR for the app UI to appear.
+
+    All errors swallowed — warmup is best-effort. The caller will retry
+    its own hydration check after navigating to the real project URL.
+    """
+    try:
+        await page.goto(
+            "https://labs.google/fx/vi/tools/flow",
+            wait_until="domcontentloaded",
+            timeout=20_000,
+        )
+    except Exception:
+        return
+
+    # Did the actual app load? (PRO badge, Dự án mới, edit project buttons)
+    try:
+        await page.wait_for_function(
+            """() => {
+                const els = Array.from(document.querySelectorAll('button,a'));
+                // 'PRO' badge alone, or new-project button text.
+                return els.some(e => {
+                    const t = (e.innerText || e.getAttribute('aria-label') || '').trim();
+                    return /^pro$|dự án mới|new project|add_2|edit|chỉnh sửa dự án/i.test(t);
+                });
+            }""",
+            timeout=20_000,
+        )
+        return  # already primed
+    except Exception:
+        pass  # marketing landing — need to force entitlement
+
+    # Click "Create with Google Flow" / "Tạo bằng Google Flow" to fire
+    # Google's entitlement check. The click takes us to /project/<auto>;
+    # we don't care which project — just that the session is now primed.
+    try:
+        clicked = await page.evaluate(
+            """() => {
+                const btn = Array.from(document.querySelectorAll('button')).find(b => {
+                    const t = (b.innerText || '').trim().toLowerCase();
+                    return t === 'create with google flow'
+                        || t === 'tạo bằng google flow'
+                        || t.startsWith('create with')
+                        || t.startsWith('try in google flow');
+                });
+                if (!btn) return false;
+                btn.click();
+                return true;
+            }"""
+        )
+        if not clicked:
+            return  # nothing to click — give up, caller will fail its check
+        # Wait for either /project/ URL OR app UI to appear
+        try:
+            await page.wait_for_url("**/project/*", timeout=25_000)
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+
 async def get_or_create_project(
     profile: str,
     headless: bool = False,
@@ -479,29 +533,24 @@ async def get_or_create_project(
     """
     started = time.time()
     async with pool.page(profile=profile, headless=headless) as page:
-        # Warmup at /tools/flow root first so Google's session +
-        # entitlement check completes before listing projects. Going
-        # straight to /tools/flow on a freshly-launched Chrome often
-        # shows the marketing landing until the session is "primed".
-        await page.goto(
-            "https://labs.google/fx/vi/tools/flow",
-            wait_until="domcontentloaded",
-            timeout=20_000,
-        )
-        # Wait for the actual Flow app (PRO badge or Dự án mới button).
-        try:
-            await page.wait_for_function(
-                """() => Array.from(document.querySelectorAll('button,a'))
-                  .some(b => /pro|dự án mới|new project|add_2/i.test(b.innerText||b.getAttribute('aria-label')||''))""",
-                timeout=int(timeout * 1000),
-            )
-        except Exception as exc:
-            raise RuntimeError(
-                f"Flow app never hydrated. Account may not have Google AI Pro "
-                f"or session expired. Logout-then-re-login the profile. ({exc})"
-            ) from exc
+        # Prime session — handles the marketing-landing detour itself.
+        await _prime_flow_session(page)
 
-        # Look for existing project links.
+        # If priming clicked "Create with Google Flow", we may already be
+        # on /project/<auto-uuid>. Grab that UUID — it's a perfectly
+        # usable existing project.
+        import re
+        cur = page.url
+        m = re.search(r"/project/([0-9a-f-]+)", cur, re.I)
+        if m:
+            return {
+                "project_id": m.group(1),
+                "action": "created",  # via warmup click
+                "project_count": 0,
+                "elapsed_ms": int((time.time() - started) * 1000),
+            }
+
+        # Otherwise look for existing project links on /tools/flow root.
         result = await page.evaluate(
             """() => {
                 const links = Array.from(document.querySelectorAll('a[href*="/project/"]'))
