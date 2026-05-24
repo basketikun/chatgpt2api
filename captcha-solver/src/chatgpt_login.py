@@ -46,20 +46,28 @@ logger = logging.getLogger(__name__)
 _CHATGPT_HOME = "https://chatgpt.com/"
 _CHATGPT_AUTH_SESSION = "https://chatgpt.com/api/auth/session"
 
-# Selectors for the chat.openai.com / auth.openai.com login UI.
-# Order matters — try most specific first.
+# Selectors for the chatgpt.com / auth.openai.com / Auth0 login UI.
+# After click on chatgpt.com header "Đăng nhập" / "Log in" button, the
+# page redirects to auth.openai.com which then redirects to Auth0's
+# Universal Login. The flow CAN take 5-10s of full page loads.
 _LOGIN_BUTTON_SELECTORS = (
-    'a[data-testid="login-button"]',
     'button[data-testid="login-button"]',
-    'a:has-text("Log in")',
+    'a[data-testid="login-button"]',
     'button:has-text("Log in")',
+    'button:has-text("Đăng nhập")',
+    'a:has-text("Log in")',
     'a:has-text("Đăng nhập")',
 )
 _CONTINUE_WITH_GOOGLE_SELECTORS = (
     'button[data-provider="google"]',
+    'button[name="provider"][value="google"]',
     'button:has-text("Continue with Google")',
     'a:has-text("Continue with Google")',
     'button:has-text("Tiếp tục với Google")',
+    'button:has-text("Đăng nhập bằng Google")',
+    # Auth0 Universal Login uses these selectors:
+    'button.auth0-lock-social-button[data-provider="google-oauth2"]',
+    'a[href*="google-oauth2"]',
 )
 
 
@@ -123,13 +131,16 @@ async def start_chatgpt_login(profile: str, email: str, password: str) -> ChatGP
 
 
 async def _click_one(page, selectors, *, timeout: int = 5000) -> bool:
+    """Click the first matching selector. Don't pre-check count() — let
+    Playwright's wait-for-actionable timeout handle the not-yet-mounted
+    case so we don't bail early on slow page loads."""
     for sel in selectors:
         try:
-            loc = page.locator(sel).first
-            if await loc.count() > 0:
-                await loc.click(timeout=timeout)
-                return True
-        except Exception:
+            await page.locator(sel).first.click(timeout=timeout)
+            logger.info("chatgpt_login: clicked selector=%s", sel)
+            return True
+        except Exception as exc:
+            logger.debug("chatgpt_login: selector miss %s: %s", sel, str(exc)[:80])
             continue
     return False
 
@@ -195,28 +206,40 @@ async def _run(session: ChatGPTLoginSession, password: str) -> None:
             return
 
         # Not authenticated — click "Log in" then "Continue with Google".
-        session.message = "Click 'Log in'..."
+        session.message = "Click 'Đăng nhập'..."
         if not await _click_one(page, _LOGIN_BUTTON_SELECTORS, timeout=8000):
-            # On the login picker page directly, no "Log in" button
-            # — try "Continue with Google" right away.
-            logger.info("no Log in button visible — assuming on picker page")
+            logger.info("chatgpt_login: no Log in button — maybe already on picker")
+        else:
+            # Login button click triggers redirect to auth.openai.com.
+            # Wait for the redirect to complete before searching for Google.
+            try:
+                await page.wait_for_url("**/auth.openai.com/**", timeout=15_000)
+                logger.info("chatgpt_login: redirected to %s", page.url)
+            except Exception:
+                logger.info("chatgpt_login: no auth.openai.com redirect (url=%s)",
+                            page.url)
+            await asyncio.sleep(2.0)
 
-        await asyncio.sleep(1.5)
-
+        # The Auth0 page may take a few more seconds to render the provider
+        # picker. _click_one's per-selector 12s timeout gives us up to
+        # 12*N seconds of total wait for the Google button to appear.
         session.message = "Click 'Continue with Google'..."
-        if not await _click_one(page, _CONTINUE_WITH_GOOGLE_SELECTORS, timeout=10_000):
+        if not await _click_one(page, _CONTINUE_WITH_GOOGLE_SELECTORS, timeout=12_000):
             session.state = "failed"
-            session.error = "Không tìm thấy nút 'Continue with Google' trên trang login ChatGPT"
+            session.error = (
+                f"Không tìm thấy nút 'Continue with Google' (cur_url={page.url})"
+            )
             session.completed_at = time.time()
             return
 
         # Wait for Google's OAuth screen to take over.
         try:
             await page.wait_for_url("**/accounts.google.com/**", timeout=20_000)
+            logger.info("chatgpt_login: at google login page %s", page.url)
         except Exception:
-            # Some routes go directly to a session-picker; if user has only one
-            # Google account already in the browser, Google auto-redirects back.
-            # Keep going — _scrape_session will tell us if we ended up logged in.
+            # Google may skip the login form if a session cookie exists
+            # → bounces straight back to chatgpt.com. _scrape_session
+            # tells us if we ended up authenticated.
             pass
 
         # If we landed on Google's account chooser (multi-account), click the
