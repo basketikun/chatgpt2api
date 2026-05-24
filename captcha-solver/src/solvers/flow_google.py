@@ -313,62 +313,54 @@ async def generate_image(
                 f"Re-run /v1/session/manual-login with profile='{profile}'. ({exc})"
             ) from exc
 
-        # ── Dismiss any "Welcome to Flow" tutorial overlay that Radix
-        # dialogs leave open on a freshly-created project. Press Escape
-        # twice — Radix listens for it and closes the dialog properly
-        # (which tears down the overlay AND keeps the rest of the React
-        # subtree intact). DOM-removal can rip out the prompt input
-        # too, since it's mounted inside the same portal subtree.
-        async def _dismiss_overlays():
-            try:
-                await page.keyboard.press("Escape")
-                await asyncio.sleep(0.3)
-                await page.keyboard.press("Escape")
-                await asyncio.sleep(0.3)
-                # Click a safe corner to defocus anything trapping clicks.
-                try:
-                    await page.mouse.click(10, 10)
-                    await asyncio.sleep(0.2)
-                except Exception:
-                    pass
-                # Only remove TRUE overlay screens (Radix Overlay component
-                # marks itself with data-radix-portal OR role="presentation").
-                # Avoid tearing down the dialog content which may contain
-                # our prompt input on freshly-created projects.
-                removed = await page.evaluate("""
-                    () => {
-                        let n = 0;
-                        document.querySelectorAll(
-                          '[data-state="open"][role="presentation"], ' +
-                          '[data-radix-presence][data-state="open"]:not([role])'
-                        ).forEach(el => {
-                            const r = el.getBoundingClientRect();
-                            if (r.width >= window.innerWidth * 0.8 && r.height >= window.innerHeight * 0.8) {
-                                el.remove(); n++;
-                            }
-                        });
-                        return n;
-                    }
-                """)
-                if removed:
-                    logger.info("flow_overlay_dismissed n=%d", removed)
-            except Exception as exc:
-                logger.debug("dismiss overlays best-effort: %s", exc)
+        # ── Fill the prompt — focus the contenteditable via JS then
+        # type via page.keyboard.
+        #
+        # WHY focus + keyboard, not click + keyboard:
+        # On freshly-created projects, Flow shows a "Welcome to Flow"
+        # tutorial dialog: a full-viewport DIV overlay (1366x768, role=
+        # absent) + a dialog box (role="dialog"). The overlay intercepts
+        # MOUSE events but JS .focus() bypasses that — the contenteditable
+        # is in the DOM and focusable even when an overlay covers it.
+        # page.keyboard.type sends key events to whatever has focus, so
+        # the dialog never has to be dismissed at all.
+        #
+        # We DO press Escape once first as a courtesy — if the dialog
+        # closes naturally it's cleaner — but we don't depend on it.
+        try:
+            await page.keyboard.press("Escape")
+            await asyncio.sleep(0.4)
+        except Exception:
+            pass
 
-        await _dismiss_overlays()
+        # Re-wait for the contenteditable (Escape may have torn down
+        # the Slate editor briefly during the close transition).
+        try:
+            await page.wait_for_function(
+                """() => {
+                    const ces = Array.from(document.querySelectorAll('[contenteditable=true]'));
+                    return ces.some(e => e.offsetWidth > 200 && e.offsetHeight > 0);
+                }""",
+                timeout=10_000,
+            )
+        except Exception:
+            pass
 
-        # 1) Fill the prompt — focus via JS (immune to overlay
-        # interception, doesn't need a coord click), then type keys via
-        # page.keyboard.
         focused = await page.evaluate("""
             () => {
                 const ces = Array.from(document.querySelectorAll('[contenteditable=true]'));
                 // pick the largest visible contenteditable (the prompt input)
                 const target = ces
-                    .map(e => ({e, area: e.offsetWidth * e.offsetHeight}))
-                    .filter(x => x.area > 200)
-                    .sort((a, b) => b.area - a.area)[0];
-                if (!target) return {found: false};
+                    .map(e => ({e, w: e.offsetWidth, h: e.offsetHeight}))
+                    .filter(x => x.w > 200 && x.h > 0)
+                    .sort((a, b) => (b.w * b.h) - (a.w * a.h))[0];
+                if (!target) {
+                    return {
+                        found: false,
+                        debug_ce_count: ces.length,
+                        debug_dims: ces.map(e => ({w: e.offsetWidth, h: e.offsetHeight, role: e.getAttribute('role')})),
+                    };
+                }
                 target.e.focus();
                 // Place caret at end (so subsequent keys append)
                 const sel = window.getSelection();
@@ -377,12 +369,16 @@ async def generate_image(
                 range.collapse(false);
                 sel.removeAllRanges();
                 sel.addRange(range);
-                return {found: true, area: target.area};
+                return {found: true, w: target.w, h: target.h};
             }
         """)
         if not focused.get("found"):
-            raise RuntimeError("Could not find/focus prompt contenteditable")
-        logger.info("flow_prompt_focused area=%d", focused.get("area", 0))
+            raise RuntimeError(
+                f"Could not find/focus prompt contenteditable. "
+                f"ce_count={focused.get('debug_ce_count')} "
+                f"dims={focused.get('debug_dims')}"
+            )
+        logger.info("flow_prompt_focused w=%d h=%d", focused.get("w", 0), focused.get("h", 0))
         await page.keyboard.type(prompt, delay=10)
         # Give React a tick to register the change.
         await asyncio.sleep(0.5)
