@@ -14,6 +14,7 @@ import { GeminiCard } from "./components/gemini-card";
 import { NvidiaNimCard } from "./components/nvidia-nim-card";
 import { CustomProvidersCard } from "./components/custom-providers-card";
 import { FlowCard } from "./components/flow-card";
+import { ChatGPTOnboardCard } from "./components/chatgpt-onboard-card";
 import { CPAPoolDialog } from "./components/cpa-pool-dialog";
 import { CPAPoolsCard } from "./components/cpa-pools-card";
 import { ImportBrowserDialog } from "./components/import-browser-dialog";
@@ -101,6 +102,14 @@ function SettingsPageContent() {
           icon={<Link className="size-5" />}
         >
           <FlowCard />
+        </SettingsSection>
+
+        <SettingsSection
+          title="ChatGPT free (Google OAuth)"
+          description="Login chat.openai.com qua tài khoản Google → scrape JWT access_token → add vào pool ChatGPT free. Bypass 24KB session-token limit hoàn toàn."
+          icon={<KeyRound className="size-5" />}
+        >
+          <ChatGPTOnboardCard />
         </SettingsSection>
 
         <SettingsSection
