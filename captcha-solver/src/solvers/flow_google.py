@@ -414,24 +414,35 @@ async def generate_image(
             clicked = await page.evaluate("""
                 () => {
                     const buttons = Array.from(document.querySelectorAll('button'));
-                    // Prefer aria-label="Tạo" (the icon submit button)
-                    let btn = buttons.find(b =>
-                        b.getAttribute('aria-label') === 'Tạo'
-                        || b.getAttribute('aria-label') === 'Create'
-                        || b.getAttribute('aria-label') === 'Send'
-                    );
-                    // Fallback: last <button> whose text is exactly "Tạo"
+                    // Real submit button has text "arrow_forward\\nTạo"
+                    // (Material icon name + label, rendered as two lines).
+                    let btn = buttons.find(b => /arrow_forward[\\s\\n]+Tạo/i.test(b.innerText || ''));
+                    // Send/Generate label fallbacks (English locale or A/B test)
                     if (!btn) {
-                        const taoes = buttons.filter(b => (b.innerText || '').trim() === 'Tạo');
-                        btn = taoes[taoes.length - 1];
+                        btn = buttons.find(b => /arrow_forward[\\s\\n]+(Generate|Create|Send|Submit)/i.test(b.innerText || ''));
                     }
-                    // Fallback: any button with arrow_upward icon (Flow's send icon)
+                    // Any button with arrow_forward / arrow_upward icon
                     if (!btn) {
-                        btn = buttons.find(b => /arrow_upward|send/i.test(b.innerText || ''));
+                        btn = buttons.find(b => /arrow_(forward|upward)/i.test(b.innerText || ''));
+                    }
+                    // aria-label probe (in case Google adds one)
+                    if (!btn) {
+                        btn = buttons.find(b => {
+                            const al = (b.getAttribute('aria-label') || '').toLowerCase();
+                            return ['tạo', 'create', 'send', 'submit', 'generate'].includes(al);
+                        });
+                    }
+                    if (!btn) {
+                        // Last-resort: enumerate visible buttons with text including "Tạo" but NOT "add_2"
+                        const taoes = buttons.filter(b => {
+                            const t = b.innerText || '';
+                            return /Tạo/.test(t) && !/add_2/.test(t);
+                        });
+                        btn = taoes[taoes.length - 1];
                     }
                     if (!btn) return {clicked: false};
                     btn.click();
-                    return {clicked: true, label: btn.getAttribute('aria-label'), text: (btn.innerText || '').slice(0, 30)};
+                    return {clicked: true, label: btn.getAttribute('aria-label'), text: (btn.innerText || '').slice(0, 50).replace(/\\n/g, '|')};
                 }
             """)
             if clicked.get("clicked"):
