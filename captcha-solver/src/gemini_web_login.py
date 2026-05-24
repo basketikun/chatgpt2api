@@ -83,20 +83,46 @@ async def start_gemini_web_login(profile: str, email: str, password: str) -> Gem
 
 
 async def _gemini_session_ready(page) -> bool:
-    """Check if gemini.google.com is loaded + the user prompt input is
-    visible (= logged in + Gemini app hydrated)."""
+    """Check if Gemini Web is actually logged in.
+
+    Gemini renders the chat editor even for anonymous users (preview
+    mode), so contenteditable presence alone is a false positive.
+    Reliable signal: absence of a top-bar 'Đăng nhập' / 'Sign in' button.
+    """
     try:
-        # Gemini's prompt input is a contenteditable with class rich-textarea
-        # OR a textarea with placeholder. Selectors change between A/B tests
-        # so we match the largest visible contenteditable.
-        ready = await page.evaluate(
+        result = await page.evaluate(
             """() => {
+                // Has prompt editor visible?
                 const ces = Array.from(document.querySelectorAll('[contenteditable=true]'));
-                return ces.some(e => e.offsetWidth > 200 && e.offsetHeight > 0);
+                const has_editor = ces.some(e => e.offsetWidth > 200 && e.offsetHeight > 0);
+                if (!has_editor) return {ready: false, reason: 'no_editor'};
+
+                // Find any visible 'Đăng nhập' / 'Sign in' / 'Log in' button.
+                // If present, user is NOT logged in (preview mode).
+                const buttons = Array.from(document.querySelectorAll('button, a'));
+                const login_btn = buttons.find(b => {
+                    if (b.offsetWidth === 0) return false;
+                    const t = (b.innerText || b.getAttribute('aria-label') || '').trim().toLowerCase();
+                    return t === 'đăng nhập' || t === 'sign in' || t === 'log in';
+                });
+                if (login_btn) return {ready: false, reason: 'login_button_visible'};
+
+                // Look for a logged-in indicator: user avatar (usually
+                // <img alt="Google Account"> or a button with class
+                // gb_d / gb_g / similar Google account chip).
+                const account_btn = document.querySelector(
+                    'a[aria-label*="Google Account"], a[href*="accounts.google.com/SignOutOptions"], '
+                    + 'img[alt*="Google Account"], a[aria-label*="Tài khoản Google"]'
+                );
+                return {ready: !!account_btn, reason: account_btn ? 'account_chip' : 'no_account_chip'};
             }"""
         )
-        return bool(ready)
-    except Exception:
+        if isinstance(result, dict):
+            logger.info("gemini_session_ready: %s", result)
+            return bool(result.get("ready"))
+        return False
+    except Exception as exc:
+        logger.warning("gemini_session_ready check failed: %s", exc)
         return False
 
 
@@ -116,17 +142,45 @@ async def _run(session: GeminiWebLoginSession, password: str) -> None:
         session.state = "running"
         session.message = "Mở gemini.google.com..."
         await page.goto(_GEMINI_HOME, wait_until="domcontentloaded", timeout=30_000)
-        await asyncio.sleep(3.0)  # let any client-side redirects settle
+        await asyncio.sleep(3.0)
 
-        # If we land on gemini.google.com and the chat input is ready,
-        # we're logged in (Google SSO via persistent cookies).
+        # If already authenticated (has account chip + no login button),
+        # short-circuit to success.
         if await _gemini_session_ready(page):
             session.state = "success"
             session.message = "Profile đã có Gemini session — không cần đăng nhập"
             session.completed_at = time.time()
             return
 
-        # Otherwise we got redirected to accounts.google.com for login.
+        # Gemini renders preview mode for anonymous users — no auto-redirect
+        # to login. Click the 'Đăng nhập' button to trigger the OAuth flow.
+        session.message = "Click 'Đăng nhập' trên Gemini Web..."
+        clicked = await page.evaluate("""
+            () => {
+                const buttons = Array.from(document.querySelectorAll('button, a'));
+                const btn = buttons.find(b => {
+                    if (b.offsetWidth === 0) return false;
+                    const t = (b.innerText || b.getAttribute('aria-label') || '').trim().toLowerCase();
+                    return t === 'đăng nhập' || t === 'sign in' || t === 'log in';
+                });
+                if (!btn) return false;
+                btn.click();
+                return true;
+            }
+        """)
+        if not clicked:
+            session.state = "failed"
+            session.error = "Không tìm thấy nút 'Đăng nhập' trên gemini.google.com"
+            session.completed_at = time.time()
+            return
+
+        # Wait for redirect to accounts.google.com.
+        try:
+            await page.wait_for_url("**/accounts.google.com/**", timeout=20_000)
+            logger.info("gemini_login: at google login page %s", page.url)
+        except Exception:
+            logger.warning("gemini_login: no accounts.google.com redirect after login click")
+
         try:
             on_google = "accounts.google.com" in page.url
         except Exception:
@@ -135,18 +189,18 @@ async def _run(session: GeminiWebLoginSession, password: str) -> None:
         if on_google:
             ok = await do_google_login_steps(session, page, ctx, password)
             if not ok:
-                return  # state/error set by helper
+                return
 
             # After Google login, wait for redirect back to gemini.google.com.
             try:
                 await page.wait_for_url("**/gemini.google.com/**", timeout=30_000)
             except Exception:
-                logger.warning("gemini_login: no return to gemini.google.com (url=%s)",
+                logger.warning("gemini_login: no return to gemini (url=%s)",
                                 getattr(page, "url", "?"))
-            await asyncio.sleep(2.0)
+            await asyncio.sleep(3.0)
 
-        # Verify Gemini is ready.
-        for _ in range(20):  # up to 20s of polling for hydration
+        # Verify Gemini is now actually logged in (account chip visible).
+        for _ in range(20):
             if await _gemini_session_ready(page):
                 session.state = "success"
                 session.message = "Đăng nhập Gemini Web thành công"
@@ -154,16 +208,15 @@ async def _run(session: GeminiWebLoginSession, password: str) -> None:
                 return
             await asyncio.sleep(1.0)
 
-        # Fall back — if any Google login cookies are present, treat as
-        # success and let the chat handler retry hydration on its own call.
+        # Fall back — if Google login cookies present, treat as soft-success.
         if await _already_logged_in(ctx):
             session.state = "success"
-            session.message = "Login OK nhưng Gemini chưa hydrate — sẽ retry khi chat"
+            session.message = "Google OK nhưng Gemini chưa hydrate đủ — chat thử có thể work"
             session.completed_at = time.time()
             return
 
         session.state = "failed"
-        session.error = f"Không thấy Gemini app sẵn sàng (url={getattr(page, 'url', '?')})"
+        session.error = f"Không thấy Gemini logged-in (url={getattr(page, 'url', '?')})"
         session.completed_at = time.time()
 
     except asyncio.CancelledError:
