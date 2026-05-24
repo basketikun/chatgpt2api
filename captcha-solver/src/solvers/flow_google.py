@@ -313,22 +313,38 @@ async def generate_image(
                 f"Re-run /v1/session/manual-login with profile='{profile}'. ({exc})"
             ) from exc
 
-        # ── Fill the prompt — focus the contenteditable via JS then
-        # type via page.keyboard.
+        # ── Step 0: Remove the welcome dialog OVERLAY layer FIRST.
+        # On freshly-created projects, Flow renders a Radix dialog with:
+        #   • An overlay <div data-state="open"> (no role, viewport-sized)
+        #     that intercepts ALL mouse events.
+        #   • A dialog <div role="dialog"> with the actual content.
+        # Removing just the overlay (not the dialog) lets mouse events
+        # reach the workspace BELOW (where the prompt input lives at
+        # y≈658, well below the dialog box).
         #
-        # WHY focus + keyboard, not click + keyboard:
-        # On freshly-created projects, Flow shows a "Welcome to Flow"
-        # tutorial dialog: a full-viewport DIV overlay (1366x768, role=
-        # absent) + a dialog box (role="dialog"). The overlay intercepts
-        # MOUSE events but JS .focus() bypasses that — the contenteditable
-        # is in the DOM and focusable even when an overlay covers it.
-        # page.keyboard.type sends key events to whatever has focus, so
-        # the dialog never has to be dismissed at all.
-        #
-        # Empirically confirmed (ce_count=0 after Escape on a fresh project):
-        # pressing Escape RIPS DOWN the Slate editor entirely and it never
-        # comes back. So we skip Escape and any other dialog-dismissal —
-        # just focus the editor that's already in the DOM and start typing.
+        # Why remove overlay early (not just before submit click):
+        # Slate.js (the prompt editor) requires a REAL mouse click to
+        # activate before keyboard events register in its React state.
+        # JS .focus() + page.keyboard.type fires DOM key events, but
+        # Slate ignores them — the submit button stays aria-disabled=true
+        # because Slate state shows empty prompt. We confirmed this via
+        # probe: after JS focus + execCommand insertText, ce_text had
+        # our text in DOM but submit_aria_disabled was still 'true'.
+        await page.evaluate("""
+            () => {
+                document.querySelectorAll('[data-state="open"]').forEach(el => {
+                    if (el.getAttribute('role')) return;  // keep dialog content
+                    const r = el.getBoundingClientRect();
+                    if (r.width >= window.innerWidth * 0.8 && r.height >= window.innerHeight * 0.8) {
+                        el.remove();
+                    }
+                });
+            }
+        """)
+        await asyncio.sleep(0.3)
+
+        # ── Step 1: Real mouse click on the prompt input to activate
+        # Slate. Now that overlay is gone, the click reaches the editor.
         focused = await page.evaluate("""
             () => {
                 const ces = Array.from(document.querySelectorAll('[contenteditable=true]'));
@@ -362,6 +378,17 @@ async def generate_image(
                 f"dims={focused.get('debug_dims')}"
             )
         logger.info("flow_prompt_focused w=%d h=%d", focused.get("w", 0), focused.get("h", 0))
+
+        # Real mouse click on the prompt — Slate needs this to activate
+        # its React event handlers. After this, keyboard.type populates
+        # Slate's state correctly and the submit button un-disables.
+        try:
+            prompt_locator = page.locator("[contenteditable='true']").first
+            await prompt_locator.click(timeout=5000)
+            logger.info("flow_prompt_mouse_clicked")
+        except Exception as exc:
+            logger.warning("flow_prompt mouse click failed: %s — keys may go to wrong target", str(exc)[:100])
+
         await page.keyboard.type(prompt, delay=10)
         # Give React a tick to register the change.
         await asyncio.sleep(0.5)
@@ -411,24 +438,20 @@ async def generate_image(
         # reliable — it dispatches the synthetic event directly to the
         # element and bypasses the overlay entirely.
         async def _click_generate() -> None:
-            # Step 1: Remove the welcome dialog's OVERLAY layer (the full-
-            # viewport DIV that intercepts mouse clicks). Radix marks the
-            # overlay with data-state="open" and NO role attribute; the
-            # dialog CONTENT has role="dialog" — we keep that.
-            # This unblocks mouse clicks on the submit button below.
+            # Overlay was already removed at the start, but re-do it in
+            # case React re-rendered the welcome dialog overlay.
             await page.evaluate("""
                 () => {
                     document.querySelectorAll('[data-state="open"]').forEach(el => {
-                        if (el.getAttribute('role')) return;  // keep dialog content
+                        if (el.getAttribute('role')) return;
                         const r = el.getBoundingClientRect();
-                        // Only remove if it's a viewport-sized overlay
                         if (r.width >= window.innerWidth * 0.8 && r.height >= window.innerHeight * 0.8) {
                             el.remove();
                         }
                     });
                 }
             """)
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.2)
 
             # Step 2: Find the submit button — text "arrow_forward\\nTạo"
             # (Material icon name + label as two lines).
