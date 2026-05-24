@@ -57,7 +57,10 @@ from .gemini_web_login import (
 )
 from .settings import settings
 from .solvers.flow_google import generate_image, get_or_create_project
-from .solvers.gemini_web import chat as gemini_web_chat
+from .solvers.gemini_web import (
+    chat as gemini_web_chat,
+    generate_image as gemini_web_generate_image,
+)
 
 
 def _eprint(*args, **kwargs) -> None:
@@ -244,6 +247,26 @@ async def cmd_gemini_web_chat(args: list[str]) -> int:
         return 1
 
 
+async def cmd_gemini_web_image(args: list[str]) -> int:
+    """Generate image(s) via gemini.google.com (Imagen)."""
+    if len(args) < 2:
+        _eprint("Usage: gemini-web-image <profile> \"<prompt>\" [count]")
+        return 2
+    profile, prompt = args[0], args[1]
+    count = int(args[2]) if len(args) > 2 else 1
+    _eprint(f"▶ Gemini Web image gen (profile={profile} count={count})")
+    try:
+        result = await gemini_web_generate_image(
+            profile=profile, prompt=prompt, count=count,
+            timeout=180, headless=False,
+        )
+        print(json.dumps({"ok": True, **result}, ensure_ascii=False, indent=2))
+        return 0
+    except Exception as exc:
+        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
+        return 1
+
+
 async def cmd_login(args: list[str]) -> int:
     if len(args) < 3:
         _eprint("Usage: login <profile> <email> <password>")
@@ -357,6 +380,7 @@ _COMMANDS = {
     "chatgpt-onboard": cmd_chatgpt_onboard,
     "gemini-web-onboard": cmd_gemini_web_onboard,
     "gemini-web-chat": cmd_gemini_web_chat,
+    "gemini-web-image": cmd_gemini_web_image,
     "login": cmd_login,
     "gen": cmd_gen,
     "list": cmd_list,

@@ -191,6 +191,107 @@ async def _wait_for_response_complete(page, timeout: int = 90) -> str:
     raise RuntimeError(f"Gemini didn't produce a response within {timeout}s")
 
 
+async def _wait_for_image(page, timeout: int = 120) -> list[str]:
+    """Poll the latest message-content for <img> tags, return their URLs.
+
+    Gemini renders generated images as <img src="..."> inside the last
+    assistant response. Image gen typically takes 15-40s after submit.
+    """
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        await asyncio.sleep(2.0)
+        urls = await page.evaluate(
+            """() => {
+                // Find the LAST assistant response container.
+                const candidates = [
+                    'message-content',
+                    'model-response',
+                    '.model-response-text',
+                ];
+                let lastResponse = null;
+                for (const sel of candidates) {
+                    const nodes = document.querySelectorAll(sel);
+                    if (nodes.length > 0) { lastResponse = nodes[nodes.length - 1]; break; }
+                }
+                if (!lastResponse) return [];
+                // Extract <img> URLs, filtering out tiny icons (< 100px).
+                return Array.from(lastResponse.querySelectorAll('img'))
+                    .filter(img => img.naturalWidth >= 100 && img.naturalHeight >= 100)
+                    .map(img => img.src)
+                    .filter(src => src && (src.startsWith('http') || src.startsWith('data:image/')));
+            }"""
+        )
+        if urls and len(urls) > 0:
+            return urls
+    return []
+
+
+async def generate_image(
+    profile: str,
+    prompt: str,
+    count: int = 1,
+    timeout: int = 120,
+    headless: bool = False,
+) -> dict[str, Any]:
+    """Generate image(s) via gemini.google.com.
+
+    Gemini auto-detects image intent from natural language. We prepend
+    a Vietnamese trigger phrase to make the intent unambiguous, then
+    wait for <img> tags to appear in the response.
+
+    Returns:
+        {
+          "images": [{"url": ..., "mime": "image/jpeg"}, ...],
+          "elapsed_ms": int,
+        }
+    """
+    # Trigger Imagen by stating image intent explicitly.
+    if count > 1:
+        full_prompt = f"Tạo cho tôi {count} hình ảnh khác nhau về: {prompt}"
+    else:
+        full_prompt = f"Tạo cho tôi 1 hình ảnh: {prompt}"
+
+    started = time.time()
+    async with pool.page(profile=profile, headless=headless) as page:
+        await page.goto(_GEMINI_HOME, wait_until="domcontentloaded", timeout=30_000)
+        await _wait_for_ready(page, timeout=30)
+
+        await _inject_prompt(page, full_prompt)
+        await asyncio.sleep(0.4)
+        sent = await _click_send(page)
+        if not sent:
+            raise RuntimeError("Could not click Gemini Send button")
+
+        urls = await _wait_for_image(page, timeout=timeout)
+        if not urls:
+            # Maybe Gemini returned text refusal instead — try to read.
+            text = await page.evaluate(
+                """() => {
+                    const n = document.querySelectorAll('message-content');
+                    if (!n.length) return '';
+                    return (n[n.length-1].innerText || '').slice(0, 300);
+                }"""
+            )
+            raise RuntimeError(
+                f"Không có ảnh sinh trong {timeout}s. Gemini có thể từ chối: {text!r}"
+            )
+
+        # Detect mime from URL prefix.
+        images = []
+        for url in urls:
+            if url.startswith("data:image/"):
+                mime = url.split(";", 1)[0].replace("data:", "")
+            else:
+                mime = "image/jpeg"  # googleusercontent CDN serves JPEG
+            images.append({"url": url, "mime": mime})
+
+        return {
+            "images": images,
+            "count": len(images),
+            "elapsed_ms": int((time.time() - started) * 1000),
+        }
+
+
 async def chat(profile: str, prompt: str, timeout: int = 90, headless: bool = False) -> dict[str, Any]:
     """Send a single prompt to gemini.google.com and return its response.
 

@@ -40,7 +40,10 @@ from .gemini_web_login import (
     start_gemini_web_login,
     submit_2fa_code as submit_gemini_web_2fa_code,
 )
-from .solvers.gemini_web import chat as gemini_web_chat
+from .solvers.gemini_web import (
+    chat as gemini_web_chat,
+    generate_image as gemini_web_generate_image,
+)
 from .browser_pool import pool
 from .settings import settings
 from .solvers.browser_run import browser_run
@@ -172,6 +175,14 @@ class GeminiWebChatReq(BaseModel):
     profile: str = "gemini-web-default"
     prompt: str
     timeout: int = Field(default=90, ge=20, le=300)
+    headless: bool = False
+
+
+class GeminiWebImageReq(BaseModel):
+    profile: str = "gemini-web-default"
+    prompt: str
+    count: int = Field(default=1, ge=1, le=4)
+    timeout: int = Field(default=120, ge=30, le=300)
     headless: bool = False
 
 
@@ -609,6 +620,23 @@ async def api_gemini_web_chat(req: GeminiWebChatReq) -> dict[str, Any]:
         )
     except Exception as exc:
         logger.exception("gemini_web chat failed")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/v1/gemini-web/generate-image", dependencies=[Depends(require_api_key)])
+async def api_gemini_web_generate_image(req: GeminiWebImageReq) -> dict[str, Any]:
+    """Generate image(s) via gemini.google.com (triggers Imagen).
+
+    Profile must already be logged in via /v1/gemini-web/onboard.
+    Returns {images: [{url, mime}, ...], count, elapsed_ms}.
+    """
+    try:
+        return await gemini_web_generate_image(
+            profile=req.profile, prompt=req.prompt, count=req.count,
+            timeout=req.timeout, headless=req.headless,
+        )
+    except Exception as exc:
+        logger.exception("gemini_web generate_image failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
