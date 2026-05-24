@@ -35,6 +35,12 @@ from .chatgpt_login import (
     start_chatgpt_login,
     submit_2fa_code as submit_chatgpt_2fa_code,
 )
+from .gemini_web_login import (
+    get_session as get_gemini_web_session,
+    start_gemini_web_login,
+    submit_2fa_code as submit_gemini_web_2fa_code,
+)
+from .solvers.gemini_web import chat as gemini_web_chat
 from .browser_pool import pool
 from .settings import settings
 from .solvers.browser_run import browser_run
@@ -154,6 +160,19 @@ class ChatGPTOnboardReq(BaseModel):
     profile: str = "chatgpt-default"
     email: str
     password: str
+
+
+class GeminiWebOnboardReq(BaseModel):
+    profile: str = "gemini-web-default"
+    email: str
+    password: str
+
+
+class GeminiWebChatReq(BaseModel):
+    profile: str = "gemini-web-default"
+    prompt: str
+    timeout: int = Field(default=90, ge=20, le=300)
+    headless: bool = False
 
 
 class PhatNguoiReq(BaseModel):
@@ -534,6 +553,63 @@ async def api_chatgpt_onboard_2fa_code(profile: str, req: TwoFactorCodeReq) -> d
             detail="Phiên không ở state=need_code (chỉ submit được khi đang cần mã)",
         )
     return {"profile": profile, "submitted": True}
+
+
+# ── Gemini Web (gemini.google.com) ──────────────────────────────────────
+
+@app.post("/v1/gemini-web/onboard", dependencies=[Depends(require_api_key)])
+async def api_gemini_web_onboard(req: GeminiWebOnboardReq) -> dict[str, Any]:
+    """Onboard a profile for Gemini Web (gemini.google.com).
+
+    Short-circuits to success if the profile already has a valid Google
+    session (from Flow / ChatGPT onboard). Otherwise runs the standard
+    Google login flow.
+    """
+    session = await start_gemini_web_login(
+        profile=req.profile, email=req.email, password=req.password,
+    )
+    return {
+        **session.to_dict(),
+        "novnc": settings.novnc_external_url,
+        "note": "Theo dõi tiến trình ở /v1/gemini-web/{profile}/onboard-status. "
+                "Khi state=success, gọi /v1/gemini-web/chat để chat.",
+    }
+
+
+@app.get("/v1/gemini-web/{profile}/onboard-status", dependencies=[Depends(require_api_key)])
+async def api_gemini_web_onboard_status(profile: str) -> dict[str, Any]:
+    session = get_gemini_web_session(profile)
+    if session is None:
+        return {"profile": profile, "state": "none", "message": "Chưa có phiên onboard"}
+    return session.to_dict()
+
+
+@app.post("/v1/gemini-web/{profile}/onboard-2fa-code", dependencies=[Depends(require_api_key)])
+async def api_gemini_web_onboard_2fa_code(profile: str, req: TwoFactorCodeReq) -> dict[str, Any]:
+    ok = submit_gemini_web_2fa_code(profile, req.code)
+    if not ok:
+        raise HTTPException(
+            status_code=409,
+            detail="Phiên không ở state=need_code",
+        )
+    return {"profile": profile, "submitted": True}
+
+
+@app.post("/v1/gemini-web/chat", dependencies=[Depends(require_api_key)])
+async def api_gemini_web_chat(req: GeminiWebChatReq) -> dict[str, Any]:
+    """Send a prompt to gemini.google.com (DOM-scrape approach).
+
+    Profile must already be logged in via /v1/gemini-web/onboard.
+    Returns the assistant's text response + elapsed_ms.
+    """
+    try:
+        return await gemini_web_chat(
+            profile=req.profile, prompt=req.prompt,
+            timeout=req.timeout, headless=req.headless,
+        )
+    except Exception as exc:
+        logger.exception("gemini_web chat failed")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @app.get("/v1/session/list", dependencies=[Depends(require_api_key)])

@@ -50,8 +50,14 @@ from .chatgpt_login import (
     start_chatgpt_login,
     submit_2fa_code as submit_chatgpt_2fa_code,
 )
+from .gemini_web_login import (
+    get_session as get_gemini_web_session,
+    start_gemini_web_login,
+    submit_2fa_code as submit_gemini_web_2fa_code,
+)
 from .settings import settings
 from .solvers.flow_google import generate_image, get_or_create_project
+from .solvers.gemini_web import chat as gemini_web_chat
 
 
 def _eprint(*args, **kwargs) -> None:
@@ -179,6 +185,65 @@ async def cmd_chatgpt_onboard(args: list[str]) -> int:
     return 1
 
 
+async def cmd_gemini_web_onboard(args: list[str]) -> int:
+    """Gemini Web onboard — log into gemini.google.com via Google."""
+    if len(args) < 3:
+        _eprint("Usage: gemini-web-onboard <profile> <email> <google-password>")
+        return 2
+    profile, email, password = args[0], args[1], args[2]
+    _eprint(f"▶ Gemini Web onboard {email} → profile {profile}")
+    await start_gemini_web_login(profile=profile, email=email, password=password)
+    deadline = time.time() + 240
+    last_state = ""
+    while time.time() < deadline:
+        s = get_gemini_web_session(profile)
+        if s is None:
+            await asyncio.sleep(0.5)
+            continue
+        if s.state != last_state:
+            _eprint(f"  [{s.state}] {s.message}")
+            last_state = s.state
+        if s.state == "success":
+            print(json.dumps({"ok": True, "profile": profile, "email": email,
+                              "message": s.message, "elapsed_sec": s.elapsed_sec},
+                              ensure_ascii=False, indent=2))
+            return 0
+        if s.state == "failed":
+            print(json.dumps({"ok": False, "error": s.error or s.message},
+                              ensure_ascii=False))
+            return 1
+        if s.state == "need_tap":
+            if s.tap_number:
+                _eprint(f"  → TAP {s.tap_number} on phone")
+        if s.state == "need_code":
+            if sys.stdin.isatty():
+                code = input("  Nhập mã 2FA: ").strip()
+                if code:
+                    submit_gemini_web_2fa_code(profile, code)
+            else:
+                _eprint("  ⚠ Cần 2FA — POST /v1/gemini-web/{profile}/onboard-2fa-code")
+        await asyncio.sleep(2)
+    print(json.dumps({"ok": False, "error": "timeout"}, ensure_ascii=False))
+    return 1
+
+
+async def cmd_gemini_web_chat(args: list[str]) -> int:
+    """One-shot chat with gemini.google.com (DOM-scrape)."""
+    if len(args) < 2:
+        _eprint("Usage: gemini-web-chat <profile> \"<prompt>\"")
+        return 2
+    profile, prompt = args[0], args[1]
+    _eprint(f"▶ Gemini Web chat (profile={profile})")
+    try:
+        result = await gemini_web_chat(profile=profile, prompt=prompt,
+                                        timeout=120, headless=False)
+        print(json.dumps({"ok": True, **result}, ensure_ascii=False, indent=2))
+        return 0
+    except Exception as exc:
+        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
+        return 1
+
+
 async def cmd_login(args: list[str]) -> int:
     if len(args) < 3:
         _eprint("Usage: login <profile> <email> <password>")
@@ -290,6 +355,8 @@ async def cmd_close(args: list[str]) -> int:
 _COMMANDS = {
     "onboard": cmd_onboard,
     "chatgpt-onboard": cmd_chatgpt_onboard,
+    "gemini-web-onboard": cmd_gemini_web_onboard,
+    "gemini-web-chat": cmd_gemini_web_chat,
     "login": cmd_login,
     "gen": cmd_gen,
     "list": cmd_list,
