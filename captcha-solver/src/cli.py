@@ -58,8 +58,10 @@ from .gemini_web_login import (
 from .settings import settings
 from .solvers.flow_google import generate_image, get_or_create_project
 from .solvers.gemini_web import (
+    analyze_image as gemini_web_analyze_image,
     chat as gemini_web_chat,
     generate_image as gemini_web_generate_image,
+    generate_music as gemini_web_generate_music,
 )
 
 
@@ -267,6 +269,44 @@ async def cmd_gemini_web_image(args: list[str]) -> int:
         return 1
 
 
+async def cmd_gemini_web_music(args: list[str]) -> int:
+    """Generate music via Lyria on gemini.google.com."""
+    if len(args) < 2:
+        _eprint("Usage: gemini-web-music <profile> \"<prompt>\"")
+        return 2
+    profile, prompt = args[0], args[1]
+    _eprint(f"▶ Gemini Web music gen (profile={profile})")
+    try:
+        result = await gemini_web_generate_music(
+            profile=profile, prompt=prompt, timeout=240, headless=False,
+        )
+        print(json.dumps({"ok": True, **result}, ensure_ascii=False, indent=2))
+        return 0
+    except Exception as exc:
+        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
+        return 1
+
+
+async def cmd_gemini_web_vision(args: list[str]) -> int:
+    """Upload an image to Gemini and ask a question."""
+    if len(args) < 2:
+        _eprint("Usage: gemini-web-vision <profile> <image-url-or-data> [\"<prompt>\"]")
+        return 2
+    profile, image = args[0], args[1]
+    prompt = args[2] if len(args) > 2 else "Phân tích nội dung ảnh này một cách chi tiết."
+    _eprint(f"▶ Gemini Web vision (profile={profile})")
+    try:
+        result = await gemini_web_analyze_image(
+            profile=profile, image=image, prompt=prompt,
+            timeout=180, headless=False,
+        )
+        print(json.dumps({"ok": True, **result}, ensure_ascii=False, indent=2))
+        return 0
+    except Exception as exc:
+        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
+        return 1
+
+
 async def cmd_login(args: list[str]) -> int:
     if len(args) < 3:
         _eprint("Usage: login <profile> <email> <password>")
@@ -381,6 +421,8 @@ _COMMANDS = {
     "gemini-web-onboard": cmd_gemini_web_onboard,
     "gemini-web-chat": cmd_gemini_web_chat,
     "gemini-web-image": cmd_gemini_web_image,
+    "gemini-web-music": cmd_gemini_web_music,
+    "gemini-web-vision": cmd_gemini_web_vision,
     "login": cmd_login,
     "gen": cmd_gen,
     "list": cmd_list,

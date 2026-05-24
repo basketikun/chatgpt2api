@@ -217,6 +217,57 @@ async def _wait_for_response_complete(page, timeout: int = 90) -> str:
     raise RuntimeError(f"Gemini didn't produce a response within {timeout}s (last text: {last_text!r})")
 
 
+async def _activate_tool(page, tool_name: str) -> bool:
+    """Open the '+' (Thêm tệp) menu and click a tool by Vietnamese name.
+
+    Gemini Free's image gen / music gen / canvas / deep research are
+    NOT auto-detected from natural language — they're TOOLS that must
+    be activated from the composer's + menu BEFORE typing the prompt.
+    After activation a chip ('Hình ảnh' / 'Nhạc' / ...) appears below
+    the input to confirm the mode.
+
+    Tool names (case-insensitive substring match):
+      'Tạo hình ảnh'   → image generation (Imagen)
+      'Tạo nhạc'       → music generation (Lyria)
+      'Canvas'         → canvas mode
+      'Deep Research'  → deep research mode
+      'Tải tệp lên'    → upload file (also works via input[type=file])
+    """
+    try:
+        await page.locator(
+            'button[aria-label="Thêm tệp"], button[aria-label*="Add file"], button[aria-label*="Attach"]'
+        ).first.click(timeout=5000)
+    except Exception as exc:
+        logger.warning("gemini_web: open + menu failed: %s", exc)
+        return False
+
+    await asyncio.sleep(0.7)
+
+    clicked = await page.evaluate(
+        """(name) => {
+            const target = name.toLowerCase();
+            const items = Array.from(document.querySelectorAll(
+                '[role=menuitem], [role=menu] button, [role=menu] a, '
+                + '.mat-mdc-menu-item, button[mat-menu-item], '
+                + '.cdk-overlay-pane button, .cdk-overlay-pane a'
+            ));
+            for (const el of items) {
+                if (el.offsetWidth === 0) continue;
+                const t = (el.innerText || '').toLowerCase().trim();
+                if (t.includes(target)) { el.click(); return t.slice(0, 60); }
+            }
+            return '';
+        }""",
+        tool_name,
+    )
+    if clicked:
+        logger.info("gemini_web: activated tool '%s' (matched '%s')", tool_name, clicked)
+        await asyncio.sleep(0.8)
+        return True
+    logger.warning("gemini_web: tool '%s' not in + menu", tool_name)
+    return False
+
+
 async def _wait_for_image(page, timeout: int = 120) -> list[str]:
     """Poll the latest message-content for <img> tags, return their URLs.
 
@@ -259,29 +310,35 @@ async def generate_image(
     timeout: int = 120,
     headless: bool = False,
 ) -> dict[str, Any]:
-    """Generate image(s) via gemini.google.com.
+    """Generate image(s) via gemini.google.com (Imagen).
 
-    Gemini auto-detects image intent from natural language. We prepend
-    a Vietnamese trigger phrase to make the intent unambiguous, then
-    wait for <img> tags to appear in the response.
+    Workflow (confirmed via real Gemini Web UI):
+      1. Click + menu → activate 'Tạo hình ảnh' tool (badge appears)
+      2. Type prompt → Send
+      3. Wait for <img> tags in the response container
+
+    Without step 1 Gemini just chats back the description — doesn't
+    actually generate. count parameter is appended to the prompt as
+    a hint to Imagen.
 
     Returns:
-        {
-          "images": [{"url": ..., "mime": "image/jpeg"}, ...],
-          "elapsed_ms": int,
-        }
+        {"images": [{"url", "mime"}, ...], "count": int, "elapsed_ms": int}
     """
-    # Trigger Imagen by stating image intent explicitly.
-    if count > 1:
-        full_prompt = f"Tạo cho tôi {count} hình ảnh khác nhau về: {prompt}"
-    else:
-        full_prompt = f"Tạo cho tôi 1 hình ảnh: {prompt}"
+    full_prompt = f"{prompt} ({count} ảnh)" if count > 1 else prompt
 
     started = time.time()
     async with pool.page(profile=profile, headless=headless) as page:
         await page.goto(_GEMINI_HOME, wait_until="domcontentloaded", timeout=30_000)
         await _wait_for_ready(page, timeout=30)
 
+        # 1. Activate the image tool from the + menu.
+        activated = await _activate_tool(page, "Tạo hình ảnh")
+        if not activated:
+            raise RuntimeError(
+                "Không bật được tool 'Tạo hình ảnh' (account có thể chưa có Imagen)"
+            )
+
+        # 2. Type prompt + send.
         await _inject_prompt(page, full_prompt)
         await asyncio.sleep(0.4)
         sent = await _click_send(page)
@@ -290,7 +347,6 @@ async def generate_image(
 
         urls = await _wait_for_image(page, timeout=timeout)
         if not urls:
-            # Maybe Gemini returned text refusal instead — try to read.
             text = await page.evaluate(
                 """() => {
                     const n = document.querySelectorAll('message-content');
@@ -314,6 +370,194 @@ async def generate_image(
         return {
             "images": images,
             "count": len(images),
+            "elapsed_ms": int((time.time() - started) * 1000),
+        }
+
+
+async def analyze_image(
+    profile: str,
+    image: str,
+    prompt: str = "Phân tích nội dung ảnh này một cách chi tiết.",
+    timeout: int = 120,
+    headless: bool = False,
+) -> dict[str, Any]:
+    """Upload an image to gemini.google.com and ask a question about it.
+
+    Args:
+        image: either a `data:image/<mime>;base64,<...>` data URL or an
+               https URL to an image. The captcha-solver downloads it
+               and uploads it to Gemini.
+        prompt: text question to ask alongside the image.
+
+    Returns:
+        {"text": <Gemini's analysis>, "elapsed_ms": int}
+    """
+    import base64
+    import os
+    import tempfile
+
+    import httpx
+
+    # 1. Resolve image → temp file on disk (Playwright set_input_files
+    #    requires a real path).
+    if image.startswith("data:"):
+        header, b64 = image.split(",", 1)
+        mime = header.split(";")[0].replace("data:", "")
+        data = base64.b64decode(b64)
+    elif image.startswith(("http://", "https://")):
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+            r = await client.get(image)
+            r.raise_for_status()
+        data = r.content
+        mime = (r.headers.get("content-type") or "image/png").split(";")[0].strip()
+    else:
+        raise ValueError("image must be data: URL or http(s) URL")
+
+    ext = mime.split("/")[1] if "/" in mime else "png"
+    tmp = tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=False)
+    tmp.write(data)
+    tmp.close()
+
+    started = time.time()
+    try:
+        async with pool.page(profile=profile, headless=headless) as page:
+            await page.goto(_GEMINI_HOME, wait_until="domcontentloaded", timeout=30_000)
+            await _wait_for_ready(page, timeout=30)
+
+            # 2. Upload via the first <input type="file"> on the page.
+            #    Gemini's upload input is hidden but Playwright can still
+            #    push files into it without clicking the visible "Add file"
+            #    button.
+            try:
+                await page.locator('input[type="file"]').first.set_input_files(tmp.name)
+                logger.info("gemini_web: uploaded image %s (mime=%s)", tmp.name, mime)
+            except Exception as exc:
+                raise RuntimeError(f"Không tìm thấy file input trên Gemini: {exc}") from exc
+
+            # 3. Wait for thumbnail / preview to appear (so Send isn't
+            #    disabled when we click).
+            await asyncio.sleep(3.0)
+
+            # 4. Type prompt + send.
+            await _inject_prompt(page, prompt)
+            await asyncio.sleep(0.4)
+            sent = await _click_send(page)
+            if not sent:
+                raise RuntimeError("Không click được nút Send sau khi upload")
+
+            # 5. Wait for response (longer timeout — vision often takes 20-40s).
+            text = await _wait_for_response_complete(page, timeout=timeout)
+            return {
+                "text": text,
+                "elapsed_ms": int((time.time() - started) * 1000),
+            }
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except Exception:
+            pass
+
+
+async def _wait_for_audio(page, timeout: int = 180) -> list[str]:
+    """Poll the latest response container for <audio> / <video> tags with
+    source URLs. Music gen typically takes 30-90s."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        await asyncio.sleep(3.0)
+        urls = await page.evaluate(
+            """() => {
+                const candidates = [
+                    'message-content', 'model-response', '.model-response-text',
+                ];
+                let lastResponse = null;
+                for (const sel of candidates) {
+                    const nodes = document.querySelectorAll(sel);
+                    if (nodes.length > 0) { lastResponse = nodes[nodes.length - 1]; break; }
+                }
+                if (!lastResponse) return [];
+                const out = [];
+                // <audio> with src or <source>
+                lastResponse.querySelectorAll('audio').forEach(a => {
+                    if (a.src) out.push(a.src);
+                    a.querySelectorAll('source').forEach(s => { if (s.src) out.push(s.src); });
+                });
+                // <video> too (Lyria sometimes wraps audio in video player)
+                lastResponse.querySelectorAll('video').forEach(v => {
+                    if (v.src) out.push(v.src);
+                    v.querySelectorAll('source').forEach(s => { if (s.src) out.push(s.src); });
+                });
+                // Or download links pointing at audio
+                lastResponse.querySelectorAll('a[href*=".mp3"], a[href*=".wav"], a[href*=".ogg"], a[href*=".m4a"], a[href*="audio"]').forEach(a => {
+                    if (a.href) out.push(a.href);
+                });
+                return out.filter(u => u && (u.startsWith('http') || u.startsWith('data:audio') || u.startsWith('blob:')));
+            }"""
+        )
+        if urls and len(urls) > 0:
+            return urls
+    return []
+
+
+async def generate_music(
+    profile: str,
+    prompt: str,
+    timeout: int = 180,
+    headless: bool = False,
+) -> dict[str, Any]:
+    """Generate music via gemini.google.com (Lyria).
+
+    Workflow same as image gen but activates 'Tạo nhạc' tool.
+
+    Returns:
+        {"audio": [{"url", "mime"}, ...], "elapsed_ms": int}
+    """
+    started = time.time()
+    async with pool.page(profile=profile, headless=headless) as page:
+        await page.goto(_GEMINI_HOME, wait_until="domcontentloaded", timeout=30_000)
+        await _wait_for_ready(page, timeout=30)
+
+        activated = await _activate_tool(page, "Tạo nhạc")
+        if not activated:
+            raise RuntimeError(
+                "Không bật được tool 'Tạo nhạc' (account có thể chưa có Lyria)"
+            )
+
+        await _inject_prompt(page, prompt)
+        await asyncio.sleep(0.4)
+        sent = await _click_send(page)
+        if not sent:
+            raise RuntimeError("Could not click Gemini Send button")
+
+        urls = await _wait_for_audio(page, timeout=timeout)
+        if not urls:
+            text = await page.evaluate(
+                """() => {
+                    const n = document.querySelectorAll('message-content');
+                    if (!n.length) return '';
+                    return (n[n.length-1].innerText || '').slice(0, 300);
+                }"""
+            )
+            raise RuntimeError(
+                f"Không có nhạc sinh trong {timeout}s. Gemini có thể từ chối: {text!r}"
+            )
+
+        audio = []
+        for url in urls:
+            if url.startswith("data:audio/"):
+                mime = url.split(";", 1)[0].replace("data:", "")
+            elif url.endswith(".wav"):
+                mime = "audio/wav"
+            elif url.endswith(".ogg"):
+                mime = "audio/ogg"
+            elif url.endswith(".m4a"):
+                mime = "audio/mp4"
+            else:
+                mime = "audio/mpeg"
+            audio.append({"url": url, "mime": mime})
+
+        return {
+            "audio": audio,
+            "count": len(audio),
             "elapsed_ms": int((time.time() - started) * 1000),
         }
 

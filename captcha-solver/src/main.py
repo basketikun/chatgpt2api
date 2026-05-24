@@ -41,8 +41,10 @@ from .gemini_web_login import (
     submit_2fa_code as submit_gemini_web_2fa_code,
 )
 from .solvers.gemini_web import (
+    analyze_image as gemini_web_analyze_image,
     chat as gemini_web_chat,
     generate_image as gemini_web_generate_image,
+    generate_music as gemini_web_generate_music,
 )
 from .browser_pool import pool
 from .settings import settings
@@ -182,6 +184,21 @@ class GeminiWebImageReq(BaseModel):
     profile: str = "gemini-web-default"
     prompt: str
     count: int = Field(default=1, ge=1, le=4)
+    timeout: int = Field(default=120, ge=30, le=300)
+    headless: bool = False
+
+
+class GeminiWebMusicReq(BaseModel):
+    profile: str = "gemini-web-default"
+    prompt: str
+    timeout: int = Field(default=180, ge=30, le=600)
+    headless: bool = False
+
+
+class GeminiWebVisionReq(BaseModel):
+    profile: str = "gemini-web-default"
+    image: str  # data:image/...;base64,... OR https URL
+    prompt: str = "Phân tích nội dung ảnh này một cách chi tiết."
     timeout: int = Field(default=120, ge=30, le=300)
     headless: bool = False
 
@@ -625,11 +642,8 @@ async def api_gemini_web_chat(req: GeminiWebChatReq) -> dict[str, Any]:
 
 @app.post("/v1/gemini-web/generate-image", dependencies=[Depends(require_api_key)])
 async def api_gemini_web_generate_image(req: GeminiWebImageReq) -> dict[str, Any]:
-    """Generate image(s) via gemini.google.com (triggers Imagen).
-
-    Profile must already be logged in via /v1/gemini-web/onboard.
-    Returns {images: [{url, mime}, ...], count, elapsed_ms}.
-    """
+    """Generate image(s) via Imagen — activates the 'Tạo hình ảnh' tool
+    in Gemini's + menu, types the prompt, scrapes <img> from response."""
     try:
         return await gemini_web_generate_image(
             profile=req.profile, prompt=req.prompt, count=req.count,
@@ -637,6 +651,34 @@ async def api_gemini_web_generate_image(req: GeminiWebImageReq) -> dict[str, Any
         )
     except Exception as exc:
         logger.exception("gemini_web generate_image failed")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/v1/gemini-web/generate-music", dependencies=[Depends(require_api_key)])
+async def api_gemini_web_generate_music(req: GeminiWebMusicReq) -> dict[str, Any]:
+    """Generate music via Lyria — activates the 'Tạo nhạc' tool in
+    Gemini's + menu, types the prompt, scrapes <audio>/<source> URLs."""
+    try:
+        return await gemini_web_generate_music(
+            profile=req.profile, prompt=req.prompt,
+            timeout=req.timeout, headless=req.headless,
+        )
+    except Exception as exc:
+        logger.exception("gemini_web generate_music failed")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/v1/gemini-web/analyze-image", dependencies=[Depends(require_api_key)])
+async def api_gemini_web_analyze_image(req: GeminiWebVisionReq) -> dict[str, Any]:
+    """Upload an image to Gemini Web and ask a question about it.
+    Accepts `image` as either a data:image/...;base64 URL or an https URL."""
+    try:
+        return await gemini_web_analyze_image(
+            profile=req.profile, image=req.image, prompt=req.prompt,
+            timeout=req.timeout, headless=req.headless,
+        )
+    except Exception as exc:
+        logger.exception("gemini_web analyze_image failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
