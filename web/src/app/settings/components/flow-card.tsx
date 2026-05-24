@@ -29,6 +29,7 @@ type FlowConfig = {
   captcha_solver_url: string;
   captcha_solver_api_key: string;
   accounts: FlowAccount[];
+  cooldown_seconds?: number;
 };
 
 const DEFAULT_BASE_PROFILE = "google-fx";
@@ -76,6 +77,7 @@ export function FlowCard() {
     captcha_solver_url: "http://172.16.10.38:8010",
     captcha_solver_api_key: "AnhNhi@0610",
     accounts: [],
+    cooldown_seconds: 3600,
   });
   const [draft, setDraft] = useState<FlowAccount>({ ...EMPTY_ACCOUNT });
   const [loading, setLoading] = useState(true);
@@ -134,6 +136,7 @@ export function FlowCard() {
         captcha_solver_url: flow.captcha_solver_url || "http://172.16.10.38:8010",
         captcha_solver_api_key: flow.captcha_solver_api_key || "",
         accounts: Array.isArray(flow.accounts) ? flow.accounts : [],
+        cooldown_seconds: typeof flow.cooldown_seconds === "number" ? flow.cooldown_seconds : 3600,
       });
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
@@ -421,28 +424,52 @@ export function FlowCard() {
         </div>
 
         {/* Captcha-solver connection */}
-        <div className="grid gap-3 sm:grid-cols-2 rounded-xl border border-emerald-200/60 bg-white/60 p-3">
-          <div>
-            <label className="text-xs text-emerald-800">Captcha-solver URL</label>
-            <Input
-              value={cfg.captcha_solver_url}
-              onChange={(e) => setCfg({ ...cfg, captcha_solver_url: e.target.value })}
-              onBlur={() => void save(cfg)}
-              placeholder="http://172.16.10.38:8010"
-              className="mt-1 h-9 rounded-lg border-emerald-200 text-sm font-mono"
-            />
+        <div className="grid gap-3 sm:grid-cols-3 rounded-xl border border-emerald-200/60 bg-white/60 p-3">
+          <div className="sm:col-span-2 grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="text-xs text-emerald-800">Captcha-solver URL</label>
+              <Input
+                value={cfg.captcha_solver_url}
+                onChange={(e) => setCfg({ ...cfg, captcha_solver_url: e.target.value })}
+                onBlur={() => void save(cfg)}
+                placeholder="http://172.16.10.38:8010"
+                className="mt-1 h-9 rounded-lg border-emerald-200 text-sm font-mono"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-emerald-800">Captcha-solver API Key</label>
+              <Input
+                type="password"
+                value={cfg.captcha_solver_api_key}
+                onChange={(e) => setCfg({ ...cfg, captcha_solver_api_key: e.target.value })}
+                onBlur={() => void save(cfg)}
+                placeholder="bearer key"
+                className="mt-1 h-9 rounded-lg border-emerald-200 text-sm font-mono"
+              />
+            </div>
           </div>
           <div>
-            <label className="text-xs text-emerald-800">Captcha-solver API Key</label>
+            <label className="text-xs text-emerald-800">Cooldown sau rate-limit (giây)</label>
             <Input
-              type="password"
-              value={cfg.captcha_solver_api_key}
-              onChange={(e) => setCfg({ ...cfg, captcha_solver_api_key: e.target.value })}
+              type="number"
+              min={60}
+              max={86400}
+              step={60}
+              value={cfg.cooldown_seconds ?? 3600}
+              onChange={(e) => setCfg({ ...cfg, cooldown_seconds: parseInt(e.target.value) || 3600 })}
               onBlur={() => void save(cfg)}
-              placeholder="bearer key"
+              placeholder="3600"
               className="mt-1 h-9 rounded-lg border-emerald-200 text-sm font-mono"
             />
+            <p className="mt-1 text-[10px] text-emerald-700/70">
+              {Math.round((cfg.cooldown_seconds ?? 3600) / 60)} phút · Khi 1 account dính 429/quota → skip trong khoảng này. Auto re-enter pool khi hết.
+            </p>
           </div>
+        </div>
+
+        {/* Strict-priority fallback explainer */}
+        <div className="rounded-xl border border-emerald-200/40 bg-emerald-50/30 px-3 py-2 text-[11px] text-emerald-800/90">
+          <span className="font-semibold">Fallback rotation:</span> Main luôn được dùng trước. Khi Main dính quota → tự fallback sang Backup → Spare 1 → Spare 2 → … theo thứ tự trong danh sách. Hết cooldown thì auto re-enter pool ở slot ưu tiên.
         </div>
 
         {/* Existing accounts list */}

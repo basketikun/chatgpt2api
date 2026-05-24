@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# cs-cli — host-side wrapper for the captcha-solver CLI.
+#
+# Lets you run captcha-solver operations from the host machine without
+# installing Python / Patchright locally. Just delegates everything to
+# `docker exec captcha-solver python -m src.cli ...`.
+#
+# Install:
+#   sudo cp captcha-solver/bin/cs-cli /usr/local/bin/cs-cli
+#   sudo chmod +x /usr/local/bin/cs-cli
+#
+# Usage (anywhere on the host):
+#   cs-cli onboard google-fx-3 newuser@gmail.com 'mypassword'
+#   cs-cli login google-fx-1 olduser@gmail.com 'pwd'
+#   cs-cli gen google-fx-2 'b01155d0-c740-...' 'a red apple on a table'
+#   cs-cli list
+#   cs-cli status google-fx-2
+#   cs-cli close google-fx-2
+#
+# Environment overrides:
+#   CS_CONTAINER   container name (default: captcha-solver)
+#   CS_HOST        remote host to ssh into first (default: local docker)
+#
+# Examples:
+#   CS_HOST=root@172.16.10.38 cs-cli list
+#   CS_CONTAINER=captcha-dev cs-cli onboard ...
+
+set -euo pipefail
+
+CONTAINER="${CS_CONTAINER:-captcha-solver}"
+
+if [[ -n "${CS_HOST:-}" ]]; then
+  # Remote mode: ssh into host, then docker exec.
+  # Quote args to survive the ssh shell.
+  args=()
+  for a in "$@"; do
+    args+=("$(printf '%q' "$a")")
+  done
+  exec ssh -t "$CS_HOST" "docker exec -i ${CONTAINER} python -m src.cli ${args[*]}"
+else
+  # Local mode (or run from inside an SSH session already).
+  exec docker exec -i "$CONTAINER" python -m src.cli "$@"
+fi

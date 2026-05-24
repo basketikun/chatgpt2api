@@ -523,6 +523,49 @@ The phatnguoi.vn Turnstile is strict; one-time noVNC login required (same
 flow as Google Flow above) using profile `phatnguoi`. After that, cookies
 keep working for a few hours to a few days.
 
+## CLI (`cs-cli`)
+
+For full automation without the chatgpt2api UI, the captcha-solver
+ships a CLI you can drive from the host. Install the wrapper:
+
+```bash
+sudo cp captcha-solver/bin/cs-cli /usr/local/bin/cs-cli
+sudo chmod +x /usr/local/bin/cs-cli
+# Optional — point at a remote host running the container
+echo 'export CS_HOST=root@172.16.10.38' >> ~/.bashrc
+```
+
+Then anywhere on the host:
+
+```bash
+# Onboard a brand-new Google account end-to-end:
+#   1. auto-login (handles 2FA tap-match + SMS code prompts)
+#   2. open labs.google/fx/tools/flow + create a project
+#   3. print {profile, project_id} ready to paste into Flow accounts
+cs-cli onboard google-fx-3 newuser@gmail.com 'mypassword'
+# → emits JSON; pipe into jq -r '.config_entry' to extract the config
+
+# Re-login a profile whose session expired
+cs-cli login google-fx-1 olduser@gmail.com 'mypassword'
+
+# Smoke-test image gen on an account (no chatgpt2api in the loop)
+cs-cli gen google-fx-2 'b01155d0-c740-4b9d-aff2-2a861652f776' \
+       'a red apple on a wooden table at sunset'
+
+# Debug utilities
+cs-cli list                      # all profiles + sizes
+cs-cli status google-fx-1        # one profile (cookies, pages)
+cs-cli close google-fx-1         # close cached browser (free RAM)
+```
+
+When a profile is in `state=need_code` (SMS / TOTP), the CLI prompts
+on the TTY for the code. If your shell isn't interactive, POST the
+code via `/v1/session/{profile}/auto-login-2fa-code` with curl.
+
+The CLI uses the same code paths as the HTTP API, so behavior is
+identical — `cs-cli onboard ...` produces the same profile state as
+clicking "1-click thêm tài khoản" in the chatgpt2api Settings UI.
+
 ## Manual login flow
 
 Any site that gates content behind a real-user session can be primed once

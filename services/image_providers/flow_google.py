@@ -139,16 +139,23 @@ def _resolve_aspect(size: str | None) -> str:
 
 
 # ── Account pool (in-process state) ───────────────────────────────────────
+#
+# Selection model: STRICT PRIORITY (Main → Backup → Spare 1 → …).
+# Account at index 0 (Main) is always tried first. We only fall through
+# to index 1 (Backup) when Main is in cooldown OR was already-tried in
+# this request. Same for index 2, 3, etc.
+#
+# Cooldown auto-resets when the timer expires — the account silently
+# re-enters the pool at its priority slot. No manual unlock needed.
 
 _pool_lock = threading.Lock()
 # Account state by composite key (profile + project) so we don't collide
 # across accounts that happen to share a profile.
 _account_state: dict[str, dict[str, float]] = {}
-# Round-robin cursor per provider config snapshot.
-_rotation_index: dict[str, int] = {}
 
-# How long to skip an account after a quota / 429 error.
-_QUOTA_COOLDOWN_S = 3600.0
+# Default cooldown when no explicit config — 1 hour (Flow Pro quota
+# typically resets hourly). Override via providers.flow.cooldown_seconds.
+_DEFAULT_COOLDOWN_S = 3600.0
 
 
 def _account_key(account: dict[str, Any]) -> str:
@@ -159,6 +166,22 @@ def _pool_config() -> dict[str, Any]:
     providers = config.data.get("providers") or {}
     cfg = providers.get("flow") or {}
     return cfg if isinstance(cfg, dict) else {}
+
+
+def _cooldown_seconds() -> float:
+    """Cooldown after a 429 / quota error, in seconds.
+
+    Reads providers.flow.cooldown_seconds from the live config so admins
+    can tune it per environment via the Settings → Flow card."""
+    cfg = _pool_config()
+    raw = cfg.get("cooldown_seconds")
+    try:
+        val = float(raw)
+        if val > 0:
+            return val
+    except (TypeError, ValueError):
+        pass
+    return _DEFAULT_COOLDOWN_S
 
 
 def _accounts() -> list[dict[str, Any]]:
@@ -178,15 +201,19 @@ def _accounts() -> list[dict[str, Any]]:
 
 
 def _next_account(exclude: set[str] | None = None) -> dict[str, Any] | None:
-    """Pick the next healthy account, skipping ones in cooldown."""
+    """Pick the highest-priority healthy account.
+
+    Strict priority: index 0 (Main) is always tried first. We only move
+    on to index 1 (Backup) when index 0 is in cooldown OR `exclude` (the
+    caller already tried it in this request and got a quota error).
+    """
     accounts = _accounts()
     if not accounts:
         return None
     exclude = exclude or set()
     now = time.time()
     with _pool_lock:
-        for offset in range(len(accounts)):
-            idx = (_rotation_index.get("flow", 0) + offset) % len(accounts)
+        for idx in range(len(accounts)):
             acc = accounts[idx]
             key = _account_key(acc)
             if key in exclude:
@@ -195,18 +222,20 @@ def _next_account(exclude: set[str] | None = None) -> dict[str, Any] | None:
             cooldown_until = state.get("cooldown_until", 0)
             if cooldown_until and now < cooldown_until:
                 continue
-            _rotation_index["flow"] = (idx + 1) % len(accounts)
             return acc
-        # All in cooldown — return the LEAST recently failed one anyway
-        return accounts[_rotation_index.get("flow", 0) % len(accounts)]
+        # All accounts are in cooldown OR excluded — the pool is fully
+        # exhausted. Return None so the dispatcher reports a clear
+        # error to the caller (rather than silently picking a dead one).
+        return None
 
 
 def _mark_quota_exhausted(account: dict[str, Any]) -> None:
+    cooldown_s = _cooldown_seconds()
     with _pool_lock:
         key = _account_key(account)
-        _account_state.setdefault(key, {})["cooldown_until"] = time.time() + _QUOTA_COOLDOWN_S
+        _account_state.setdefault(key, {})["cooldown_until"] = time.time() + cooldown_s
     logger.warning({"event": "flow_account_cooldown", "account": account.get("label"),
-                    "cooldown_s": _QUOTA_COOLDOWN_S})
+                    "cooldown_s": cooldown_s})
 
 
 # ── Adapter ──────────────────────────────────────────────────────────────
@@ -220,15 +249,31 @@ class FlowImageAdapter(BaseImageAdapter):
         """Tell the dispatch layer how many accounts to retry across."""
         return max(1, len(_accounts()))
 
-    def _current_account(self, key_try: int) -> dict[str, Any] | None:
-        accounts = _accounts()
-        if not accounts:
-            return None
-        # Re-derive index from key_try so each retry picks a different acct.
-        idx = (_rotation_index.get("flow", 0) + key_try) % len(accounts)
-        with _pool_lock:
-            _rotation_index["flow"] = (idx + 1) % len(accounts)
-        return accounts[idx]
+    # Track which account each request has tried so retries skip dead ones.
+    # Keyed by Python object id of the credentials dict (one per request).
+    _tried_by_req: dict[int, set[str]] = {}
+
+    def _current_account(
+        self,
+        key_try: int,
+        credentials: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        """Strict-priority pick. On retry, exclude the account from the
+        previous try so the dispatcher actually rotates to the next
+        priority slot instead of looping on the same dead Main."""
+        req_key = id(credentials) if credentials is not None else 0
+        excluded = self._tried_by_req.setdefault(req_key, set())
+        # Always ask the pool for the next healthy account, excluding
+        # already-tried ones in this request. Priority order is enforced
+        # by _next_account itself.
+        acc = _next_account(exclude=excluded)
+        if acc:
+            excluded.add(_account_key(acc))
+        # GC: requests with >10 tries are likely going nowhere — drop state
+        # so we don't accumulate dict entries from ids of stale objects.
+        if len(excluded) > 10:
+            self._tried_by_req.pop(req_key, None)
+        return acc
 
     def build_url(
         self,
@@ -244,7 +289,7 @@ class FlowImageAdapter(BaseImageAdapter):
             )
         # Stash the chosen account on the credentials dict so build_body
         # can read it without re-rotating.
-        account = self._current_account(key_try)
+        account = self._current_account(key_try, credentials=credentials)
         if credentials is not None and account is not None:
             credentials["_flow_account"] = account
         return f"{base}/v1/google/flow/generate-image"
