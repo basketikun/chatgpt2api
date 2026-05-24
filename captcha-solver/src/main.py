@@ -34,6 +34,7 @@ from .chatgpt_login import (
     get_session as get_chatgpt_session,
     start_chatgpt_login,
     submit_2fa_code as submit_chatgpt_2fa_code,
+    refresh_jwt as refresh_chatgpt_jwt,
 )
 from .gemini_web_login import (
     get_session as get_gemini_web_session,
@@ -608,6 +609,26 @@ async def api_chatgpt_onboard_2fa_code(profile: str, req: TwoFactorCodeReq) -> d
             detail="Phiên không ở state=need_code (chỉ submit được khi đang cần mã)",
         )
     return {"profile": profile, "submitted": True}
+
+
+@app.post("/v1/chatgpt/{profile}/refresh-jwt", dependencies=[Depends(require_api_key)])
+async def api_chatgpt_refresh_jwt(profile: str) -> dict[str, Any]:
+    """Refresh JWT for an already-logged-in profile.
+
+    No password / Google OAuth dance — just opens chatgpt.com using the
+    profile's persistent cookies and scrapes /api/auth/session for a
+    fresh accessToken (28-day rolling expiry).
+
+    Returns 401 if profile is logged out (caller must re-onboard).
+    """
+    try:
+        result = await refresh_chatgpt_jwt(profile)
+        return {"profile": profile, "ok": True, **result}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("chatgpt refresh_jwt failed profile=%s", profile)
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 # ── Gemini Web (gemini.google.com) ──────────────────────────────────────

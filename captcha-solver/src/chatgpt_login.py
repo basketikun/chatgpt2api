@@ -97,6 +97,36 @@ _sessions: dict[str, ChatGPTLoginSession] = {}
 _tasks: dict[str, asyncio.Task] = {}
 
 
+async def refresh_jwt(profile: str, timeout: int = 30) -> dict:
+    """Refresh ChatGPT JWT for an already logged-in profile.
+
+    Opens the persistent profile (no login flow), visits chatgpt.com,
+    scrapes /api/auth/session and returns the freshest accessToken.
+    Reuses the same browser pool as the login flow but does NOT trigger
+    Google OAuth — relies on existing cookies.
+
+    Returns: {"access_token": str, "expires": str|None, "email": str|None}
+    Raises: RuntimeError if profile is logged out or scrape fails.
+    """
+    ctx = await pool.get(profile=profile, headless=True, force_recreate=False)
+    pages = ctx.pages
+    page = pages[0] if pages else await ctx.new_page()
+    try:
+        await page.goto(_CHATGPT_HOME, wait_until="domcontentloaded", timeout=timeout * 1000)
+        await asyncio.sleep(1.5)
+        scraped = await _scrape_session(page)
+        if not scraped or not scraped.get("accessToken"):
+            raise RuntimeError("Profile not logged in or session expired")
+        return {
+            "access_token": scraped["accessToken"],
+            "expires": str(scraped.get("expires") or ""),
+            "email": (scraped.get("user") or {}).get("email"),
+        }
+    finally:
+        # Don't close the page — pool keeps the context alive for reuse
+        pass
+
+
 def get_session(profile: str) -> Optional[ChatGPTLoginSession]:
     return _sessions.get(profile)
 

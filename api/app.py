@@ -30,6 +30,12 @@ def create_app() -> FastAPI:
         # Fetch latest Karpathy guidelines + start quota watcher (fire-and-forget)
         refresh_guidelines()
         watcher_task = asyncio.create_task(quota_watcher.start())
+        # Start JWT auto-refresh scheduler (ChatGPT free 28-day expiry)
+        try:
+            from services.jwt_refresh_scheduler import start as start_jwt_refresh
+            start_jwt_refresh()
+        except Exception:
+            pass
         # Pre-load HA client to start background scheduler
         try:
             from services.ha_client import format_states_context
