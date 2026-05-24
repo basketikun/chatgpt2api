@@ -233,38 +233,84 @@ async def _activate_tool(page, tool_name: str) -> bool:
       'Deep Research'  → deep research mode
       'Tải tệp lên'    → upload file (also works via input[type=file])
     """
+    # 1. Open + menu via Playwright real mouse click.
     try:
         await page.locator(
             'button[aria-label="Thêm tệp"], button[aria-label*="Add file"], button[aria-label*="Attach"]'
         ).first.click(timeout=5000)
     except Exception as exc:
-        logger.warning("gemini_web: open + menu failed: %s", exc)
+        logger.warning("gemini_web: open + menu locator click failed: %s", exc)
         return False
 
-    await asyncio.sleep(0.7)
+    # 2. Wait for Angular Material menu to render (cdk-overlay-pane).
+    for _ in range(20):
+        await asyncio.sleep(0.2)
+        pane_visible = await page.evaluate(
+            """() => {
+                const pane = document.querySelector('.cdk-overlay-pane, [role=menu], mat-menu-content');
+                return !!(pane && pane.offsetWidth > 0);
+            }"""
+        )
+        if pane_visible:
+            break
 
+    # 3. Click menu item via Playwright (real click — JS .click() doesn't
+    #    trigger the Angular Material item ripple/selection consistently).
+    selectors = [
+        f'.cdk-overlay-pane button:has-text("{tool_name}")',
+        f'.cdk-overlay-pane [role=menuitem]:has-text("{tool_name}")',
+        f'[role=menu] button:has-text("{tool_name}")',
+        f'[role=menu] [role=menuitem]:has-text("{tool_name}")',
+        f'mat-menu-content button:has-text("{tool_name}")',
+        f'button:has-text("{tool_name}")',
+    ]
+    for sel in selectors:
+        try:
+            await page.locator(sel).first.click(timeout=2500)
+            logger.info("gemini_web: activated tool '%s' via %s", tool_name, sel)
+            await asyncio.sleep(0.8)
+            return True
+        except Exception:
+            continue
+
+    # 4. JS fallback with full mouse event sequence.
     clicked = await page.evaluate(
         """(name) => {
-            const target = name.toLowerCase();
+            const t = name.toLowerCase();
             const items = Array.from(document.querySelectorAll(
-                '[role=menuitem], [role=menu] button, [role=menu] a, '
-                + '.mat-mdc-menu-item, button[mat-menu-item], '
-                + '.cdk-overlay-pane button, .cdk-overlay-pane a'
+                '.cdk-overlay-pane button, .cdk-overlay-pane [role=menuitem], '
+                + '[role=menu] button, [role=menu] [role=menuitem], '
+                + 'button[mat-menu-item], .mat-mdc-menu-item'
             ));
             for (const el of items) {
                 if (el.offsetWidth === 0) continue;
-                const t = (el.innerText || '').toLowerCase().trim();
-                if (t.includes(target)) { el.click(); return t.slice(0, 60); }
+                if ((el.innerText || '').toLowerCase().includes(t)) {
+                    const r = el.getBoundingClientRect();
+                    const opts = {bubbles:true, cancelable:true, clientX: r.left+r.width/2, clientY: r.top+r.height/2, button:0};
+                    el.dispatchEvent(new PointerEvent('pointerdown', opts));
+                    el.dispatchEvent(new MouseEvent('mousedown', opts));
+                    el.dispatchEvent(new PointerEvent('pointerup', opts));
+                    el.dispatchEvent(new MouseEvent('mouseup', opts));
+                    el.click();
+                    return (el.innerText || '').slice(0, 60);
+                }
             }
-            return '';
+            // Diagnostic: log all visible menu items so future failures know what's there.
+            const visible = Array.from(document.querySelectorAll('.cdk-overlay-pane button, .cdk-overlay-pane [role=menuitem]'))
+                .filter(e => e.offsetWidth > 0)
+                .map(e => (e.innerText || '').slice(0, 40).trim())
+                .filter(t => t);
+            return '__DEBUG__:' + JSON.stringify(visible);
         }""",
         tool_name,
     )
-    if clicked:
-        logger.info("gemini_web: activated tool '%s' (matched '%s')", tool_name, clicked)
+    if clicked and not clicked.startswith('__DEBUG__'):
+        logger.info("gemini_web: activated tool '%s' via JS fallback (%s)", tool_name, clicked)
         await asyncio.sleep(0.8)
         return True
-    logger.warning("gemini_web: tool '%s' not in + menu", tool_name)
+    if clicked.startswith('__DEBUG__'):
+        logger.warning("gemini_web: tool '%s' not found. Menu had: %s",
+                        tool_name, clicked[len('__DEBUG__:'):])
     return False
 
 
