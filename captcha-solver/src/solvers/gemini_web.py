@@ -234,12 +234,29 @@ async def _activate_tool(page, tool_name: str) -> bool:
       'Tải tệp lên'    → upload file (also works via input[type=file])
     """
     # 1. Open + menu via Playwright real mouse click.
-    try:
-        await page.locator(
-            'button[aria-label="Thêm tệp"], button[aria-label*="Add file"], button[aria-label*="Attach"]'
-        ).first.click(timeout=5000)
-    except Exception as exc:
-        logger.warning("gemini_web: open + menu locator click failed: %s", exc)
+    # Gemini renames this button across versions: 'Thêm tệp' (old) →
+    # 'Nội dung tải lên và công cụ' (current 2026-05) → may change again.
+    # Match by Vietnamese/English keywords in the aria-label.
+    plus_selectors = [
+        'button[aria-label*="Nội dung tải lên"]',
+        'button[aria-label*="công cụ"]',
+        'button[aria-label="Thêm tệp"]',
+        'button[aria-label*="Add file"]',
+        'button[aria-label*="Upload"]',
+        'button[aria-label*="Attach"]',
+        'button[aria-label*="Tools"]',
+    ]
+    plus_opened = False
+    for sel in plus_selectors:
+        try:
+            await page.locator(sel).first.click(timeout=3000)
+            logger.info("gemini_web: opened + menu via %s", sel)
+            plus_opened = True
+            break
+        except Exception:
+            continue
+    if not plus_opened:
+        logger.warning("gemini_web: open + menu — no selector matched. Try probing button[aria-label] values.")
         return False
 
     # 2. Wait for Angular Material menu to render (cdk-overlay-pane).
