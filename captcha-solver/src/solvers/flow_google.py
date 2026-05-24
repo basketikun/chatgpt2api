@@ -389,66 +389,56 @@ async def generate_image(
         except Exception as exc:
             logger.warning("flow_prompt mouse click failed: %s — keys may go to wrong target", str(exc)[:100])
 
-        await page.keyboard.type(prompt, delay=10)
-        # Give React a tick to register the change.
+        # Inject the prompt via InputEvent('beforeinput'). Slate.js (the
+        # editor Flow uses) listens for beforeinput specifically —
+        # page.keyboard.type fires raw keydown/keypress/keyup which the
+        # browser CDP delivers, but Slate's React handlers don't pick
+        # those up. So the typed text appeared in the DOM but Slate's
+        # internal state stayed empty and the submit button stayed
+        # aria-disabled="true". Confirmed by v13 probe.
+        await page.evaluate(
+            """
+            (text) => {
+                const ce = document.querySelector('[contenteditable=true]');
+                if (!ce) return false;
+                ce.focus();
+                const e1 = new InputEvent('beforeinput', {
+                    inputType: 'insertText',
+                    data: text,
+                    bubbles: true,
+                    cancelable: true,
+                });
+                ce.dispatchEvent(e1);
+                // If beforeinput wasn't preventDefault'd, fire input too.
+                const e2 = new InputEvent('input', {
+                    inputType: 'insertText',
+                    data: text,
+                    bubbles: true,
+                    cancelable: true,
+                });
+                ce.dispatchEvent(e2);
+                return true;
+            }
+            """,
+            prompt,
+        )
         await asyncio.sleep(0.5)
 
-        # Debug: did Slate actually receive the text? Check the submit
-        # button's aria-disabled — if Slate's React state has the
-        # prompt, the submit button un-disables. Otherwise we know
-        # keyboard.type didn't sync to Slate.
-        debug_state = await page.evaluate("""
+        # Verify Slate accepted the prompt (submit un-disables when the
+        # editor has non-empty content).
+        submit_state = await page.evaluate("""
             () => {
-                const ce = document.querySelector('[contenteditable=true]');
-                const ce_text = ce ? ce.innerText : null;
                 const buttons = Array.from(document.querySelectorAll('button'));
                 const submit = buttons.find(b => /arrow_forward[\\s\\n]+(Tạo|Generate|Create|Send|Submit)/i.test(b.innerText||''));
-                return {
-                    ce_text: (ce_text || '').slice(0, 80).replace(/\\n/g, '|'),
-                    submit_aria_disabled: submit ? submit.getAttribute('aria-disabled') : 'no-submit',
-                };
+                return submit ? submit.getAttribute('aria-disabled') : 'no-submit';
             }
         """)
-        logger.info("flow_after_type ce='%s' submit_aria_disabled=%s",
-                    debug_state.get("ce_text"), debug_state.get("submit_aria_disabled"))
-
-        # If submit is still disabled after keyboard.type, Slate didn't
-        # sync — fire a synthetic InputEvent that Slate definitely handles.
-        if debug_state.get("submit_aria_disabled") == "true":
-            logger.warning("flow_slate_fallback: keyboard.type didn't sync, using InputEvent")
-            await page.evaluate(f"""
-                (text) => {{
-                    const ce = document.querySelector('[contenteditable=true]');
-                    if (!ce) return false;
-                    ce.focus();
-                    // Slate listens for beforeinput, not raw keydown.
-                    const e1 = new InputEvent('beforeinput', {{
-                        inputType: 'insertText',
-                        data: text,
-                        bubbles: true,
-                        cancelable: true,
-                    }});
-                    ce.dispatchEvent(e1);
-                    // If beforeinput wasn't preventDefault'd, fire input too.
-                    const e2 = new InputEvent('input', {{
-                        inputType: 'insertText',
-                        data: text,
-                        bubbles: true,
-                        cancelable: true,
-                    }});
-                    ce.dispatchEvent(e2);
-                    return true;
-                }}
-            """, prompt)
-            await asyncio.sleep(0.5)
-            debug_state2 = await page.evaluate("""
-                () => {
-                    const buttons = Array.from(document.querySelectorAll('button'));
-                    const submit = buttons.find(b => /arrow_forward[\\s\\n]+(Tạo|Generate|Create|Send|Submit)/i.test(b.innerText||''));
-                    return submit ? submit.getAttribute('aria-disabled') : 'no-submit';
-                }
-            """)
-            logger.info("flow_after_input_event submit_aria_disabled=%s", debug_state2)
+        logger.info("flow_prompt_injected submit_aria_disabled=%s", submit_state)
+        if submit_state == "true":
+            raise RuntimeError(
+                "Slate did not accept the prompt — submit button stayed "
+                "aria-disabled=true after InputEvent dispatch"
+            )
 
         # 2) Intercept the outbound batchGenerateImages POST and rewrite
         # its body so aspect/model/count come from THIS request, not from
