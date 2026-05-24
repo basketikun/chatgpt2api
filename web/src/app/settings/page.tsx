@@ -15,6 +15,8 @@ import { NvidiaNimCard } from "./components/nvidia-nim-card";
 import { CustomProvidersCard } from "./components/custom-providers-card";
 import { FlowCard } from "./components/flow-card";
 import { ChatGPTOnboardCard } from "./components/chatgpt-onboard-card";
+import { GeminiWebCard } from "./components/gemini-web-card";
+import { ChatGPTWebCard } from "./components/chatgpt-web-card";
 import { CPAPoolDialog } from "./components/cpa-pool-dialog";
 import { CPAPoolsCard } from "./components/cpa-pools-card";
 import { ImportBrowserDialog } from "./components/import-browser-dialog";
@@ -110,6 +112,22 @@ function SettingsPageContent() {
           icon={<KeyRound className="size-5" />}
         >
           <ChatGPTOnboardCard />
+        </SettingsSection>
+
+        <SettingsSection
+          title="Gemini Web (DOM scrape)"
+          description="Bypass VN geo-block của Gemini API bằng cách DOM-scrape gemini.google.com. Hỗ trợ chat / image (Imagen) / vision."
+          icon={<MessageCircle className="size-5" />}
+        >
+          <GeminiWebCard />
+        </SettingsSection>
+
+        <SettingsSection
+          title="ChatGPT Web (DOM scrape)"
+          description="DOM-scrape chatgpt.com. Hỗ trợ chat / image (DALL-E) / vision. Profile cần login qua card 'ChatGPT free'."
+          icon={<MessageCircle className="size-5" />}
+        >
+          <ChatGPTWebCard />
         </SettingsSection>
 
         <SettingsSection
