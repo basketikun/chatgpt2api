@@ -468,7 +468,15 @@ async def analyze_image(
         mime = header.split(";")[0].replace("data:", "")
         data = base64.b64decode(b64)
     elif image.startswith(("http://", "https://")):
-        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+        # Some CDNs (Wikipedia, etc) reject default httpx UA — send a
+        # browser-like UA so downloads don't 403.
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                          "AppleWebKit/537.36 (KHTML, like Gecko) "
+                          "Chrome/130.0.0.0 Safari/537.36",
+            "Accept": "image/avif,image/webp,image/png,image/*,*/*;q=0.8",
+        }
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True, headers=headers) as client:
             r = await client.get(image)
             r.raise_for_status()
         data = r.content
