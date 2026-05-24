@@ -147,10 +147,33 @@ async def _click_send(page) -> bool:
     return False
 
 
+# Text patterns that indicate Gemini is still working (image gen,
+# tool call, etc) — don't stop polling when we see these.
+_PLACEHOLDER_PATTERNS = (
+    "đang tạo",       # "đang tạo hình ảnh", "đang tạo nhạc"
+    "đang suy nghĩ",
+    "đang xử lý",
+    "creating",
+    "generating",
+    "thinking",
+    "gemini đã nói",  # appears WITH placeholder text while still streaming
+)
+
+
+def _is_placeholder(text: str) -> bool:
+    """Return True if the text looks like Gemini's 'working' indicator."""
+    if not text:
+        return True
+    t = text.lower().strip()
+    if len(t) < 80:  # very short responses are usually placeholders
+        return any(p in t for p in _PLACEHOLDER_PATTERNS)
+    return False
+
+
 async def _wait_for_response_complete(page, timeout: int = 90) -> str:
     """Wait for the assistant response to finish streaming, then return its
-    text content. Tries multiple selectors and matches the latest assistant
-    block."""
+    text content. Skips past 'Đang tạo / generating' placeholders so the
+    caller doesn't get the placeholder as the final result."""
     deadline = time.time() + timeout
     last_text = ""
     stable_count = 0
@@ -158,7 +181,6 @@ async def _wait_for_response_complete(page, timeout: int = 90) -> str:
         await asyncio.sleep(1.0)
         text = await page.evaluate(
             """() => {
-                // Try canonical Gemini selectors in order of stability.
                 const candidates = [
                     'message-content',
                     '.model-response-text',
@@ -178,6 +200,11 @@ async def _wait_for_response_complete(page, timeout: int = 90) -> str:
                 return '';
             }"""
         )
+        # Don't stop on placeholder text — keep waiting for real content.
+        if _is_placeholder(text):
+            stable_count = 0
+            last_text = text
+            continue
         if text and text == last_text:
             stable_count += 1
             if stable_count >= 2:
@@ -185,10 +212,9 @@ async def _wait_for_response_complete(page, timeout: int = 90) -> str:
         else:
             stable_count = 0
             last_text = text
-    if last_text:
-        # Return whatever we got, even if not stable — caller may want partial
+    if last_text and not _is_placeholder(last_text):
         return last_text
-    raise RuntimeError(f"Gemini didn't produce a response within {timeout}s")
+    raise RuntimeError(f"Gemini didn't produce a response within {timeout}s (last text: {last_text!r})")
 
 
 async def _wait_for_image(page, timeout: int = 120) -> list[str]:
