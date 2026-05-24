@@ -411,45 +411,68 @@ async def generate_image(
         # reliable — it dispatches the synthetic event directly to the
         # element and bypasses the overlay entirely.
         async def _click_generate() -> None:
-            clicked = await page.evaluate("""
+            # Step 1: Remove the welcome dialog's OVERLAY layer (the full-
+            # viewport DIV that intercepts mouse clicks). Radix marks the
+            # overlay with data-state="open" and NO role attribute; the
+            # dialog CONTENT has role="dialog" — we keep that.
+            # This unblocks mouse clicks on the submit button below.
+            await page.evaluate("""
+                () => {
+                    document.querySelectorAll('[data-state="open"]').forEach(el => {
+                        if (el.getAttribute('role')) return;  // keep dialog content
+                        const r = el.getBoundingClientRect();
+                        // Only remove if it's a viewport-sized overlay
+                        if (r.width >= window.innerWidth * 0.8 && r.height >= window.innerHeight * 0.8) {
+                            el.remove();
+                        }
+                    });
+                }
+            """)
+            await asyncio.sleep(0.3)
+
+            # Step 2: Find the submit button — text "arrow_forward\\nTạo"
+            # (Material icon name + label as two lines).
+            submit_btn = page.locator(
+                "button:has-text('arrow_forward'):has-text('Tạo'), "
+                "button:has-text('arrow_forward'):has-text('Generate'), "
+                "button:has-text('arrow_forward'):has-text('Create')"
+            ).last
+            try:
+                await submit_btn.click(timeout=8000)
+                logger.info("flow_submit_clicked via_locator")
+                return
+            except Exception as exc:
+                logger.warning("flow_submit locator click failed: %s — trying JS dispatch", str(exc)[:120])
+
+            # Step 3: Fallback — full PointerEvent + MouseEvent sequence via
+            # JS. React's onClick handler needs pointerdown→pointerup→click
+            # to fire reliably; a bare .click() sometimes doesn't trigger
+            # the synthetic event.
+            dispatched = await page.evaluate("""
                 () => {
                     const buttons = Array.from(document.querySelectorAll('button'));
-                    // Real submit button has text "arrow_forward\\nTạo"
-                    // (Material icon name + label, rendered as two lines).
-                    let btn = buttons.find(b => /arrow_forward[\\s\\n]+Tạo/i.test(b.innerText || ''));
-                    // Send/Generate label fallbacks (English locale or A/B test)
+                    let btn = buttons.find(b => /arrow_forward[\\s\\n]+(Tạo|Generate|Create|Send|Submit)/i.test(b.innerText || ''));
+                    if (!btn) btn = buttons.find(b => /arrow_(forward|upward)/i.test(b.innerText || ''));
                     if (!btn) {
-                        btn = buttons.find(b => /arrow_forward[\\s\\n]+(Generate|Create|Send|Submit)/i.test(b.innerText || ''));
-                    }
-                    // Any button with arrow_forward / arrow_upward icon
-                    if (!btn) {
-                        btn = buttons.find(b => /arrow_(forward|upward)/i.test(b.innerText || ''));
-                    }
-                    // aria-label probe (in case Google adds one)
-                    if (!btn) {
-                        btn = buttons.find(b => {
-                            const al = (b.getAttribute('aria-label') || '').toLowerCase();
-                            return ['tạo', 'create', 'send', 'submit', 'generate'].includes(al);
-                        });
-                    }
-                    if (!btn) {
-                        // Last-resort: enumerate visible buttons with text including "Tạo" but NOT "add_2"
-                        const taoes = buttons.filter(b => {
-                            const t = b.innerText || '';
-                            return /Tạo/.test(t) && !/add_2/.test(t);
-                        });
+                        const taoes = buttons.filter(b => /Tạo/.test(b.innerText||'') && !/add_2/.test(b.innerText||''));
                         btn = taoes[taoes.length - 1];
                     }
                     if (!btn) return {clicked: false};
+                    const r = btn.getBoundingClientRect();
+                    const x = r.left + r.width/2, y = r.top + r.height/2;
+                    const opts = {bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, view: window};
+                    btn.dispatchEvent(new PointerEvent('pointerdown', opts));
+                    btn.dispatchEvent(new MouseEvent('mousedown', opts));
+                    btn.dispatchEvent(new PointerEvent('pointerup', opts));
+                    btn.dispatchEvent(new MouseEvent('mouseup', opts));
+                    btn.dispatchEvent(new MouseEvent('click', opts));
                     btn.click();
-                    return {clicked: true, label: btn.getAttribute('aria-label'), text: (btn.innerText || '').slice(0, 50).replace(/\\n/g, '|')};
+                    return {clicked: true, text: (btn.innerText || '').slice(0, 50).replace(/\\n/g, '|')};
                 }
             """)
-            if clicked.get("clicked"):
-                logger.info("flow_submit_clicked label=%s text=%s", clicked.get("label"), clicked.get("text"))
+            if dispatched.get("clicked"):
+                logger.info("flow_submit_clicked via_dispatch text=%s", dispatched.get("text"))
                 return
-            # Last-resort fallback — Ctrl+Enter (some Slate editors map
-            # this to submit). Plain Enter inserts a newline in Slate.
             logger.warning("flow_submit: no button found, trying Ctrl+Enter")
             await page.keyboard.press("Control+Enter")
 
