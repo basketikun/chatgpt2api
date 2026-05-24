@@ -79,8 +79,10 @@ def _translate_prompt(prompt: str) -> str:
             api_key = str(keys[0]).strip()
     if api_key:
         try:
+            from services.providers.gemini_free import _gemini_base_url
+            base = _gemini_base_url()
             resp = cffi_requests.post(
-                f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}",
+                f"{base}/models/gemini-2.5-flash:generateContent?key={api_key}",
                 headers={"Content-Type": "application/json"},
                 json={
                     "contents": [{"parts": [{"text": translate_prompt}]}],

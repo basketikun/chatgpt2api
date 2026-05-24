@@ -27,6 +27,20 @@ class GeminiImageAdapter(BaseImageAdapter):
     BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
     _key_index: int = 0
 
+    def _resolve_base(self) -> str:
+        """Honor providers.gemini_free.base_url override (Cloudflare Worker)."""
+        try:
+            from services.config import config
+            cfg = (config.data.get("providers") or {}).get("gemini_free") or {}
+            override = str(cfg.get("base_url") or "").rstrip("/")
+            if override:
+                if not override.endswith("/v1beta"):
+                    override = override + "/v1beta"
+                return override + "/models"
+        except Exception:
+            pass
+        return self.BASE_URL
+
     def _get_api_keys(self, credentials: dict[str, Any] | None) -> list[str]:
         """Get all available API keys from credentials."""
         if not credentials or not isinstance(credentials, dict):
@@ -43,7 +57,7 @@ class GeminiImageAdapter(BaseImageAdapter):
             keys = self._get_api_keys(credentials)
             if keys:
                 api_key = keys[key_index % len(keys)]
-        return f"{self.BASE_URL}/{model}:generateContent?key={api_key}"
+        return f"{self._resolve_base()}/{model}:generateContent?key={api_key}"
 
     def get_key_count(self, credentials: dict[str, Any] | None) -> int:
         return len(self._get_api_keys(credentials))

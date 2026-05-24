@@ -19,6 +19,21 @@ from utils.log import logger
 VEO_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 VEO_MODEL = "veo-3.1-generate-preview"
 VEO_POLL_INTERVAL = 10  # seconds
+
+
+def _veo_base() -> str:
+    """Honor providers.gemini_free.base_url for VN-block proxy."""
+    try:
+        from services.config import config
+        cfg = (config.data.get("providers") or {}).get("gemini_free") or {}
+        override = str(cfg.get("base_url") or "").rstrip("/")
+        if override:
+            if not override.endswith("/v1beta"):
+                override = override + "/v1beta"
+            return override
+    except Exception:
+        pass
+    return "https://generativelanguage.googleapis.com/v1beta"
 VEO_MAX_WAIT = 600  # 10 minutes max
 
 
@@ -134,7 +149,7 @@ class VeoVideoAdapter:
                 logger.info({"event": "veo_submitted", "operation": operation_name[:80]})
 
                 # Step 2: Poll until done
-                base_url = f"https://generativelanguage.googleapis.com/v1beta/{operation_name}"
+                base_url = f"{_veo_base()}/{operation_name}"
                 keys = self._get_api_keys(credentials)
                 api_key = keys[key_index % len(keys)] if keys else ""
 

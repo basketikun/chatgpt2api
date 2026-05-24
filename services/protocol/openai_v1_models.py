@@ -80,6 +80,21 @@ FALLBACK_MODELS = {
 }
 
 GEMINI_MODELS_URL = "https://generativelanguage.googleapis.com/v1beta/models"
+
+
+def _gemini_models_url() -> str:
+    """Honor providers.gemini_free.base_url for VN-block proxy."""
+    try:
+        from services.config import config
+        cfg = (config.data.get("providers") or {}).get("gemini_free") or {}
+        override = str(cfg.get("base_url") or "").rstrip("/")
+        if override:
+            if not override.endswith("/v1beta"):
+                override = override + "/v1beta"
+            return override + "/models"
+    except Exception:
+        pass
+    return GEMINI_MODELS_URL
 OPENCODE_MODELS_URL = "https://opencode.ai/zen/v1/models"
 OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
 NVIDIA_MODELS_URL = "https://integrate.api.nvidia.com/v1/models"
@@ -107,7 +122,7 @@ def _fetch_gemini_models() -> set[str]:
 
     for key in keys:
         try:
-            resp = requests.get(f"{GEMINI_MODELS_URL}?key={key}", timeout=10)
+            resp = requests.get(f"{_gemini_models_url()}?key={key}", timeout=10)
             if resp.status_code != 200:
                 continue
             models = set()

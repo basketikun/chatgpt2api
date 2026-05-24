@@ -13,6 +13,21 @@ Flow:
 
 from __future__ import annotations
 
+
+def _gemini_search_base() -> str:
+    """Honor providers.gemini_free.base_url for VN-block proxy."""
+    try:
+        from services.config import config
+        cfg = (config.data.get("providers") or {}).get("gemini_free") or {}
+        override = str(cfg.get("base_url") or "").rstrip("/")
+        if override:
+            if not override.endswith("/v1beta"):
+                override = override + "/v1beta"
+            return override
+    except Exception:
+        pass
+    return "https://generativelanguage.googleapis.com/v1beta"
+
 import json
 import re
 import time
@@ -234,7 +249,7 @@ class GeminiGrounding(SearchBackend):
                 kwargs["proxies"] = {"http": proxy, "https": proxy}
 
             resp = requests.post(
-                f"https://generativelanguage.googleapis.com/v1beta/models/{self._get_model()}:generateContent?key={api_key}",
+                f"{_gemini_search_base()}/models/{self._get_model()}:generateContent?key={api_key}",
                 headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
                 json={"contents": [{"parts": [{"text": query}]}], "tools": [{"google_search": {}}]},
                 **kwargs

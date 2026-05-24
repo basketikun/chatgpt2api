@@ -21,6 +21,22 @@ GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 GEMINI_DEFAULT_MODEL = "gemini-3-flash-preview"
 
 
+def _gemini_base_url() -> str:
+    """Return per-provider override or the default Google endpoint.
+
+    Set providers.gemini_free.base_url in config.json to your Cloudflare
+    Worker proxy (deploy/cloudflare-gemini-proxy.js) to bypass VN
+    geo-block on generativelanguage.googleapis.com."""
+    cfg = (config.data.get("providers") or {}).get("gemini_free") or {}
+    base = str(cfg.get("base_url") or "").rstrip("/")
+    if base:
+        # Worker proxies the whole upstream — append /v1beta to match
+        if not base.endswith("/v1beta"):
+            base = base + "/v1beta"
+        return base
+    return GEMINI_BASE_URL
+
+
 class GeminiProvider:
     """Google Gemini API provider — free & paid tiers, native tool calling."""
 
@@ -55,7 +71,7 @@ class GeminiProvider:
         if not self.api_key:
             return False
         try:
-            resp = requests.get(f"{GEMINI_BASE_URL}/models?key={self.api_key}", timeout=10)
+            resp = requests.get(f"{_gemini_base_url()}/models?key={self.api_key}", timeout=10)
             return resp.status_code == 200
         except Exception:
             return False
