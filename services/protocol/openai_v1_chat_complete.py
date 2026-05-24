@@ -781,8 +781,12 @@ def _handle_chatgpt_chat(
     if is_codex:
         logger.info({"event": "chatgpt_codex_routed", "token_type": "codex"})
         import services.providers.openai_oauth as openai_oauth
+        # Drop keys we pass explicitly so **body doesn't double-bind them
+        # (raises "got multiple values for keyword argument" otherwise).
+        body_extras = {k: v for k, v in body.items()
+                       if k not in {"model", "messages", "stream", "tools", "tool_choice"}}
         return openai_oauth.codex_oauth.chat_completions(
-            messages, model=model, stream=stream, tools=tools, tool_choice=tool_choice, **body
+            messages, model=model, stream=stream, tools=tools, tool_choice=tool_choice, **body_extras
         )
 
     if is_openai_api:
