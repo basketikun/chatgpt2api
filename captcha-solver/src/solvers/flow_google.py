@@ -319,27 +319,59 @@ async def generate_image(
         # though aria-hidden="true", which blocks our click on the prompt
         # input below. Press Escape twice + remove any residual overlay
         # nodes as a safety net.
-        try:
-            await page.keyboard.press("Escape")
-            await asyncio.sleep(0.3)
-            await page.keyboard.press("Escape")
-            await asyncio.sleep(0.3)
-            await page.evaluate("""
-                () => {
-                    document.querySelectorAll('[data-state="open"][aria-hidden="true"]')
-                      .forEach(el => el.remove());
-                    // Belt-and-braces: also remove any visible <dialog> elements
-                    document.querySelectorAll('dialog[open]').forEach(d => d.close());
-                }
-            """)
-        except Exception:
-            pass
+        async def _dismiss_overlays():
+            try:
+                await page.keyboard.press("Escape")
+                await asyncio.sleep(0.2)
+                await page.keyboard.press("Escape")
+                await asyncio.sleep(0.2)
+                removed = await page.evaluate("""
+                    () => {
+                        let n = 0;
+                        // Radix dialog overlays — match by data-state alone
+                        document.querySelectorAll('[data-state="open"]').forEach(el => {
+                            // Only remove if it's pointer-intercepting (overlay), not the dialog content
+                            const r = el.getBoundingClientRect();
+                            const cs = getComputedStyle(el);
+                            const isOverlay = (cs.position === 'fixed' || cs.position === 'absolute')
+                                && r.width > 100 && r.height > 100
+                                && cs.pointerEvents !== 'none';
+                            if (isOverlay) { el.remove(); n++; }
+                        });
+                        // Any element that's covering the whole viewport with pointer-events:auto
+                        document.querySelectorAll('div[style*="position: fixed"], div.fixed').forEach(el => {
+                            const r = el.getBoundingClientRect();
+                            if (r.width >= window.innerWidth * 0.9
+                                && r.height >= window.innerHeight * 0.9
+                                && getComputedStyle(el).pointerEvents !== 'none') {
+                                el.remove(); n++;
+                            }
+                        });
+                        document.querySelectorAll('dialog[open]').forEach(d => { d.close(); n++; });
+                        return n;
+                    }
+                """)
+                if removed:
+                    logger.info("flow_overlay_dismissed n=%d", removed)
+            except Exception as exc:
+                logger.debug("dismiss overlays best-effort: %s", exc)
+
+        await _dismiss_overlays()
 
         # 1) Fill the prompt into the largest contenteditable div.
         prompt_input = page.locator(
             "[contenteditable='true']"
         ).first
-        await prompt_input.click()
+        # First-try ordinary click; if blocked by overlay, dismiss again
+        # and force-click (bypasses Playwright's actionability check that
+        # detects pointer-intercepting elements).
+        try:
+            await prompt_input.click(timeout=10_000)
+        except Exception as exc:
+            logger.info("flow_first_click_blocked: %s — retrying with force", str(exc)[:120])
+            await _dismiss_overlays()
+            await asyncio.sleep(0.5)
+            await prompt_input.click(force=True, timeout=10_000)
         # contenteditable doesn't accept fill() reliably; type instead.
         await page.keyboard.type(prompt, delay=10)
         # Give React a tick to register the change.
