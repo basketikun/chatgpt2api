@@ -640,6 +640,12 @@ def _dispatch(route, messages, tools, tool_choice, body):
         return _handle_antigravity_chat(route.model, messages, tools, tool_choice, body.get("stream"), body)
     elif route.provider == "nvidia_nim":
         return _handle_nvidia_chat(route.model, messages, tools, tool_choice, body.get("stream"), body)
+    elif route.provider == "gemini_web":
+        from services.providers.web_proxy import handle_gemini_web_chat
+        return handle_gemini_web_chat(route.model, messages, body.get("stream"), body)
+    elif route.provider == "chatgpt_web":
+        from services.providers.web_proxy import handle_chatgpt_web_chat
+        return handle_chatgpt_web_chat(route.model, messages, body.get("stream"), body)
     elif route.provider.startswith("custom:"):
         return _handle_custom_openai_chat(route.provider, route.model, messages, tools, tool_choice, body.get("stream"), body)
     elif route.provider == "chatgpt":
