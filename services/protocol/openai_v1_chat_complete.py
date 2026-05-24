@@ -812,6 +812,16 @@ def _handle_chatgpt_chat(
         codex_model = model
         if codex_model.startswith("chatgpt/"):
             codex_model = codex_model[len("chatgpt/"):]
+        # Map OpenAI public model names → 'auto'. Codex API rejects
+        # 'gpt-4o', 'gpt-4-turbo', etc with "model not supported when
+        # using Codex with a ChatGPT account". Common entry point for
+        # HA ai_task / n8n / OpenAI SDK clients that don't know about
+        # our codex/* aliases. 'auto' lets Codex pick from its enabled
+        # models in config.model_settings.openai_oauth.
+        _UNSUPPORTED_PREFIXES = ("gpt-3.5", "gpt-4o", "gpt-4-", "gpt-4.", "gpt-5o", "gpt-5-")
+        if codex_model and any(codex_model.startswith(p) for p in _UNSUPPORTED_PREFIXES):
+            logger.info({"event": "codex_model_mapped", "from": codex_model, "to": "auto"})
+            codex_model = "auto"
         # Drop keys we pass explicitly so **body doesn't double-bind them
         # (raises "got multiple values for keyword argument" otherwise).
         body_extras = {k: v for k, v in body.items()
