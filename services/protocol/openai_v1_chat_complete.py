@@ -781,6 +781,12 @@ def _handle_chatgpt_chat(
     if is_codex:
         logger.info({"event": "chatgpt_codex_routed", "token_type": "codex"})
         import services.providers.openai_oauth as openai_oauth
+        # Strip "chatgpt/" prefix — Codex doesn't know our routing-prefix
+        # convention. "chatgpt/auto" → "auto" (Codex resolves auto from
+        # its own model_settings.openai_oauth list).
+        codex_model = model
+        if codex_model.startswith("chatgpt/"):
+            codex_model = codex_model[len("chatgpt/"):]
         # Drop keys we pass explicitly so **body doesn't double-bind them
         # (raises "got multiple values for keyword argument" otherwise).
         body_extras = {k: v for k, v in body.items()
@@ -788,7 +794,7 @@ def _handle_chatgpt_chat(
         # codex_oauth.chat_completions signature: (access_token, messages, model=..., ...)
         # — access_token is the FIRST positional arg, not auto-fetched.
         return openai_oauth.codex_oauth.chat_completions(
-            token, messages, model=model, stream=stream, tools=tools, tool_choice=tool_choice, **body_extras
+            token, messages, model=codex_model, stream=stream, tools=tools, tool_choice=tool_choice, **body_extras
         )
 
     if is_openai_api:
