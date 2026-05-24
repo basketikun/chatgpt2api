@@ -802,8 +802,64 @@ def _handle_chatgpt_chat(
         preferred_type = "codex"
         model = "chatgpt/" + model[len("chatgpt/codex/"):]
 
-    token = account_service.get_text_access_token(account_type=preferred_type)
+    # Retry loop: when an account 429/quota-burns, rotate to the next active
+    # account in the SAME pool (preserve preferred_type). Without this we'd
+    # 502 even though 7+ other healthy tokens sit in the pool. Errors that
+    # aren't quota-related re-raise immediately so we don't mask real bugs.
+    excluded_tokens: set[str] = set()
+    last_quota_error: Exception | None = None
+    for attempt in range(8):
+        token = account_service.get_text_access_token(
+            excluded_tokens=excluded_tokens, account_type=preferred_type
+        )
+        if not token:
+            break
+        try:
+            return _try_chatgpt_with_token(
+                token, model, messages, tools, tool_choice, body, preferred_type
+            )
+        except RuntimeError as exc:
+            err_msg = str(exc).lower()
+            is_quota = (
+                "429" in err_msg
+                or "usage_limit" in err_msg
+                or ("quota" in err_msg and "exceeded" in err_msg)
+                or "rate limit" in err_msg
+                or "rate_limit" in err_msg
+                or "too many requests" in err_msg
+            )
+            if not is_quota:
+                raise
+            logger.info({
+                "event": "chatgpt_account_rotate",
+                "reason": "quota_burnt",
+                "attempt": attempt,
+                "preferred_type": preferred_type,
+                "remaining_excluded": len(excluded_tokens) + 1,
+            })
+            excluded_tokens.add(token)
+            last_quota_error = exc
+            continue
+    if last_quota_error is not None:
+        raise last_quota_error
+    raise RuntimeError(
+        f"no usable chatgpt account (preferred_type={preferred_type!r})"
+    )
 
+
+def _try_chatgpt_with_token(
+    token: str,
+    model: str,
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]] | None,
+    tool_choice: Any,
+    body: dict[str, Any],
+    preferred_type: str | None,
+) -> dict[str, Any] | Iterator[dict[str, Any]]:
+    """Single-attempt body extracted from _handle_chatgpt_chat for the rotate-on-quota loop."""
+    from services.account_service import detect_token_audience, _TOKEN_AUDIENCE_OPENAI_API, _TOKEN_AUDIENCE_CHATGPT
+
+    stream = bool(body.get("stream"))
     is_openai_api = False
     is_codex = False
     if token:
@@ -890,18 +946,22 @@ def _handle_chatgpt_chat(
         )
 
     # chatgpt.com backend (free account — no openai token)
+    # Build a backend bound to OUR rotation-selected token so we don't
+    # accidentally re-pick the same burnt account inside text_backend().
+    from services.openai_backend_api import OpenAIBackendAPI
+    backend = OpenAIBackendAPI(access_token=token) if token else text_backend()
     from services.config import _IS_ADDON
     if _IS_ADDON:
         # Addon: XML tool call parsing + force hint for HA
         if stream:
-            return _stream_chatgpt_addon(text_backend(), messages, model, tools, tool_choice)
+            return _stream_chatgpt_addon(backend, messages, model, tools, tool_choice)
         return _chatgpt_addon_completion(model, messages, tools, tool_choice)
 
     # Docker: original behavior, no XML parsing
     if stream:
-        return stream_text_chat_completion(text_backend(), messages, model, tools, tool_choice)
+        return stream_text_chat_completion(backend, messages, model, tools, tool_choice)
     request = ConversationRequest(model=model, messages=messages, tools=tools, tool_choice=tool_choice)
-    return completion_response(model, collect_text(text_backend(), request), messages=messages)
+    return completion_response(model, collect_text(backend, request), messages=messages)
 
 
 # Device keywords that should trigger tool call forcing
