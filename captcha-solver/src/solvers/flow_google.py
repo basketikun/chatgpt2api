@@ -393,6 +393,63 @@ async def generate_image(
         # Give React a tick to register the change.
         await asyncio.sleep(0.5)
 
+        # Debug: did Slate actually receive the text? Check the submit
+        # button's aria-disabled — if Slate's React state has the
+        # prompt, the submit button un-disables. Otherwise we know
+        # keyboard.type didn't sync to Slate.
+        debug_state = await page.evaluate("""
+            () => {
+                const ce = document.querySelector('[contenteditable=true]');
+                const ce_text = ce ? ce.innerText : null;
+                const buttons = Array.from(document.querySelectorAll('button'));
+                const submit = buttons.find(b => /arrow_forward[\\s\\n]+(Tạo|Generate|Create|Send|Submit)/i.test(b.innerText||''));
+                return {
+                    ce_text: (ce_text || '').slice(0, 80).replace(/\\n/g, '|'),
+                    submit_aria_disabled: submit ? submit.getAttribute('aria-disabled') : 'no-submit',
+                };
+            }
+        """)
+        logger.info("flow_after_type ce='%s' submit_aria_disabled=%s",
+                    debug_state.get("ce_text"), debug_state.get("submit_aria_disabled"))
+
+        # If submit is still disabled after keyboard.type, Slate didn't
+        # sync — fire a synthetic InputEvent that Slate definitely handles.
+        if debug_state.get("submit_aria_disabled") == "true":
+            logger.warning("flow_slate_fallback: keyboard.type didn't sync, using InputEvent")
+            await page.evaluate(f"""
+                (text) => {{
+                    const ce = document.querySelector('[contenteditable=true]');
+                    if (!ce) return false;
+                    ce.focus();
+                    // Slate listens for beforeinput, not raw keydown.
+                    const e1 = new InputEvent('beforeinput', {{
+                        inputType: 'insertText',
+                        data: text,
+                        bubbles: true,
+                        cancelable: true,
+                    }});
+                    ce.dispatchEvent(e1);
+                    // If beforeinput wasn't preventDefault'd, fire input too.
+                    const e2 = new InputEvent('input', {{
+                        inputType: 'insertText',
+                        data: text,
+                        bubbles: true,
+                        cancelable: true,
+                    }});
+                    ce.dispatchEvent(e2);
+                    return true;
+                }}
+            """, prompt)
+            await asyncio.sleep(0.5)
+            debug_state2 = await page.evaluate("""
+                () => {
+                    const buttons = Array.from(document.querySelectorAll('button'));
+                    const submit = buttons.find(b => /arrow_forward[\\s\\n]+(Tạo|Generate|Create|Send|Submit)/i.test(b.innerText||''));
+                    return submit ? submit.getAttribute('aria-disabled') : 'no-submit';
+                }
+            """)
+            logger.info("flow_after_input_event submit_aria_disabled=%s", debug_state2)
+
         # 2) Intercept the outbound batchGenerateImages POST and rewrite
         # its body so aspect/model/count come from THIS request, not from
         # whatever the project's last dropdown selection happened to be.
