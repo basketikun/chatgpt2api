@@ -73,12 +73,21 @@ async def _wait_for_ready(page, timeout: int = 30) -> None:
 
 
 async def _inject_prompt(page, prompt: str) -> None:
-    """Focus the prompt contenteditable + dispatch InputEvent('beforeinput',
-    'insertText'). Same Slate-style approach as Flow — keyboard.type doesn't
-    sync to React state for these editors."""
+    """Click into the Quill (ql-editor) prompt input + type via keyboard.
+
+    Gemini uses Quill which listens to real keyboard events (not Slate's
+    beforeinput). The InputEvent trick we use for Flow's Slate editor
+    leaves Quill's internal data model empty — Send button stays
+    disabled and submit fires with empty text.
+
+    Sequence:
+      1. JS focus + caret placement (works through overlays).
+      2. Playwright locator.click() to give Quill a real focus event.
+      3. page.keyboard.type — keystrokes that Quill registers.
+    """
+    # JS focus first (immune to overlays, guarantees the right element).
     ok = await page.evaluate(
-        """
-        (text) => {
+        """() => {
             const ces = Array.from(document.querySelectorAll('[contenteditable=true]'));
             const target = ces
                 .map(e => ({e, w: e.offsetWidth, h: e.offsetHeight}))
@@ -92,19 +101,21 @@ async def _inject_prompt(page, prompt: str) -> None:
             range.collapse(false);
             sel.removeAllRanges();
             sel.addRange(range);
-            target.e.dispatchEvent(new InputEvent('beforeinput', {
-                inputType: 'insertText', data: text, bubbles: true, cancelable: true,
-            }));
-            target.e.dispatchEvent(new InputEvent('input', {
-                inputType: 'insertText', data: text, bubbles: true, cancelable: true,
-            }));
             return true;
-        }
-        """,
-        prompt,
+        }"""
     )
     if not ok:
         raise RuntimeError("Could not find/focus Gemini prompt input")
+
+    # Real mouse click to activate Quill's event listeners.
+    try:
+        await page.locator("rich-textarea div[contenteditable=true], div[contenteditable=true][role=textbox]").first.click(timeout=5000)
+    except Exception as exc:
+        logger.warning("gemini_web: mouse click into prompt failed: %s — keys may go to wrong target", str(exc)[:120])
+
+    # Type via real keyboard events (Quill listens to these).
+    await page.keyboard.type(prompt, delay=10)
+    await asyncio.sleep(0.4)
 
 
 async def _click_send(page) -> bool:
@@ -138,27 +149,36 @@ async def _click_send(page) -> bool:
 
 async def _wait_for_response_complete(page, timeout: int = 90) -> str:
     """Wait for the assistant response to finish streaming, then return its
-    text content."""
+    text content. Tries multiple selectors and matches the latest assistant
+    block."""
     deadline = time.time() + timeout
     last_text = ""
     stable_count = 0
     while time.time() < deadline:
         await asyncio.sleep(1.0)
-        # Read the latest response block — prefer the LAST message-content
-        # because new responses get appended to the conversation.
         text = await page.evaluate(
             """() => {
-                // Try canonical Gemini selectors first
-                let nodes = document.querySelectorAll('message-content');
-                if (!nodes.length) nodes = document.querySelectorAll('.model-response-text');
-                if (!nodes.length) nodes = document.querySelectorAll('.markdown');
-                if (!nodes.length) return '';
-                const last = nodes[nodes.length - 1];
-                return (last.innerText || '').trim();
+                // Try canonical Gemini selectors in order of stability.
+                const candidates = [
+                    'message-content',
+                    '.model-response-text',
+                    '.markdown',
+                    '[data-test-id="response-content"]',
+                    'model-response',
+                    '.conversation-container .response',
+                ];
+                for (const sel of candidates) {
+                    const nodes = document.querySelectorAll(sel);
+                    if (nodes.length > 0) {
+                        const last = nodes[nodes.length - 1];
+                        const text = (last.innerText || '').trim();
+                        if (text) return text;
+                    }
+                }
+                return '';
             }"""
         )
         if text and text == last_text:
-            # Same text for 2 consecutive polls → stream done.
             stable_count += 1
             if stable_count >= 2:
                 return text
@@ -166,6 +186,7 @@ async def _wait_for_response_complete(page, timeout: int = 90) -> str:
             stable_count = 0
             last_text = text
     if last_text:
+        # Return whatever we got, even if not stable — caller may want partial
         return last_text
     raise RuntimeError(f"Gemini didn't produce a response within {timeout}s")
 
