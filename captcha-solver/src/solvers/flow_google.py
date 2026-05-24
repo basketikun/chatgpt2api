@@ -406,26 +406,41 @@ async def generate_image(
 
         await page.route(f"**/{api_pattern}**", _rewrite_request)
 
-        # 3) Locate the "Tạo" (Create) submit button — it's an icon button
-        # whose accessible name is "Tạo". Multiple "Tạo" elements exist on
-        # the page (section heading + submit), so prefer the one that is
-        # a real button with a click target.
+        # 3) Click the "Tạo" submit button. On fresh projects the welcome
+        # dialog overlay intercepts mouse clicks, so JS .click() is more
+        # reliable — it dispatches the synthetic event directly to the
+        # element and bypasses the overlay entirely.
         async def _click_generate() -> None:
-            # Try several locator strategies in order.
-            candidates = [
-                page.get_by_role("button", name="Tạo", exact=True).last,
-                page.locator("button[aria-label='Tạo']").last,
-                page.locator("button:has-text('Tạo')").last,
-            ]
-            for loc in candidates:
-                try:
-                    await loc.click(timeout=3000)
-                    return
-                except Exception:
-                    continue
-            # Fallback — press Enter (focus is still on the contenteditable
-            # from the JS focus + type step above).
-            await page.keyboard.press("Enter")
+            clicked = await page.evaluate("""
+                () => {
+                    const buttons = Array.from(document.querySelectorAll('button'));
+                    // Prefer aria-label="Tạo" (the icon submit button)
+                    let btn = buttons.find(b =>
+                        b.getAttribute('aria-label') === 'Tạo'
+                        || b.getAttribute('aria-label') === 'Create'
+                        || b.getAttribute('aria-label') === 'Send'
+                    );
+                    // Fallback: last <button> whose text is exactly "Tạo"
+                    if (!btn) {
+                        const taoes = buttons.filter(b => (b.innerText || '').trim() === 'Tạo');
+                        btn = taoes[taoes.length - 1];
+                    }
+                    // Fallback: any button with arrow_upward icon (Flow's send icon)
+                    if (!btn) {
+                        btn = buttons.find(b => /arrow_upward|send/i.test(b.innerText || ''));
+                    }
+                    if (!btn) return {clicked: false};
+                    btn.click();
+                    return {clicked: true, label: btn.getAttribute('aria-label'), text: (btn.innerText || '').slice(0, 30)};
+                }
+            """)
+            if clicked.get("clicked"):
+                logger.info("flow_submit_clicked label=%s text=%s", clicked.get("label"), clicked.get("text"))
+                return
+            # Last-resort fallback — Ctrl+Enter (some Slate editors map
+            # this to submit). Plain Enter inserts a newline in Slate.
+            logger.warning("flow_submit: no button found, trying Ctrl+Enter")
+            await page.keyboard.press("Control+Enter")
 
         # 4) Wait for the response — the rewritten request goes out under
         # the page's normal flow (with valid recaptcha + browser headers)
