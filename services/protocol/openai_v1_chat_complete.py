@@ -784,9 +784,11 @@ def _handle_chatgpt_chat(
         # Drop keys we pass explicitly so **body doesn't double-bind them
         # (raises "got multiple values for keyword argument" otherwise).
         body_extras = {k: v for k, v in body.items()
-                       if k not in {"model", "messages", "stream", "tools", "tool_choice"}}
+                       if k not in {"model", "messages", "stream", "tools", "tool_choice", "access_token"}}
+        # codex_oauth.chat_completions signature: (access_token, messages, model=..., ...)
+        # — access_token is the FIRST positional arg, not auto-fetched.
         return openai_oauth.codex_oauth.chat_completions(
-            messages, model=model, stream=stream, tools=tools, tool_choice=tool_choice, **body_extras
+            token, messages, model=model, stream=stream, tools=tools, tool_choice=tool_choice, **body_extras
         )
 
     if is_openai_api:
