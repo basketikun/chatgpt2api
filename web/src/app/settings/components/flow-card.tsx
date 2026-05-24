@@ -213,7 +213,7 @@ export function FlowCard() {
     }
   }
 
-  async function pollLoginStatus(profile: string) {
+  async function pollLoginStatus(profile: string, onSuccess?: (s: AutoLoginState) => void) {
     try {
       const res = await fetch(
         `${cfg.captcha_solver_url}/v1/session/${encodeURIComponent(profile)}/auto-login-status`,
@@ -224,11 +224,103 @@ export function FlowCard() {
       setLoginSession(data);
       if (data.state === "success" || data.state === "failed") {
         stopPolling();
-        if (data.state === "success") toast.success("Đăng nhập thành công 🎉");
-        else toast.error(`Auto-login lỗi: ${data.error || data.message}`);
+        if (data.state === "success") {
+          toast.success("Đăng nhập thành công 🎉");
+          if (onSuccess) onSuccess(data);
+        } else {
+          toast.error(`Auto-login lỗi: ${data.error || data.message}`);
+        }
       }
     } catch {
       /* network blip — keep polling */
+    }
+  }
+
+  // ── 1-click full automation ──
+  // Auto-login → wait for success → call /v1/google/flow/get-or-create-project
+  // → push the {profile, project_id, label} into the Flow pool config.
+  // Handles 2FA prompts the same way as startAutoLogin (UI shows tap-match
+  // number / SMS code input), and stops at any failure with a toast.
+  const [oneClickRunning, setOneClickRunning] = useState(false);
+  const [oneClickStep, setOneClickStep] = useState<string>("");
+
+  async function oneClickAddAccount() {
+    if (!autoLogin.email.trim() || !autoLogin.password) {
+      toast.error("Cần điền email + mật khẩu cho 1-click");
+      return;
+    }
+    const profile = suggestedProfile;  // auto-pick next free
+    const label = suggestedLabel;
+    stopPolling();
+    setOneClickRunning(true);
+    setOneClickStep("Đang đăng nhập Google...");
+    try {
+      // 1) Start auto-login
+      const loginRes = await fetch(`${cfg.captcha_solver_url}/v1/session/auto-login`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${cfg.captcha_solver_api_key}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          profile,
+          email: autoLogin.email.trim(),
+          password: autoLogin.password,
+        }),
+      });
+      if (!loginRes.ok) throw new Error(`auto-login HTTP ${loginRes.status}`);
+      const initialSession = await loginRes.json();
+      setLoginSession(initialSession);
+      openNoVNC();
+
+      // 2) Poll for success (or 2FA prompt). User must complete 2FA via
+      // the existing tap/code UI (panel below). We continue when state
+      // becomes success.
+      const onSuccess = async () => {
+        try {
+          setOneClickStep("Đăng nhập OK — đang lấy/tạo Flow project...");
+          // 3) Get or create project
+          const projRes = await fetch(`${cfg.captcha_solver_url}/v1/google/flow/get-or-create-project`, {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${cfg.captcha_solver_api_key}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ profile, headless: false, timeout: 90 }),
+          });
+          if (!projRes.ok) {
+            const err = await projRes.json().catch(() => ({}));
+            throw new Error(err.detail || `get-or-create-project HTTP ${projRes.status}`);
+          }
+          const proj = await projRes.json();
+          setOneClickStep(`Got project ${proj.project_id.slice(0, 8)}... (${proj.action}) — đang thêm vào pool...`);
+
+          // 4) Save to pool config
+          const newAccount: FlowAccount = {
+            profile,
+            project_id: proj.project_id,
+            label,
+          };
+          const next = { ...cfg, accounts: [...cfg.accounts, newAccount] };
+          await save(next);
+          setOneClickStep(`Hoàn tất ✅ Account #${next.accounts.length} (${label}) đã sẵn sàng`);
+          toast.success(`Đã thêm account ${label} — profile ${profile}`);
+          // Clear email/password
+          setAutoLogin({ email: "", password: "", code: "" });
+        } catch (e: any) {
+          setOneClickStep("");
+          toast.error(`Lỗi sau login: ${e?.message}`);
+        } finally {
+          setOneClickRunning(false);
+        }
+      };
+      pollIntervalRef.current = window.setInterval(() => {
+        void pollLoginStatus(profile, onSuccess);
+      }, 1500);
+    } catch (e: any) {
+      toast.error(`Lỗi 1-click: ${e?.message}`);
+      setOneClickRunning(false);
+      setOneClickStep("");
     }
   }
 
@@ -486,11 +578,66 @@ export function FlowCard() {
           </p>
         </div>
 
-        {/* ── Auto-login CLI (email/password + 2FA) ── */}
+        {/* ── 1-CLICK ADD ACCOUNT ── primary onboarding path */}
+        <div className="space-y-2 rounded-xl border-2 border-fuchsia-300 bg-gradient-to-br from-fuchsia-50/60 to-cyan-50/60 p-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold text-fuchsia-800 flex items-center gap-1.5">
+              <Sparkles className="size-3.5" /> 1-click thêm tài khoản (tự động hoàn toàn)
+            </p>
+            <span className="text-[10px] text-fuchsia-700/80">
+              auto-fill profile <code className="font-mono">{suggestedProfile}</code> · label <code className="font-mono">{suggestedLabel}</code>
+            </span>
+          </div>
+          <p className="text-[10px] text-fuchsia-700/70 leading-relaxed">
+            Login Google + tự lấy/tạo Flow project + tự add vào pool — chỉ cần email + mật khẩu.
+            Khi gặp 2FA, dùng panel xanh chàm bên dưới để xử lý (số tap hoặc mã SMS).
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div>
+              <label className="text-[11px] text-stone-500">Email Google</label>
+              <Input
+                value={autoLogin.email}
+                onChange={(e) => setAutoLogin({ ...autoLogin, email: e.target.value })}
+                placeholder="you@gmail.com"
+                className="mt-1 h-8 rounded-lg border-fuchsia-200 text-xs font-mono"
+                autoComplete="off"
+                disabled={oneClickRunning}
+              />
+            </div>
+            <div>
+              <label className="text-[11px] text-stone-500">Mật khẩu</label>
+              <Input
+                type="password"
+                value={autoLogin.password}
+                onChange={(e) => setAutoLogin({ ...autoLogin, password: e.target.value })}
+                placeholder="••••••••"
+                className="mt-1 h-8 rounded-lg border-fuchsia-200 text-xs font-mono"
+                autoComplete="off"
+                disabled={oneClickRunning}
+              />
+            </div>
+          </div>
+          <Button
+            className="w-full h-9 rounded-lg bg-gradient-to-r from-fuchsia-600 to-cyan-600 px-3 text-xs font-bold text-white hover:from-fuchsia-700 hover:to-cyan-700 shadow-lg shadow-fuchsia-200"
+            onClick={oneClickAddAccount}
+            disabled={oneClickRunning}
+          >
+            {oneClickRunning
+              ? <><LoaderCircle className="size-3.5 animate-spin" /> Đang chạy…</>
+              : <><Sparkles className="size-3.5" /> Tự động setup (1-click)</>}
+          </Button>
+          {oneClickStep && (
+            <p className="text-[11px] text-fuchsia-800 bg-white/60 rounded-md px-2 py-1.5 font-mono">
+              {oneClickStep}
+            </p>
+          )}
+        </div>
+
+        {/* ── Auto-login CLI (login only — for advanced users) ── */}
         <div className="space-y-2 rounded-xl border border-dashed border-indigo-300 bg-indigo-50/40 p-3">
           <div className="flex items-center justify-between">
             <p className="text-xs font-semibold text-indigo-800 flex items-center gap-1.5">
-              <KeyRound className="size-3.5" /> Auto-login (CLI)
+              <KeyRound className="size-3.5" /> Auto-login (CLI) — chỉ đăng nhập, không add pool
             </p>
             <span className="text-[10px] text-indigo-600/70">
               dùng profile <code className="font-mono">{draft.profile || "—"}</code>
