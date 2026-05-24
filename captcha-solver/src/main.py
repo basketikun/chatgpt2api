@@ -24,6 +24,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
+from .auto_login import (
+    get_session as get_login_session,
+    list_sessions as list_login_sessions,
+    start_auto_login,
+    submit_2fa_code,
+)
 from .browser_pool import pool
 from .settings import settings
 from .solvers.browser_run import browser_run
@@ -114,6 +120,20 @@ class BrowserRunReq(BaseModel):
 class ManualLoginReq(BaseModel):
     url: str
     profile: str = "default"
+    # When true, kill any cached context for this profile and launch a
+    # fresh Chrome. Use this from the "Mở lại noVNC" button when the
+    # previous window died or noVNC shows a blank desktop.
+    force: bool = False
+
+
+class AutoLoginReq(BaseModel):
+    profile: str = "google-fx"
+    email: str
+    password: str
+
+
+class TwoFactorCodeReq(BaseModel):
+    code: str
 
 
 class PhatNguoiReq(BaseModel):
@@ -328,19 +348,102 @@ async def api_manual_login(req: ManualLoginReq) -> dict[str, Any]:
     """Open `url` in a headful browser on the noVNC display so the user can
     sign in manually. The profile's user-data-dir persists, so the next
     automated call with the same `profile` is already logged in.
+
+    Reuses the first existing page in the context (so the user sees ONE
+    Chrome window in noVNC, not a new tab on every click). If `force=True`,
+    any cached context for this profile is killed and a fresh Chrome is
+    launched — use this when noVNC shows "Connected... :99" but the
+    desktop is blank (Chrome died between calls).
     """
-    ctx = await pool.get(profile=req.profile, headless=False)
-    page = await ctx.new_page()
+    ctx = await pool.get(
+        profile=req.profile,
+        headless=False,
+        force_recreate=req.force,
+    )
+    # Reuse first non-closed page so noVNC user keeps ONE window.
+    page = None
+    for p in list(ctx.pages):
+        try:
+            if not p.is_closed():
+                page = p
+                break
+        except Exception:
+            continue
+    if page is None:
+        page = await ctx.new_page()
+    try:
+        await page.bring_to_front()
+    except Exception:
+        pass
     await page.goto(req.url, wait_until="domcontentloaded", timeout=30_000)
     return {
         "profile": req.profile,
         "url": req.url,
         "open_in_browser": settings.novnc_external_url,
+        "force": req.force,
         "message": (
             "Mở noVNC URL ở trên, đăng nhập tài khoản trong cửa sổ Chromium. "
-            "Cookies sẽ được lưu vào profile '{}' để các lần gọi sau dùng headless.".format(req.profile)
+            "Cookies sẽ được lưu vào profile '{}' để các lần gọi sau dùng headless. "
+            "Nếu desktop trống → gọi lại endpoint này với force=true.".format(req.profile)
         ),
     }
+
+
+@app.post("/v1/session/auto-login", dependencies=[Depends(require_api_key)])
+async def api_auto_login(req: AutoLoginReq) -> dict[str, Any]:
+    """Start a CLI-driven Google login. Returns immediately with the
+    initial session state — UI polls /v1/session/{profile}/auto-login-status
+    to track progress and feeds 2FA codes via /auto-login-2fa-code.
+
+    Anti-bot reality: Google often blocks automation in container/VPS
+    setups. If state stalls or fails, the noVNC window is still open
+    — the user can finish the remaining steps manually and the saved
+    cookies persist either way.
+    """
+    session = await start_auto_login(
+        profile=req.profile,
+        email=req.email,
+        password=req.password,
+    )
+    return {
+        **session.to_dict(),
+        "novnc": settings.novnc_external_url,
+        "note": "Theo dõi tiến trình ở /v1/session/{profile}/auto-login-status. "
+                "Mở noVNC để giám sát/can thiệp khi cần.",
+    }
+
+
+@app.get(
+    "/v1/session/{profile}/auto-login-status",
+    dependencies=[Depends(require_api_key)],
+)
+async def api_auto_login_status(profile: str) -> dict[str, Any]:
+    session = get_login_session(profile)
+    if session is None:
+        return {"profile": profile, "state": "none", "message": "Chưa có phiên auto-login"}
+    return session.to_dict()
+
+
+@app.post(
+    "/v1/session/{profile}/auto-login-2fa-code",
+    dependencies=[Depends(require_api_key)],
+)
+async def api_auto_login_2fa_code(profile: str, req: TwoFactorCodeReq) -> dict[str, Any]:
+    """Feed an SMS / TOTP / backup code to a session currently in
+    state=need_code. Returns 409 if the session isn't asking for one."""
+    ok = submit_2fa_code(profile, req.code)
+    if not ok:
+        raise HTTPException(
+            status_code=409,
+            detail="Phiên không ở trạng thái cần mã (chỉ submit được khi state=need_code)",
+        )
+    return {"profile": profile, "submitted": True}
+
+
+@app.get("/v1/session/auto-login-sessions", dependencies=[Depends(require_api_key)])
+async def api_auto_login_sessions() -> dict[str, Any]:
+    """Snapshot of every auto-login session (running + recently finished)."""
+    return {"sessions": list_login_sessions()}
 
 
 @app.get("/v1/session/list", dependencies=[Depends(require_api_key)])
@@ -360,7 +463,7 @@ async def api_session_list() -> dict[str, Any]:
                 pass
             profiles.append({
                 "name": child.name,
-                "loaded": child.name in pool._contexts,
+                "loaded": pool.is_loaded(child.name),
                 "size_bytes": size,
                 "path": str(child),
             })
@@ -369,10 +472,15 @@ async def api_session_list() -> dict[str, Any]:
 
 @app.get("/v1/session/{profile}/status", dependencies=[Depends(require_api_key)])
 async def api_session_status(profile: str) -> dict[str, Any]:
-    ctx = pool._contexts.get(profile)
+    ctx = pool.get_cached(profile)
     if ctx is None:
         return {"profile": profile, "loaded": False, "pages": 0, "cookies": 0}
-    cookies = await ctx.cookies()
+    try:
+        cookies = await ctx.cookies()
+    except Exception:
+        # Context exists in cache but is dead — return zeroes; next /get
+        # call will evict it.
+        return {"profile": profile, "loaded": False, "pages": 0, "cookies": 0, "stale": True}
     return {
         "profile": profile,
         "loaded": True,

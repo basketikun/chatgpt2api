@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { LoaderCircle, Plus, Save, Trash2, ExternalLink, Sparkles } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { LoaderCircle, Plus, Save, Trash2, ExternalLink, Sparkles, KeyRound, RotateCw, Smartphone, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -12,6 +12,16 @@ type FlowAccount = {
   profile: string;
   project_id: string;
   label?: string;
+};
+
+type AutoLoginState = {
+  profile: string;
+  email: string;
+  state: "none" | "pending" | "starting" | "running" | "need_tap" | "need_code" | "success" | "failed";
+  message: string;
+  tap_number?: string | null;
+  elapsed_sec?: number;
+  error?: string | null;
 };
 
 type FlowConfig = {
@@ -75,7 +85,23 @@ export function FlowCard() {
   const [manuallyEditedProfile, setManuallyEditedProfile] = useState(false);
   const [manuallyEditedLabel, setManuallyEditedLabel] = useState(false);
 
+  // Auto-login state
+  const [autoLogin, setAutoLogin] = useState<{ email: string; password: string; code: string }>({
+    email: "",
+    password: "",
+    code: "",
+  });
+  const [loginSession, setLoginSession] = useState<AutoLoginState | null>(null);
+  const pollIntervalRef = useRef<number | null>(null);
+
   useEffect(() => { fetchCfg(); }, []);
+
+  // Cleanup poll on unmount
+  useEffect(() => () => {
+    if (pollIntervalRef.current) {
+      window.clearInterval(pollIntervalRef.current);
+    }
+  }, []);
 
   // Suggested values based on what's already in the pool. Both
   // re-compute whenever cfg.accounts changes (after add/remove/save).
@@ -154,13 +180,13 @@ export function FlowCard() {
     window.open(novncUrl, "_blank");
   }
 
-  async function triggerManualLogin() {
+  async function triggerManualLogin(force = false) {
     if (!draft.profile.trim()) {
       toast.error("Cần điền profile trước");
       return;
     }
     try {
-      await fetch(`${cfg.captcha_solver_url}/v1/session/manual-login`, {
+      const res = await fetch(`${cfg.captcha_solver_url}/v1/session/manual-login`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${cfg.captcha_solver_api_key}`,
@@ -169,13 +195,112 @@ export function FlowCard() {
         body: JSON.stringify({
           profile: draft.profile.trim(),
           url: "https://labs.google/fx/vi/tools/flow",
+          force,
         }),
       });
-      toast.success("Đã mở browser session — mở noVNC để login Google");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      toast.success(force ? "Đã khởi động lại Chrome — mở noVNC" : "Đã mở browser session — mở noVNC để login Google");
       openNoVNC();
     } catch (e: any) {
       toast.error(`Lỗi gọi manual-login: ${e?.message}`);
     }
+  }
+
+  function stopPolling() {
+    if (pollIntervalRef.current) {
+      window.clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+  }
+
+  async function pollLoginStatus(profile: string) {
+    try {
+      const res = await fetch(
+        `${cfg.captcha_solver_url}/v1/session/${encodeURIComponent(profile)}/auto-login-status`,
+        { headers: { Authorization: `Bearer ${cfg.captcha_solver_api_key}` } },
+      );
+      if (!res.ok) return;
+      const data = await res.json();
+      setLoginSession(data);
+      if (data.state === "success" || data.state === "failed") {
+        stopPolling();
+        if (data.state === "success") toast.success("Đăng nhập thành công 🎉");
+        else toast.error(`Auto-login lỗi: ${data.error || data.message}`);
+      }
+    } catch {
+      /* network blip — keep polling */
+    }
+  }
+
+  async function startAutoLogin() {
+    const profile = draft.profile.trim();
+    if (!profile) { toast.error("Cần điền profile trước"); return; }
+    if (!autoLogin.email.trim() || !autoLogin.password) {
+      toast.error("Cần điền email + mật khẩu");
+      return;
+    }
+    stopPolling();
+    try {
+      const res = await fetch(`${cfg.captcha_solver_url}/v1/session/auto-login`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${cfg.captcha_solver_api_key}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          profile,
+          email: autoLogin.email.trim(),
+          password: autoLogin.password,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setLoginSession(data);
+      toast.success("Auto-login đã chạy — theo dõi ở dưới");
+      // Open noVNC so user can see Chrome live
+      openNoVNC();
+      // Start polling every 1.5s
+      pollIntervalRef.current = window.setInterval(() => {
+        void pollLoginStatus(profile);
+      }, 1500);
+    } catch (e: any) {
+      toast.error(`Lỗi auto-login: ${e?.message}`);
+    }
+  }
+
+  async function submit2faCode() {
+    const profile = loginSession?.profile;
+    if (!profile || !autoLogin.code.trim()) {
+      toast.error("Cần mã 2FA");
+      return;
+    }
+    try {
+      const res = await fetch(
+        `${cfg.captcha_solver_url}/v1/session/${encodeURIComponent(profile)}/auto-login-2fa-code`,
+        {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${cfg.captcha_solver_api_key}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ code: autoLogin.code.trim() }),
+        },
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `HTTP ${res.status}`);
+      }
+      toast.success("Đã gửi mã, đợi xác nhận…");
+      setAutoLogin((s) => ({ ...s, code: "" }));
+    } catch (e: any) {
+      toast.error(`Lỗi gửi mã: ${e?.message}`);
+    }
+  }
+
+  function cancelLoginSession() {
+    stopPolling();
+    setLoginSession(null);
+    setAutoLogin({ email: "", password: "", code: "" });
   }
 
   return (
@@ -342,9 +467,16 @@ export function FlowCard() {
             </Button>
             <Button
               className="h-8 rounded-lg border border-emerald-200 bg-white px-3 text-xs text-emerald-700 hover:bg-emerald-50"
-              onClick={triggerManualLogin}
+              onClick={() => triggerManualLogin(false)}
             >
-              <ExternalLink className="size-3.5" /> Mở noVNC + bắt đầu login Google
+              <ExternalLink className="size-3.5" /> Mở noVNC + login thủ công
+            </Button>
+            <Button
+              className="h-8 rounded-lg border border-amber-200 bg-white px-3 text-xs text-amber-700 hover:bg-amber-50"
+              onClick={() => triggerManualLogin(true)}
+              title="Kill Chrome cũ và mở lại — dùng khi noVNC hiển thị desktop trống (Connected... :99)"
+            >
+              <RotateCw className="size-3.5" /> Khởi động lại Chrome
             </Button>
           </div>
           <p className="text-[10px] text-stone-500 leading-relaxed">
@@ -352,6 +484,135 @@ export function FlowCard() {
             <code className="text-emerald-700">labs.google/fx/vi/tools/flow</code> → tạo project mới → copy UUID từ URL{" "}
             <code className="text-emerald-700">.../project/&lt;UUID&gt;</code>.
           </p>
+        </div>
+
+        {/* ── Auto-login CLI (email/password + 2FA) ── */}
+        <div className="space-y-2 rounded-xl border border-dashed border-indigo-300 bg-indigo-50/40 p-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold text-indigo-800 flex items-center gap-1.5">
+              <KeyRound className="size-3.5" /> Auto-login (CLI)
+            </p>
+            <span className="text-[10px] text-indigo-600/70">
+              dùng profile <code className="font-mono">{draft.profile || "—"}</code>
+            </span>
+          </div>
+          <p className="text-[10px] text-indigo-700/70 leading-relaxed">
+            Backend Playwright tự điền email + mật khẩu, dừng lại khi gặp 2FA để bạn nhập mã hoặc bấm xác minh trên điện thoại.
+            Nếu Google chặn (anti-bot), Chrome vẫn ở noVNC — bạn login thủ công nốt.
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div>
+              <label className="text-[11px] text-stone-500">Email Google</label>
+              <Input
+                value={autoLogin.email}
+                onChange={(e) => setAutoLogin({ ...autoLogin, email: e.target.value })}
+                placeholder="you@gmail.com"
+                className="mt-1 h-8 rounded-lg border-stone-200 text-xs font-mono"
+                autoComplete="off"
+              />
+            </div>
+            <div>
+              <label className="text-[11px] text-stone-500">Mật khẩu</label>
+              <Input
+                type="password"
+                value={autoLogin.password}
+                onChange={(e) => setAutoLogin({ ...autoLogin, password: e.target.value })}
+                placeholder="••••••••"
+                className="mt-1 h-8 rounded-lg border-stone-200 text-xs font-mono"
+                autoComplete="off"
+              />
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <Button
+              className="h-8 rounded-lg bg-indigo-600 px-3 text-xs text-white hover:bg-indigo-700"
+              onClick={startAutoLogin}
+              disabled={loginSession?.state === "running" || loginSession?.state === "starting"}
+            >
+              {loginSession?.state === "running" || loginSession?.state === "starting"
+                ? <LoaderCircle className="size-3.5 animate-spin" />
+                : <KeyRound className="size-3.5" />}
+              Bắt đầu auto-login
+            </Button>
+            {loginSession && loginSession.state !== "none" && (
+              <Button
+                className="h-8 rounded-lg border border-stone-200 bg-white px-3 text-xs text-stone-600 hover:bg-stone-50"
+                onClick={cancelLoginSession}
+              >
+                <X className="size-3.5" /> Đóng phiên
+              </Button>
+            )}
+          </div>
+
+          {/* Status panel — chỉ hiện khi có phiên */}
+          {loginSession && loginSession.state !== "none" && (
+            <div className={`mt-2 rounded-lg border p-3 text-xs space-y-2 ${
+              loginSession.state === "success" ? "border-emerald-300 bg-emerald-50/70"
+              : loginSession.state === "failed" ? "border-rose-300 bg-rose-50/70"
+              : loginSession.state === "need_tap" ? "border-violet-300 bg-violet-50/70"
+              : loginSession.state === "need_code" ? "border-amber-300 bg-amber-50/70"
+              : "border-indigo-200 bg-white/80"
+            }`}>
+              <div className="flex items-center gap-2">
+                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider ${
+                  loginSession.state === "success" ? "bg-emerald-100 text-emerald-700"
+                  : loginSession.state === "failed" ? "bg-rose-100 text-rose-700"
+                  : loginSession.state === "need_tap" ? "bg-violet-100 text-violet-700"
+                  : loginSession.state === "need_code" ? "bg-amber-100 text-amber-700"
+                  : "bg-indigo-100 text-indigo-700"
+                }`}>
+                  {(loginSession.state === "running" || loginSession.state === "starting") && (
+                    <LoaderCircle className="size-3 animate-spin" />
+                  )}
+                  {loginSession.state}
+                </span>
+                <span className="text-stone-600">{loginSession.message}</span>
+                {typeof loginSession.elapsed_sec === "number" && (
+                  <span className="ml-auto text-[10px] text-stone-400 font-mono">{loginSession.elapsed_sec}s</span>
+                )}
+              </div>
+
+              {loginSession.state === "need_tap" && (
+                <div className="flex items-center gap-2 rounded-md bg-violet-100/60 px-2 py-1.5">
+                  <Smartphone className="size-4 text-violet-700" />
+                  <span className="text-violet-900">
+                    Mở app Gmail/Google trên điện thoại
+                    {loginSession.tap_number ? (
+                      <> và bấm số <b className="text-base font-mono">{loginSession.tap_number}</b></>
+                    ) : (
+                      <> và bấm "Có" để xác minh</>
+                    )}
+                  </span>
+                </div>
+              )}
+
+              {loginSession.state === "need_code" && (
+                <div className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <label className="text-[11px] text-amber-800">Mã 2FA (SMS hoặc Authenticator)</label>
+                    <Input
+                      value={autoLogin.code}
+                      onChange={(e) => setAutoLogin({ ...autoLogin, code: e.target.value })}
+                      placeholder="123456"
+                      className="mt-1 h-8 rounded-lg border-amber-200 text-xs font-mono"
+                      autoComplete="off"
+                      onKeyDown={(e) => { if (e.key === "Enter") void submit2faCode(); }}
+                    />
+                  </div>
+                  <Button
+                    className="h-8 rounded-lg bg-amber-600 px-3 text-xs text-white hover:bg-amber-700"
+                    onClick={submit2faCode}
+                  >
+                    Gửi mã
+                  </Button>
+                </div>
+              )}
+
+              {loginSession.state === "failed" && loginSession.error && (
+                <p className="text-rose-700 text-[11px]">{loginSession.error}</p>
+              )}
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>
