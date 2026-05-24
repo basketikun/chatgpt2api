@@ -63,6 +63,11 @@ from .solvers.gemini_web import (
     generate_image as gemini_web_generate_image,
     generate_music as gemini_web_generate_music,
 )
+from .solvers.chatgpt_web import (
+    analyze_image as chatgpt_web_analyze_image,
+    chat as chatgpt_web_chat,
+    generate_image as chatgpt_web_generate_image,
+)
 
 
 def _eprint(*args, **kwargs) -> None:
@@ -307,6 +312,55 @@ async def cmd_gemini_web_vision(args: list[str]) -> int:
         return 1
 
 
+async def cmd_chatgpt_web_chat(args: list[str]) -> int:
+    """Plain chat via chatgpt.com (DOM scrape)."""
+    if len(args) < 2:
+        _eprint("Usage: chatgpt-web-chat <profile> \"<prompt>\"")
+        return 2
+    profile, prompt = args[0], args[1]
+    _eprint(f"▶ ChatGPT Web chat (profile={profile})")
+    try:
+        result = await chatgpt_web_chat(profile=profile, prompt=prompt, timeout=120, headless=False)
+        print(json.dumps({"ok": True, **result}, ensure_ascii=False, indent=2))
+        return 0
+    except Exception as exc:
+        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
+        return 1
+
+
+async def cmd_chatgpt_web_image(args: list[str]) -> int:
+    """Image gen via DALL-E (Tạo hình ảnh tool)."""
+    if len(args) < 2:
+        _eprint("Usage: chatgpt-web-image <profile> \"<prompt>\"")
+        return 2
+    profile, prompt = args[0], args[1]
+    _eprint(f"▶ ChatGPT Web image (profile={profile})")
+    try:
+        result = await chatgpt_web_generate_image(profile=profile, prompt=prompt, timeout=240, headless=False)
+        print(json.dumps({"ok": True, **result}, ensure_ascii=False, indent=2))
+        return 0
+    except Exception as exc:
+        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
+        return 1
+
+
+async def cmd_chatgpt_web_vision(args: list[str]) -> int:
+    """Vision via chatgpt.com — upload image + ask."""
+    if len(args) < 2:
+        _eprint("Usage: chatgpt-web-vision <profile> <image-url-or-data> [\"<prompt>\"]")
+        return 2
+    profile, image = args[0], args[1]
+    prompt = args[2] if len(args) > 2 else "Phân tích chi tiết nội dung ảnh này."
+    _eprint(f"▶ ChatGPT Web vision (profile={profile})")
+    try:
+        result = await chatgpt_web_analyze_image(profile=profile, image=image, prompt=prompt, timeout=180, headless=False)
+        print(json.dumps({"ok": True, **result}, ensure_ascii=False, indent=2))
+        return 0
+    except Exception as exc:
+        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
+        return 1
+
+
 async def cmd_login(args: list[str]) -> int:
     if len(args) < 3:
         _eprint("Usage: login <profile> <email> <password>")
@@ -423,6 +477,9 @@ _COMMANDS = {
     "gemini-web-image": cmd_gemini_web_image,
     "gemini-web-music": cmd_gemini_web_music,
     "gemini-web-vision": cmd_gemini_web_vision,
+    "chatgpt-web-chat": cmd_chatgpt_web_chat,
+    "chatgpt-web-image": cmd_chatgpt_web_image,
+    "chatgpt-web-vision": cmd_chatgpt_web_vision,
     "login": cmd_login,
     "gen": cmd_gen,
     "list": cmd_list,

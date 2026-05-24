@@ -46,6 +46,11 @@ from .solvers.gemini_web import (
     generate_image as gemini_web_generate_image,
     generate_music as gemini_web_generate_music,
 )
+from .solvers.chatgpt_web import (
+    analyze_image as chatgpt_web_analyze_image,
+    chat as chatgpt_web_chat,
+    generate_image as chatgpt_web_generate_image,
+)
 from .browser_pool import pool
 from .settings import settings
 from .solvers.browser_run import browser_run
@@ -199,6 +204,28 @@ class GeminiWebVisionReq(BaseModel):
     profile: str = "gemini-web-default"
     image: str  # data:image/...;base64,... OR https URL
     prompt: str = "Phân tích nội dung ảnh này một cách chi tiết."
+    timeout: int = Field(default=120, ge=30, le=300)
+    headless: bool = False
+
+
+class ChatGPTWebChatReq(BaseModel):
+    profile: str = "chatgpt-default"
+    prompt: str
+    timeout: int = Field(default=90, ge=20, le=300)
+    headless: bool = False
+
+
+class ChatGPTWebImageReq(BaseModel):
+    profile: str = "chatgpt-default"
+    prompt: str
+    timeout: int = Field(default=180, ge=30, le=300)
+    headless: bool = False
+
+
+class ChatGPTWebVisionReq(BaseModel):
+    profile: str = "chatgpt-default"
+    image: str
+    prompt: str = "Phân tích chi tiết nội dung ảnh này."
     timeout: int = Field(default=120, ge=30, le=300)
     headless: bool = False
 
@@ -679,6 +706,48 @@ async def api_gemini_web_analyze_image(req: GeminiWebVisionReq) -> dict[str, Any
         )
     except Exception as exc:
         logger.exception("gemini_web analyze_image failed")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+# ── ChatGPT Web (chatgpt.com) ───────────────────────────────────────────
+
+@app.post("/v1/chatgpt-web/chat", dependencies=[Depends(require_api_key)])
+async def api_chatgpt_web_chat(req: ChatGPTWebChatReq) -> dict[str, Any]:
+    """Plain chat with chatgpt.com (DOM scrape). Profile must be logged in."""
+    try:
+        return await chatgpt_web_chat(
+            profile=req.profile, prompt=req.prompt,
+            timeout=req.timeout, headless=req.headless,
+        )
+    except Exception as exc:
+        logger.exception("chatgpt_web chat failed")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/v1/chatgpt-web/generate-image", dependencies=[Depends(require_api_key)])
+async def api_chatgpt_web_generate_image(req: ChatGPTWebImageReq) -> dict[str, Any]:
+    """Generate image via DALL-E — activates 'Tạo hình ảnh' tool in + menu."""
+    try:
+        return await chatgpt_web_generate_image(
+            profile=req.profile, prompt=req.prompt,
+            timeout=req.timeout, headless=req.headless,
+        )
+    except Exception as exc:
+        logger.exception("chatgpt_web generate_image failed")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/v1/chatgpt-web/analyze-image", dependencies=[Depends(require_api_key)])
+async def api_chatgpt_web_analyze_image(req: ChatGPTWebVisionReq) -> dict[str, Any]:
+    """Upload image + ask via chatgpt.com (GPT vision). Profile must be
+    logged in. Image accepts data: URL or https URL."""
+    try:
+        return await chatgpt_web_analyze_image(
+            profile=req.profile, image=req.image, prompt=req.prompt,
+            timeout=req.timeout, headless=req.headless,
+        )
+    except Exception as exc:
+        logger.exception("chatgpt_web analyze_image failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
