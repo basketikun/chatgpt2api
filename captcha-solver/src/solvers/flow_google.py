@@ -423,8 +423,8 @@ async def generate_image(
                     return
                 except Exception:
                     continue
-            # Fallback — press Enter inside the prompt area.
-            await prompt_input.focus()
+            # Fallback — press Enter (focus is still on the contenteditable
+            # from the JS focus + type step above).
             await page.keyboard.press("Enter")
 
         # 4) Wait for the response — the rewritten request goes out under
