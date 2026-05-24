@@ -652,6 +652,26 @@ def _dispatch(route, messages, tools, tool_choice, body):
     elif route.provider.startswith("custom:"):
         return _handle_custom_openai_chat(route.provider, route.model, messages, tools, tool_choice, body.get("stream"), body)
     elif route.provider == "chatgpt":
+        # Vision: chatgpt.com backend uploads image_url/input_image blocks via
+        # /backend-api/files (estuary) and references them as asset_pointer.
+        # Requires an authenticated chatgpt account (free or codex JWT). If
+        # the pool is empty/anon, fall back to gemini_free which accepts
+        # inline base64 directly.
+        if _messages_have_images(messages):
+            try:
+                from services.account_service import account_service
+                has_chatgpt = any(
+                    a.get("status") == "active"
+                    and str(a.get("type") or "").split(",")
+                    and any(t in ("free", "codex") for t in str(a.get("type") or "").split(","))
+                    for a in account_service.list_accounts()
+                )
+            except Exception:
+                has_chatgpt = False
+            if not has_chatgpt:
+                logger.info({"event": "vision_fallback_to_gemini",
+                             "reason": "no_active_chatgpt_account"})
+                return _handle_gemini_chat("auto", messages, body.get("stream"), body)
         return _handle_chatgpt_chat(route.model, messages, tools, tool_choice, body.get("stream"), body)
     else:
         logger.warning({"event": "unknown_provider", "provider": route.provider, "fallback": "chatgpt"})
