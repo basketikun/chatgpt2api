@@ -313,41 +313,40 @@ async def generate_image(
                 f"Re-run /v1/session/manual-login with profile='{profile}'. ({exc})"
             ) from exc
 
-        # ── Dismiss any "Welcome to Flow" / "What's new" tutorial overlay
-        # that Radix dialogs leave open on a freshly-created project. The
-        # overlay has data-state="open" and intercepts pointer events even
-        # though aria-hidden="true", which blocks our click on the prompt
-        # input below. Press Escape twice + remove any residual overlay
-        # nodes as a safety net.
+        # ── Dismiss any "Welcome to Flow" tutorial overlay that Radix
+        # dialogs leave open on a freshly-created project. Press Escape
+        # twice — Radix listens for it and closes the dialog properly
+        # (which tears down the overlay AND keeps the rest of the React
+        # subtree intact). DOM-removal can rip out the prompt input
+        # too, since it's mounted inside the same portal subtree.
         async def _dismiss_overlays():
             try:
                 await page.keyboard.press("Escape")
-                await asyncio.sleep(0.2)
+                await asyncio.sleep(0.3)
                 await page.keyboard.press("Escape")
-                await asyncio.sleep(0.2)
+                await asyncio.sleep(0.3)
+                # Click a safe corner to defocus anything trapping clicks.
+                try:
+                    await page.mouse.click(10, 10)
+                    await asyncio.sleep(0.2)
+                except Exception:
+                    pass
+                # Only remove TRUE overlay screens (Radix Overlay component
+                # marks itself with data-radix-portal OR role="presentation").
+                # Avoid tearing down the dialog content which may contain
+                # our prompt input on freshly-created projects.
                 removed = await page.evaluate("""
                     () => {
                         let n = 0;
-                        // Radix dialog overlays — match by data-state alone
-                        document.querySelectorAll('[data-state="open"]').forEach(el => {
-                            // Only remove if it's pointer-intercepting (overlay), not the dialog content
+                        document.querySelectorAll(
+                          '[data-state="open"][role="presentation"], ' +
+                          '[data-radix-presence][data-state="open"]:not([role])'
+                        ).forEach(el => {
                             const r = el.getBoundingClientRect();
-                            const cs = getComputedStyle(el);
-                            const isOverlay = (cs.position === 'fixed' || cs.position === 'absolute')
-                                && r.width > 100 && r.height > 100
-                                && cs.pointerEvents !== 'none';
-                            if (isOverlay) { el.remove(); n++; }
-                        });
-                        // Any element that's covering the whole viewport with pointer-events:auto
-                        document.querySelectorAll('div[style*="position: fixed"], div.fixed').forEach(el => {
-                            const r = el.getBoundingClientRect();
-                            if (r.width >= window.innerWidth * 0.9
-                                && r.height >= window.innerHeight * 0.9
-                                && getComputedStyle(el).pointerEvents !== 'none') {
+                            if (r.width >= window.innerWidth * 0.8 && r.height >= window.innerHeight * 0.8) {
                                 el.remove(); n++;
                             }
                         });
-                        document.querySelectorAll('dialog[open]').forEach(d => { d.close(); n++; });
                         return n;
                     }
                 """)
@@ -358,21 +357,32 @@ async def generate_image(
 
         await _dismiss_overlays()
 
-        # 1) Fill the prompt into the largest contenteditable div.
-        prompt_input = page.locator(
-            "[contenteditable='true']"
-        ).first
-        # First-try ordinary click; if blocked by overlay, dismiss again
-        # and force-click (bypasses Playwright's actionability check that
-        # detects pointer-intercepting elements).
-        try:
-            await prompt_input.click(timeout=10_000)
-        except Exception as exc:
-            logger.info("flow_first_click_blocked: %s — retrying with force", str(exc)[:120])
-            await _dismiss_overlays()
-            await asyncio.sleep(0.5)
-            await prompt_input.click(force=True, timeout=10_000)
-        # contenteditable doesn't accept fill() reliably; type instead.
+        # 1) Fill the prompt — focus via JS (immune to overlay
+        # interception, doesn't need a coord click), then type keys via
+        # page.keyboard.
+        focused = await page.evaluate("""
+            () => {
+                const ces = Array.from(document.querySelectorAll('[contenteditable=true]'));
+                // pick the largest visible contenteditable (the prompt input)
+                const target = ces
+                    .map(e => ({e, area: e.offsetWidth * e.offsetHeight}))
+                    .filter(x => x.area > 200)
+                    .sort((a, b) => b.area - a.area)[0];
+                if (!target) return {found: false};
+                target.e.focus();
+                // Place caret at end (so subsequent keys append)
+                const sel = window.getSelection();
+                const range = document.createRange();
+                range.selectNodeContents(target.e);
+                range.collapse(false);
+                sel.removeAllRanges();
+                sel.addRange(range);
+                return {found: true, area: target.area};
+            }
+        """)
+        if not focused.get("found"):
+            raise RuntimeError("Could not find/focus prompt contenteditable")
+        logger.info("flow_prompt_focused area=%d", focused.get("area", 0))
         await page.keyboard.type(prompt, delay=10)
         # Give React a tick to register the change.
         await asyncio.sleep(0.5)
