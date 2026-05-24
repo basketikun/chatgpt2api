@@ -312,6 +312,20 @@ def _handle_single_image(route, body: dict[str, Any]) -> dict[str, Any] | Iterat
             })
             raise  # Re-raise to trigger combo fallback
 
+    # Web-scrape providers: gemini_web (Imagen) / chatgpt_web (DALL-E)
+    if route.provider in ("gemini_web", "chatgpt_web"):
+        prompt = _translate_prompt(prompt) if prompt else prompt
+        logger.info({
+            "event": "image_routed_to_web",
+            "provider": route.provider,
+            "n": n,
+        })
+        if route.provider == "gemini_web":
+            from services.providers.web_proxy import handle_gemini_web_image_gen
+            return handle_gemini_web_image_gen(prompt, n=n)
+        from services.providers.web_proxy import handle_chatgpt_web_image_gen
+        return handle_chatgpt_web_image_gen(prompt, n=n)
+
     # For chatgpt/ DALL-E: use original chatgpt.com backend flow (same as upstream)
     # Let combo fallback handle failures if token can't access chatgpt.com
     # Default: use existing ChatGPT DALL-E flow (unchanged)
