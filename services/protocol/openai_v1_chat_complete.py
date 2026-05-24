@@ -617,10 +617,13 @@ def _execute_mcp_tools_in_response(
 
 def _dispatch(route, messages, tools, tool_choice, body):
     """Dispatch to the correct provider handler."""
-    # RTK compression: chatgpt at 24KB limit, others at 80KB
+    # RTK compression thresholds — both raised to 80KB (was chatgpt=24KB,
+    # others=80KB). Empirical testing showed chatgpt.com accepts up to
+    # ~80KB of body without 4xx, and the larger budget lets HA contexts
+    # with 100+ entities fit without truncating the system prompt.
     if route.provider == "chatgpt":
         rtk_on = config.rtk_enabled
-        rtk_threshold = 24_000
+        rtk_threshold = 80_000
     else:
         rtk_on = config.rtk_other_enabled
         rtk_threshold = 80_000
