@@ -29,6 +29,8 @@ FALLBACK_MODELS = {
     ],
     "chatgpt": [
         "chatgpt/auto",
+        "chatgpt/free/auto",
+        "chatgpt/codex/auto",
         "chatgpt/gpt-4.1-mini",
         "chatgpt/gpt-4.1-nano",
         "chatgpt/gpt-4o",
@@ -468,7 +470,8 @@ def _apply_enabled_filter(data: list[dict]) -> list[dict]:
                     all_enabled.add(m.strip())
 
     always_allow = {
-        "cx/auto", "oc/auto", "chatgpt/auto", "gemini_free/auto", "ag/auto",
+        "cx/auto", "oc/auto", "chatgpt/auto", "chatgpt/free/auto", "chatgpt/codex/auto",
+        "gemini_free/auto", "ag/auto",
     }
     all_enabled |= always_allow
 
@@ -599,8 +602,11 @@ def list_models(force_refresh: bool = False, apply_filter: bool = False) -> dict
                         "owned_by": provider_name,
                     })
 
-    # Always add OpenAI API models to chatgpt (for web session routing)
-    openai_extra = ["chatgpt/gpt-4o", "chatgpt/gpt-4o-mini", "chatgpt/gpt-4.1-mini",
+    # Always add OpenAI API models to chatgpt (for web session routing).
+    # Include explicit pool-pinning variants so HA / SDK dropdowns can pick
+    # "free only" or "codex only" without prefix-typing the model by hand.
+    openai_extra = ["chatgpt/free/auto", "chatgpt/codex/auto",
+                    "chatgpt/gpt-4o", "chatgpt/gpt-4o-mini", "chatgpt/gpt-4.1-mini",
                     "chatgpt/gpt-4.1-nano", "chatgpt/o3-mini", "chatgpt/o4-mini"]
     for mid in openai_extra:
         if mid not in seen:
