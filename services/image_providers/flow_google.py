@@ -262,16 +262,18 @@ class FlowImageAdapter(BaseImageAdapter):
         previous try so the dispatcher actually rotates to the next
         priority slot instead of looping on the same dead Main."""
         req_key = id(credentials) if credentials is not None else 0
+        # key_try == 0 marks the start of a new request — reset the
+        # excluded set so prior request's exclusions don't leak (id can
+        # be reused after the previous credentials dict is GC'd).
+        if key_try == 0:
+            self._tried_by_req[req_key] = set()
         excluded = self._tried_by_req.setdefault(req_key, set())
-        # Always ask the pool for the next healthy account, excluding
-        # already-tried ones in this request. Priority order is enforced
-        # by _next_account itself.
         acc = _next_account(exclude=excluded)
         if acc:
             excluded.add(_account_key(acc))
-        # GC: requests with >10 tries are likely going nowhere — drop state
-        # so we don't accumulate dict entries from ids of stale objects.
-        if len(excluded) > 10:
+        # Belt-and-braces GC for the pathological case (no key_try=0 ever
+        # arrives so the set grows forever).
+        if len(excluded) > 16:
             self._tried_by_req.pop(req_key, None)
         return acc
 
