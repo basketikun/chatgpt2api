@@ -444,20 +444,13 @@ async def _prime_flow_session(page) -> None:
     Without this, navigating straight to /tools/flow/project/<id> on a
     just-launched Chrome — even with valid Google login cookies — shows
     Google's marketing CTA page. The session has to be "warmed" by
-    visiting /tools/flow root AND interacting with it.
+    visiting /tools/flow root AND clicking through it.
 
-    Strategy:
-      1. Navigate to /tools/flow root.
-      2. Wait up to 20s for the actual app to appear (PRO badge, project
-         list, or "Dự án mới" button). If it does → return; session is
-         already primed.
-      3. If only the marketing landing rendered, click "Create with
-         Google Flow" — Google's entitlement check fires and a project
-         is opened, which marks the session as primed for the next nav.
-      4. Wait for /project/<uuid> URL OR for the app UI to appear.
-
-    All errors swallowed — warmup is best-effort. The caller will retry
-    its own hydration check after navigating to the real project URL.
+    Empirically verified: passive wait on /tools/flow (even 100s+)
+    NEVER converts the marketing landing to the app. The user MUST click
+    "Create with Google Flow" to fire Google's entitlement check, which
+    then redirects to /project/<auto-uuid> and primes the session for
+    all subsequent /project/<id> navigations on the same context.
     """
     try:
         await page.goto(
@@ -465,7 +458,8 @@ async def _prime_flow_session(page) -> None:
             wait_until="domcontentloaded",
             timeout=20_000,
         )
-    except Exception:
+    except Exception as exc:
+        logger.warning("flow_prime: goto root failed: %s", exc)
         return
 
     # Did the actual app load? (PRO badge, Dự án mới, edit project buttons)
@@ -473,45 +467,43 @@ async def _prime_flow_session(page) -> None:
         await page.wait_for_function(
             """() => {
                 const els = Array.from(document.querySelectorAll('button,a'));
-                // 'PRO' badge alone, or new-project button text.
                 return els.some(e => {
                     const t = (e.innerText || e.getAttribute('aria-label') || '').trim();
-                    return /^pro$|dự án mới|new project|add_2|edit|chỉnh sửa dự án/i.test(t);
+                    return /^pro$|dự án mới|new project|add_2|chỉnh sửa dự án/i.test(t);
                 });
             }""",
-            timeout=20_000,
+            timeout=10_000,
         )
-        return  # already primed
+        logger.info("flow_prime: already primed (app shell visible)")
+        return
     except Exception:
-        pass  # marketing landing — need to force entitlement
+        pass  # marketing landing — force entitlement check
 
-    # Click "Create with Google Flow" / "Tạo bằng Google Flow" to fire
-    # Google's entitlement check. The click takes us to /project/<auto>;
-    # we don't care which project — just that the session is now primed.
+    # Click "Create with Google Flow" via Playwright locator (real click
+    # sequence — much more reliable than el.click() in evaluate because
+    # React's event delegation needs proper bubbling).
     try:
-        clicked = await page.evaluate(
-            """() => {
-                const btn = Array.from(document.querySelectorAll('button')).find(b => {
-                    const t = (b.innerText || '').trim().toLowerCase();
-                    return t === 'create with google flow'
-                        || t === 'tạo bằng google flow'
-                        || t.startsWith('create with')
-                        || t.startsWith('try in google flow');
-                });
-                if (!btn) return false;
-                btn.click();
-                return true;
-            }"""
-        )
-        if not clicked:
-            return  # nothing to click — give up, caller will fail its check
-        # Wait for either /project/ URL OR app UI to appear
-        try:
-            await page.wait_for_url("**/project/*", timeout=25_000)
-        except Exception:
-            pass
-    except Exception:
-        pass
+        btn = page.locator(
+            'button:has-text("Create with Google Flow"), '
+            'button:has-text("Tạo bằng Google Flow")'
+        ).first
+        if await btn.count() == 0:
+            logger.warning("flow_prime: marketing button not found")
+            return
+        await btn.scroll_into_view_if_needed(timeout=3_000)
+        await btn.click(timeout=5_000)
+        logger.info("flow_prime: clicked 'Create with Google Flow'")
+    except Exception as exc:
+        logger.warning("flow_prime: click failed: %s", exc)
+        return
+
+    # Wait for redirect to /project/<uuid> — Google's entitlement check
+    # fires here. If we land on /project/<auto>, session is now primed.
+    try:
+        await page.wait_for_url("**/project/*", timeout=30_000)
+        logger.info("flow_prime: redirected to %s", page.url)
+    except Exception as exc:
+        logger.warning("flow_prime: no /project/ redirect: %s", exc)
 
 
 async def get_or_create_project(
