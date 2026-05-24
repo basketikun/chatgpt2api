@@ -45,6 +45,11 @@ from .auto_login import (
     submit_2fa_code,
 )
 from .browser_pool import pool
+from .chatgpt_login import (
+    get_session as get_chatgpt_session,
+    start_chatgpt_login,
+    submit_2fa_code as submit_chatgpt_2fa_code,
+)
 from .settings import settings
 from .solvers.flow_google import generate_image, get_or_create_project
 
@@ -121,6 +126,57 @@ async def cmd_onboard(args: list[str]) -> int:
         },
     }, ensure_ascii=False, indent=2))
     return 0
+
+
+async def cmd_chatgpt_onboard(args: list[str]) -> int:
+    """ChatGPT login via Google → scrape /api/auth/session → print JWT."""
+    if len(args) < 3:
+        _eprint("Usage: chatgpt-onboard <profile> <email> <google-password>")
+        return 2
+    profile, email, password = args[0], args[1], args[2]
+    _eprint(f"▶ ChatGPT-via-Google login {email} → profile {profile}")
+    await start_chatgpt_login(profile=profile, email=email, password=password)
+    deadline = time.time() + 240
+    last_state = ""
+    while time.time() < deadline:
+        s = get_chatgpt_session(profile)
+        if s is None:
+            await asyncio.sleep(0.5)
+            continue
+        if s.state != last_state:
+            _eprint(f"  [{s.state}] {s.message}")
+            last_state = s.state
+        if s.state == "success":
+            _eprint(f"✓ Got access_token (expires={s.expires})")
+            print(json.dumps({
+                "ok": True,
+                "profile": profile,
+                "email": s.captured_email or email,
+                "access_token": s.access_token,
+                "expires": s.expires,
+                "config_entry": {
+                    "access_token": s.access_token,
+                    "type": "free",
+                    "label": "ChatGPT-Google",
+                },
+            }, ensure_ascii=False, indent=2))
+            return 0
+        if s.state == "failed":
+            print(json.dumps({"ok": False, "step": s.message, "error": s.error}, ensure_ascii=False))
+            return 1
+        if s.state == "need_tap":
+            if s.tap_number:
+                _eprint(f"  → TAP {s.tap_number} on phone")
+        if s.state == "need_code":
+            if sys.stdin.isatty():
+                code = input("  Nhập mã 2FA (SMS / TOTP): ").strip()
+                if code:
+                    submit_chatgpt_2fa_code(profile, code)
+            else:
+                _eprint("  ⚠ Cần 2FA — POST /v1/chatgpt/{profile}/onboard-2fa-code")
+        await asyncio.sleep(2)
+    print(json.dumps({"ok": False, "error": "timeout after 4 minutes"}, ensure_ascii=False))
+    return 1
 
 
 async def cmd_login(args: list[str]) -> int:
@@ -233,6 +289,7 @@ async def cmd_close(args: list[str]) -> int:
 
 _COMMANDS = {
     "onboard": cmd_onboard,
+    "chatgpt-onboard": cmd_chatgpt_onboard,
     "login": cmd_login,
     "gen": cmd_gen,
     "list": cmd_list,

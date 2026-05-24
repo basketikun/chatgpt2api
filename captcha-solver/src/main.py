@@ -30,6 +30,11 @@ from .auto_login import (
     start_auto_login,
     submit_2fa_code,
 )
+from .chatgpt_login import (
+    get_session as get_chatgpt_session,
+    start_chatgpt_login,
+    submit_2fa_code as submit_chatgpt_2fa_code,
+)
 from .browser_pool import pool
 from .settings import settings
 from .solvers.browser_run import browser_run
@@ -143,6 +148,12 @@ class GetOrCreateProjectReq(BaseModel):
     profile: str = "google-fx"
     headless: bool = False
     timeout: int = Field(default=90, ge=20, le=300)
+
+
+class ChatGPTOnboardReq(BaseModel):
+    profile: str = "chatgpt-default"
+    email: str
+    password: str
 
 
 class PhatNguoiReq(BaseModel):
@@ -480,6 +491,49 @@ async def api_auto_login_2fa_code(profile: str, req: TwoFactorCodeReq) -> dict[s
 async def api_auto_login_sessions() -> dict[str, Any]:
     """Snapshot of every auto-login session (running + recently finished)."""
     return {"sessions": list_login_sessions()}
+
+
+# ── ChatGPT login via Google OAuth ──────────────────────────────────────
+
+@app.post("/v1/chatgpt/onboard", dependencies=[Depends(require_api_key)])
+async def api_chatgpt_onboard(req: ChatGPTOnboardReq) -> dict[str, Any]:
+    """Start a ChatGPT-via-Google login on the given profile. Returns the
+    initial session state — poll /v1/chatgpt/{profile}/onboard-status for
+    progress and feed 2FA codes via /v1/chatgpt/{profile}/onboard-2fa-code.
+
+    On success the response includes a JWT `access_token` ready to add
+    into chatgpt2api's account pool (it's a chatgpt.com-audience JWT).
+    """
+    session = await start_chatgpt_login(
+        profile=req.profile,
+        email=req.email,
+        password=req.password,
+    )
+    return {
+        **session.to_dict(),
+        "novnc": settings.novnc_external_url,
+        "note": "Theo dõi tiến trình ở /v1/chatgpt/{profile}/onboard-status. "
+                "Khi state=success, lấy access_token để add vào chatgpt2api.",
+    }
+
+
+@app.get("/v1/chatgpt/{profile}/onboard-status", dependencies=[Depends(require_api_key)])
+async def api_chatgpt_onboard_status(profile: str) -> dict[str, Any]:
+    session = get_chatgpt_session(profile)
+    if session is None:
+        return {"profile": profile, "state": "none", "message": "Chưa có phiên onboard"}
+    return session.to_dict()
+
+
+@app.post("/v1/chatgpt/{profile}/onboard-2fa-code", dependencies=[Depends(require_api_key)])
+async def api_chatgpt_onboard_2fa_code(profile: str, req: TwoFactorCodeReq) -> dict[str, Any]:
+    ok = submit_chatgpt_2fa_code(profile, req.code)
+    if not ok:
+        raise HTTPException(
+            status_code=409,
+            detail="Phiên không ở state=need_code (chỉ submit được khi đang cần mã)",
+        )
+    return {"profile": profile, "submitted": True}
 
 
 @app.get("/v1/session/list", dependencies=[Depends(require_api_key)])

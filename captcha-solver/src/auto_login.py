@@ -212,17 +212,121 @@ async def _safe_click(page, *selectors, timeout: int = 2500) -> bool:
     return False
 
 
+async def do_google_login_steps(session: LoginSession, page, ctx, password: str) -> bool:
+    """Shared Google login email/password/2FA dance.
+
+    Assumes `page` is already navigated to an accounts.google.com page
+    (signin form OR an OAuth redirect target). Drives the form forward
+    and handles 2FA prompts.
+
+    Updates `session.state` / `.message` / `.error` in-place. Returns
+    True on success, False on failure. Caller decides what to do next
+    (e.g. scrape session cookies, navigate elsewhere, etc).
+    """
+    # ── Email step ──
+    session.message = "Điền email..."
+    try:
+        email_input = page.locator('input[type="email"]').first
+        await email_input.wait_for(state="visible", timeout=15_000)
+        await email_input.fill(session.email)
+        await asyncio.sleep(0.8)
+        await _safe_click(page, '#identifierNext button', 'button[jsname="LgbsSe"]:visible')
+    except Exception as exc:
+        session.state = "failed"
+        session.error = f"Không tìm thấy ô email: {exc}"
+        session.completed_at = time.time()
+        return False
+
+    await asyncio.sleep(2.0)
+
+    # ── Password step ──
+    session.message = "Điền mật khẩu..."
+    try:
+        pwd_input = page.locator('input[type="password"]').first
+        await pwd_input.wait_for(state="visible", timeout=15_000)
+        await asyncio.sleep(0.8)
+        await pwd_input.fill(password)
+        await asyncio.sleep(0.6)
+        await _safe_click(page, '#passwordNext button', 'button[jsname="LgbsSe"]:visible')
+    except Exception as exc:
+        session.state = "failed"
+        session.error = f"Không điền được mật khẩu (Google có thể đã chặn): {exc}"
+        session.completed_at = time.time()
+        return False
+
+    # ── 2FA poll loop ──
+    deadline = time.time() + 240
+    while time.time() < deadline:
+        await asyncio.sleep(2.0)
+        state, info = await _detect_state(page)
+
+        if state == "success":
+            if await _already_logged_in(ctx):
+                session.message = "Google login OK"
+                return True
+            continue
+
+        if state == "error":
+            session.state = "failed"
+            session.error = info or "Google báo lỗi"
+            session.completed_at = time.time()
+            return False
+
+        if state == "need_tap":
+            session.state = "need_tap"
+            session.tap_number = info
+            session.message = (
+                f"Bấm số {info} trên điện thoại"
+                if info else
+                "Mở app Gmail/Google trên điện thoại và bấm 'Có' để xác minh"
+            )
+            continue
+
+        if state == "need_code":
+            session.state = "need_code"
+            session.message = "Cần mã 2FA — nhập vào ô bên dưới"
+            code_deadline = time.time() + 180
+            while time.time() < code_deadline and not session.pending_code:
+                await asyncio.sleep(0.5)
+            if not session.pending_code:
+                session.state = "failed"
+                session.error = "Không nhận được mã 2FA trong 3 phút"
+                session.completed_at = time.time()
+                return False
+            code = session.pending_code
+            session.pending_code = None
+            for sel in _2FA_CODE_SELECTORS:
+                try:
+                    await page.locator(sel).first.fill(code, timeout=2000)
+                    break
+                except Exception:
+                    continue
+            await asyncio.sleep(0.5)
+            await _safe_click(
+                page,
+                'button:has-text("Next")', 'button:has-text("Tiếp theo")',
+                '#totpNext button', '#submit',
+                'button[jsname="LgbsSe"]:visible',
+            )
+            session.state = "running"
+            session.message = "Đã gửi mã, đang xác minh..."
+            continue
+
+    session.state = "failed"
+    session.error = "Hết 4 phút mà chưa hoàn tất 2FA"
+    session.completed_at = time.time()
+    return False
+
+
 async def _run(session: LoginSession, password: str) -> None:
-    """Playwright orchestration. Updates session.state in-place; UI polls
-    /v1/session/{profile}/auto-login-status to see progress."""
+    """Playwright orchestration for accounts.google.com direct login.
+    Updates session.state in-place; UI polls /v1/session/{profile}/
+    auto-login-status to see progress."""
     try:
         session.state = "starting"
         session.message = "Đang mở Chrome (headful → noVNC)"
-        # force_recreate to guarantee a clean Chrome window — we don't want
-        # to inherit a stale tab from a previous failed attempt.
         ctx = await pool.get(profile=session.profile, headless=False, force_recreate=True)
 
-        # Skip the whole flow if already logged in.
         if await _already_logged_in(ctx):
             session.state = "success"
             session.message = "Profile đã có session Google — không cần đăng nhập lại"
@@ -240,108 +344,11 @@ async def _run(session: LoginSession, password: str) -> None:
         session.message = "Mở trang accounts.google.com..."
         await page.goto(_GOOGLE_SIGNIN_URL, wait_until="domcontentloaded", timeout=30_000)
 
-        # ── Email step ──
-        session.message = "Điền email..."
-        try:
-            email_input = page.locator('input[type="email"]').first
-            await email_input.wait_for(state="visible", timeout=15_000)
-            await email_input.fill(session.email)
-            await asyncio.sleep(0.8)
-            await _safe_click(page, '#identifierNext button', 'button[jsname="LgbsSe"]:visible')
-        except Exception as exc:
-            session.state = "failed"
-            session.error = f"Không tìm thấy ô email: {exc}"
+        ok = await do_google_login_steps(session, page, ctx, password)
+        if ok:
+            session.state = "success"
+            session.message = "Đăng nhập thành công"
             session.completed_at = time.time()
-            return
-
-        await asyncio.sleep(2.0)
-
-        # ── Password step ──
-        session.message = "Điền mật khẩu..."
-        try:
-            pwd_input = page.locator('input[type="password"]').first
-            await pwd_input.wait_for(state="visible", timeout=15_000)
-            await asyncio.sleep(0.8)
-            await pwd_input.fill(password)
-            await asyncio.sleep(0.6)
-            await _safe_click(page, '#passwordNext button', 'button[jsname="LgbsSe"]:visible')
-        except Exception as exc:
-            # Could be "couldn't find your account" or rate-limit page
-            session.state = "failed"
-            session.error = f"Không điền được mật khẩu (Google có thể đã chặn): {exc}"
-            session.completed_at = time.time()
-            return
-
-        # ── 2FA poll loop ──
-        deadline = time.time() + 240  # 4 min for full 2FA flow
-        while time.time() < deadline:
-            await asyncio.sleep(2.0)
-            state, info = await _detect_state(page)
-
-            if state == "success":
-                # double-check cookies
-                if await _already_logged_in(ctx):
-                    session.state = "success"
-                    session.message = "Đăng nhập thành công"
-                    session.completed_at = time.time()
-                    return
-                # If we got the success URL but no cookies, keep polling — Google
-                # sometimes briefly redirects then bounces back.
-                continue
-
-            if state == "error":
-                session.state = "failed"
-                session.error = info or "Google báo lỗi"
-                session.completed_at = time.time()
-                return
-
-            if state == "need_tap":
-                session.state = "need_tap"
-                session.tap_number = info
-                session.message = (
-                    f"Bấm số {info} trên điện thoại"
-                    if info else
-                    "Mở app Gmail/Google trên điện thoại và bấm 'Có' để xác minh"
-                )
-                # keep polling, no input needed
-                continue
-
-            if state == "need_code":
-                session.state = "need_code"
-                session.message = "Cần mã 2FA — nhập vào ô bên dưới"
-                # block until UI POSTs a code
-                code_deadline = time.time() + 180
-                while time.time() < code_deadline and not session.pending_code:
-                    await asyncio.sleep(0.5)
-                if not session.pending_code:
-                    session.state = "failed"
-                    session.error = "Không nhận được mã 2FA trong 3 phút"
-                    session.completed_at = time.time()
-                    return
-                code = session.pending_code
-                session.pending_code = None
-                for sel in _2FA_CODE_SELECTORS:
-                    try:
-                        await page.locator(sel).first.fill(code, timeout=2000)
-                        break
-                    except Exception:
-                        continue
-                await asyncio.sleep(0.5)
-                await _safe_click(
-                    page,
-                    'button:has-text("Next")', 'button:has-text("Tiếp theo")',
-                    '#totpNext button', '#submit',
-                    'button[jsname="LgbsSe"]:visible',
-                )
-                session.state = "running"
-                session.message = "Đã gửi mã, đang xác minh..."
-                continue
-
-            # state == "working" — keep waiting
-
-        session.state = "failed"
-        session.error = "Hết 4 phút mà chưa hoàn tất 2FA"
-        session.completed_at = time.time()
 
     except asyncio.CancelledError:
         session.state = "failed"

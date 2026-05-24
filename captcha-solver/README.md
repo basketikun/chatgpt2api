@@ -548,6 +548,14 @@ cs-cli onboard google-fx-3 newuser@gmail.com 'mypassword'
 # Re-login a profile whose session expired
 cs-cli login google-fx-1 olduser@gmail.com 'mypassword'
 
+# ChatGPT login via "Continue with Google" (no separate ChatGPT password!)
+# Opens chatgpt.com → clicks "Continue with Google" → reuses Google login
+# (same 2FA flow as onboard) → scrapes /api/auth/session → prints the JWT
+# access_token ready to paste into chatgpt2api's accounts pool as a free
+# ChatGPT account. Bypasses the 24KB session-token routing limit since
+# the JWT goes through chatgpt.com/backend-api directly.
+cs-cli chatgpt-onboard chatgpt-main mygoogle@gmail.com 'mygooglepass'
+
 # Smoke-test image gen on an account (no chatgpt2api in the loop)
 cs-cli gen google-fx-2 'b01155d0-c740-4b9d-aff2-2a861652f776' \
        'a red apple on a wooden table at sunset'
