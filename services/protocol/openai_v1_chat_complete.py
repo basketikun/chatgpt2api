@@ -756,9 +756,25 @@ def _handle_chatgpt_chat(
     stream: bool,
     body: dict[str, Any],
 ) -> dict[str, Any] | Iterator[dict[str, Any]]:
-    """ChatGPT flow — auto-detects token type and routes to correct API."""
+    """ChatGPT flow — auto-detects token type and routes to correct API.
+
+    Optional model prefix to force a specific account type:
+      chatgpt/free/<model>   → pick from ChatGPT free accounts only
+      chatgpt/codex/<model>  → pick from Codex (OAuth) accounts only
+      chatgpt/<model>        → auto (whichever active account comes first)
+    """
     from services.account_service import detect_token_audience, _TOKEN_AUDIENCE_OPENAI_API, _TOKEN_AUDIENCE_CHATGPT
-    token = account_service.get_text_access_token()
+
+    # Parse optional type-override prefix from model string.
+    preferred_type: str | None = None
+    if model.startswith("chatgpt/free/"):
+        preferred_type = "free"
+        model = "chatgpt/" + model[len("chatgpt/free/"):]
+    elif model.startswith("chatgpt/codex/"):
+        preferred_type = "codex"
+        model = "chatgpt/" + model[len("chatgpt/codex/"):]
+
+    token = account_service.get_text_access_token(account_type=preferred_type)
 
     is_openai_api = False
     is_codex = False
