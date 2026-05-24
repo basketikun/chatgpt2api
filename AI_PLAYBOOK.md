@@ -262,7 +262,7 @@ Symptom: profile size 167MB → 44MB sau redeploy = mất session. Check `settin
 
 ### Conservative threshold giết UX
 
-`FREE_PAYLOAD_LIMIT = 24_000` (chatgpt2api) làm router redirect khỏi ChatGPT free + RTK truncate system prompt 26.7KB của HA → AI hallucinate tên entity. Raise 80KB → fix cả 2 issue. **Luôn benchmark giới hạn thực tế trước khi đặt conservative cap.**
+`FREE_PAYLOAD_LIMIT = 24_000` (chatgpt2api) làm router redirect khỏi ChatGPT free + RTK truncate system prompt 26.7KB của HA → AI hallucinate tên entity. Raise 80KB → fix cả 2 issue. Raise tiếp 100KB (2026-05-25) — sát hard-limit chatgpt.com backend; payload vượt mức vẫn được RTK compress trước khi gửi. **Luôn benchmark giới hạn thực tế trước khi đặt conservative cap.**
 
 ### gpt-4o → Codex = 400
 

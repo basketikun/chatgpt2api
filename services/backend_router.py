@@ -106,11 +106,11 @@ class BackendRouter:
     - Combo model → fallback qua nhiều provider
     """
 
-    # Payload threshold for free ChatGPT accounts. Raised from 24KB to
-    # 80KB (2026-05) after testing showed chatgpt.com/backend-api accepts
-    # significantly more than the conservative original value. Reduces
-    # router-triggered fallbacks to opencode for medium-context HA queries.
-    FREE_PAYLOAD_LIMIT = 80_000
+    # Payload threshold for free ChatGPT accounts. Raised 24KB → 80KB
+    # (2026-05) and again → 100KB (2026-05-25). chatgpt.com/backend-api
+    # tolerates payloads close to its 100KB hard limit; we stay at the
+    # cap and rely on RTK compression in conversation.py for spill-over.
+    FREE_PAYLOAD_LIMIT = 100_000
 
     # Default model per provider (for "auto" resolution)
     PROVIDER_DEFAULT_MODELS: dict[str, str] = {
