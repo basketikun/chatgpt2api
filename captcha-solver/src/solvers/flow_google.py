@@ -325,27 +325,10 @@ async def generate_image(
         # page.keyboard.type sends key events to whatever has focus, so
         # the dialog never has to be dismissed at all.
         #
-        # We DO press Escape once first as a courtesy — if the dialog
-        # closes naturally it's cleaner — but we don't depend on it.
-        try:
-            await page.keyboard.press("Escape")
-            await asyncio.sleep(0.4)
-        except Exception:
-            pass
-
-        # Re-wait for the contenteditable (Escape may have torn down
-        # the Slate editor briefly during the close transition).
-        try:
-            await page.wait_for_function(
-                """() => {
-                    const ces = Array.from(document.querySelectorAll('[contenteditable=true]'));
-                    return ces.some(e => e.offsetWidth > 200 && e.offsetHeight > 0);
-                }""",
-                timeout=10_000,
-            )
-        except Exception:
-            pass
-
+        # Empirically confirmed (ce_count=0 after Escape on a fresh project):
+        # pressing Escape RIPS DOWN the Slate editor entirely and it never
+        # comes back. So we skip Escape and any other dialog-dismissal —
+        # just focus the editor that's already in the DOM and start typing.
         focused = await page.evaluate("""
             () => {
                 const ces = Array.from(document.querySelectorAll('[contenteditable=true]'));
