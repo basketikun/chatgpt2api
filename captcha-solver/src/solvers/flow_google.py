@@ -292,6 +292,30 @@ async def generate_image(
     api_url = f"{API_HOST}/v1/projects/{project_id}/flowMedia:batchGenerateImages"
 
     async with pool.page(profile=profile, headless=headless) as page:
+        # ── Warmup: first hit /tools/flow root so Google's session +
+        # entitlement check completes before we open a project URL.
+        # Going straight to /project/<id> on a freshly-launched Chrome
+        # frequently redirects to the marketing landing page (no
+        # contenteditable) until the session is "primed". The root URL
+        # is cheap and always-cacheable.
+        try:
+            await page.goto(
+                "https://labs.google/fx/vi/tools/flow",
+                wait_until="domcontentloaded",
+                timeout=20_000,
+            )
+            # Wait briefly for hydration (PRO badge / Dự án mới button).
+            try:
+                await page.wait_for_function(
+                    """() => Array.from(document.querySelectorAll('button,a'))
+                      .some(b => /pro|dự án mới|new project|add_2/i.test(b.innerText||b.getAttribute('aria-label')||''))""",
+                    timeout=15_000,
+                )
+            except Exception:
+                pass  # warmup is best-effort
+        except Exception:
+            pass
+
         await page.goto(flow_url, wait_until="domcontentloaded", timeout=30_000)
 
         # Flow renders the prompt input as a contenteditable DIV (not a
@@ -311,6 +335,28 @@ async def generate_image(
                 f"Flow UI never hydrated (timeout). Profile may be logged out. "
                 f"Re-run /v1/session/manual-login with profile='{profile}'. ({exc})"
             ) from exc
+
+        # ── Dismiss any "Welcome to Flow" / "What's new" tutorial overlay
+        # that Radix dialogs leave open on a freshly-created project. The
+        # overlay has data-state="open" and intercepts pointer events even
+        # though aria-hidden="true", which blocks our click on the prompt
+        # input below. Press Escape twice + remove any residual overlay
+        # nodes as a safety net.
+        try:
+            await page.keyboard.press("Escape")
+            await asyncio.sleep(0.3)
+            await page.keyboard.press("Escape")
+            await asyncio.sleep(0.3)
+            await page.evaluate("""
+                () => {
+                    document.querySelectorAll('[data-state="open"][aria-hidden="true"]')
+                      .forEach(el => el.remove());
+                    // Belt-and-braces: also remove any visible <dialog> elements
+                    document.querySelectorAll('dialog[open]').forEach(d => d.close());
+                }
+            """)
+        except Exception:
+            pass
 
         # 1) Fill the prompt into the largest contenteditable div.
         prompt_input = page.locator(
@@ -411,4 +457,98 @@ async def generate_image(
             "raw": payload,
             "elapsed_ms": int((time.time() - started) * 1000),
             "model": model,
+        }
+
+
+async def get_or_create_project(
+    profile: str,
+    headless: bool = False,
+    timeout: int = 90,
+) -> dict[str, Any]:
+    """Return the UUID of a Flow project the logged-in account owns,
+    creating a fresh one if none exist. The profile MUST already be
+    logged in (typically via /v1/session/auto-login or manual noVNC).
+
+    Returns:
+        {
+          "project_id": "<uuid>",
+          "action": "use_existing" | "created",
+          "project_count": int,
+          "elapsed_ms": int,
+        }
+    """
+    started = time.time()
+    async with pool.page(profile=profile, headless=headless) as page:
+        # Warmup at /tools/flow root first so Google's session +
+        # entitlement check completes before listing projects. Going
+        # straight to /tools/flow on a freshly-launched Chrome often
+        # shows the marketing landing until the session is "primed".
+        await page.goto(
+            "https://labs.google/fx/vi/tools/flow",
+            wait_until="domcontentloaded",
+            timeout=20_000,
+        )
+        # Wait for the actual Flow app (PRO badge or Dự án mới button).
+        try:
+            await page.wait_for_function(
+                """() => Array.from(document.querySelectorAll('button,a'))
+                  .some(b => /pro|dự án mới|new project|add_2/i.test(b.innerText||b.getAttribute('aria-label')||''))""",
+                timeout=int(timeout * 1000),
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                f"Flow app never hydrated. Account may not have Google AI Pro "
+                f"or session expired. Logout-then-re-login the profile. ({exc})"
+            ) from exc
+
+        # Look for existing project links.
+        result = await page.evaluate(
+            """() => {
+                const links = Array.from(document.querySelectorAll('a[href*="/project/"]'))
+                    .map(a => (a.href.match(/\\/project\\/([0-9a-f-]+)/i) || [])[1])
+                    .filter(Boolean);
+                return {existing: links};
+            }"""
+        )
+        existing = result.get("existing", [])
+        if existing:
+            return {
+                "project_id": existing[0],
+                "action": "use_existing",
+                "project_count": len(existing),
+                "elapsed_ms": int((time.time() - started) * 1000),
+            }
+
+        # No projects — click "Dự án mới" / "New project" button.
+        clicked = await page.evaluate(
+            """() => {
+                const btn = Array.from(document.querySelectorAll('button')).find(
+                    b => /add_2|dự án mới|new project/i.test(
+                      b.innerText || b.getAttribute('aria-label') || ''
+                    )
+                );
+                if (!btn) return false;
+                btn.click();
+                return true;
+            }"""
+        )
+        if not clicked:
+            raise RuntimeError("Could not find 'Dự án mới' / 'New project' button")
+
+        try:
+            await page.wait_for_url("**/project/*", timeout=20_000)
+        except Exception as exc:
+            raise RuntimeError(
+                f"New-project click did not redirect to /project/<uuid> ({exc})"
+            ) from exc
+
+        import re
+        m = re.search(r"/project/([0-9a-f-]+)", page.url, re.I)
+        if not m:
+            raise RuntimeError(f"Could not extract UUID from URL: {page.url}")
+        return {
+            "project_id": m.group(1),
+            "action": "created",
+            "project_count": 0,
+            "elapsed_ms": int((time.time() - started) * 1000),
         }

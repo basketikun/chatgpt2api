@@ -33,7 +33,10 @@ from .auto_login import (
 from .browser_pool import pool
 from .settings import settings
 from .solvers.browser_run import browser_run
-from .solvers.flow_google import generate_image as flow_generate_image
+from .solvers.flow_google import (
+    generate_image as flow_generate_image,
+    get_or_create_project as flow_get_or_create_project,
+)
 from .solvers.phatnguoi import lookup_phatnguoi
 from .solvers.recaptcha import solve_recaptcha_v2, solve_recaptcha_v3
 from .solvers.turnstile import solve_turnstile
@@ -134,6 +137,12 @@ class AutoLoginReq(BaseModel):
 
 class TwoFactorCodeReq(BaseModel):
     code: str
+
+
+class GetOrCreateProjectReq(BaseModel):
+    profile: str = "google-fx"
+    headless: bool = False
+    timeout: int = Field(default=90, ge=20, le=300)
 
 
 class PhatNguoiReq(BaseModel):
@@ -308,6 +317,33 @@ async def api_flow_generate(req: FlowImageReq):
             "content-disposition": f'inline; filename="flow_{first.get("id","image")}.png"',
         },
     )
+
+
+@app.post(
+    "/v1/google/flow/get-or-create-project",
+    dependencies=[Depends(require_api_key)],
+)
+async def api_flow_get_or_create_project(req: GetOrCreateProjectReq) -> dict[str, Any]:
+    """List Flow projects the logged-in account already owns and return
+    the first one's UUID, or click "Dự án mới" to create a fresh one
+    and return its UUID. The profile MUST already be logged in.
+
+    Used by the chatgpt2api UI's "1-click add account" flow:
+      1. POST /v1/session/auto-login {profile, email, password}
+      2. Poll /v1/session/{profile}/auto-login-status until success
+      3. POST /v1/google/flow/get-or-create-project {profile}
+      4. PATCH /api/settings to add the {profile, project_id, label}
+         to flow.accounts
+    """
+    try:
+        return await flow_get_or_create_project(
+            profile=req.profile,
+            headless=req.headless,
+            timeout=req.timeout,
+        )
+    except Exception as exc:
+        logger.exception("flow get_or_create_project failed")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @app.post("/v1/forms/phatnguoi", dependencies=[Depends(require_api_key)])
