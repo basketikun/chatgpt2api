@@ -235,6 +235,27 @@ export function BackupSettingsCard() {
           <div className="space-y-2">
             <label className="text-sm text-stone-700">Khoảng thời gian sao lưu định kỳ</label>
             <Input value={String(backup.interval_minutes || "")} onChange={(event) => setBackupField("interval_minutes", event.target.value)} placeholder="360" className="h-10 rounded-xl border-stone-200 bg-white" />
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {[
+                { label: "Mỗi giờ", v: 60 },
+                { label: "Mỗi 6h", v: 360 },
+                { label: "Hằng ngày", v: 1440 },
+                { label: "Hằng tuần", v: 10080 },
+              ].map((p) => (
+                <button
+                  key={p.v}
+                  type="button"
+                  onClick={() => setBackupField("interval_minutes", p.v)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] border transition-colors ${
+                    Number(backup.interval_minutes) === p.v
+                      ? "border-stone-700 bg-stone-700 text-white"
+                      : "border-stone-200 bg-white text-stone-600 hover:bg-stone-50"
+                  }`}
+                >
+                  {p.label} <span className="font-mono opacity-60">({p.v}m)</span>
+                </button>
+              ))}
+            </div>
             <p className="text-xs text-stone-500">Tính bằng phút, quá trình tự động thăm dò sẽ được thực hiện theo khoảng thời gian này sau khi dịch vụ khởi động.</p>
           </div>
 
