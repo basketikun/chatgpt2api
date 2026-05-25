@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import base64
 import json
+import random
 import threading
 import time
 from typing import Any
@@ -30,6 +31,13 @@ from utils.log import logger
 # misconfigured profile won't hammer captcha-solver.
 REFRESH_THRESHOLD_DAYS = 7
 SCAN_INTERVAL_SECONDS = 6 * 3600
+# Per-scan wall-clock jitter (seconds): break the lockstep "every 6h on
+# the dot" pattern visible to OpenAI's fraud team when 300+ accounts
+# share one egress IP. Up to ±30 min variance on the 6h beat.
+SCAN_INTERVAL_JITTER_SECONDS = 30 * 60
+# Per-account jitter (seconds) inside one scan: spread refreshes across
+# the scan window instead of bursting them in the same second.
+PER_ACCOUNT_JITTER_SECONDS = 300
 REFRESH_TIMEOUT = 60
 
 _started = False
@@ -144,6 +152,11 @@ def _scan_and_refresh() -> None:
     refreshed = 0
     for acc in list(accounts):
         try:
+            # Per-account jitter: spread the burst across the scan so 300+
+            # accounts don't hit captcha-solver / auth.openai.com in the
+            # same second. Sleep 0..PER_ACCOUNT_JITTER_SECONDS BEFORE each
+            # refresh.
+            time.sleep(random.uniform(0, PER_ACCOUNT_JITTER_SECONDS))
             updated = _refresh_one(acc)
             if updated and hasattr(account_service, "update_account"):
                 ident = acc.get("id") or acc.get("access_token")
@@ -168,7 +181,11 @@ def _scheduler_loop() -> None:
             _scan_and_refresh()
         except Exception as exc:
             logger.warning({"event": "jwt_refresh_loop_error", "error": str(exc)[:120]})
-        time.sleep(SCAN_INTERVAL_SECONDS)
+        # Jittered sleep: SCAN_INTERVAL_SECONDS ± SCAN_INTERVAL_JITTER_SECONDS.
+        # Stops 300+ accounts from hitting auth.openai.com on the same beat.
+        jitter = random.uniform(-SCAN_INTERVAL_JITTER_SECONDS,
+                                SCAN_INTERVAL_JITTER_SECONDS)
+        time.sleep(max(60, SCAN_INTERVAL_SECONDS + jitter))
 
 
 def start() -> None:
