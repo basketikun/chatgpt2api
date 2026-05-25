@@ -601,10 +601,12 @@ def list_models(force_refresh: bool = False, apply_filter: bool = False) -> dict
                         "owned_by": provider_name,
                     })
 
-    # Always add OpenAI API models to chatgpt (for web session routing).
-    # chatgpt/free/auto pins the free pool; cx/auto already covers codex
-    # (handled by openai_oauth provider), so we don't duplicate it here.
-    openai_extra = ["chatgpt/free/auto",
+    # Always add chatgpt/* aliases so HA / SDK dropdowns and combo-model
+    # pickers can see them.
+    #  - chatgpt/auto      = pool ưu tiên (codex trước, free sau)
+    #  - chatgpt/free/auto = ép free pool
+    #  - cx/auto           = ép codex (handled by openai_oauth provider — no dup here)
+    openai_extra = ["chatgpt/auto", "chatgpt/free/auto",
                     "chatgpt/gpt-4o", "chatgpt/gpt-4o-mini", "chatgpt/gpt-4.1-mini",
                     "chatgpt/gpt-4.1-nano", "chatgpt/o3-mini", "chatgpt/o4-mini"]
     for mid in openai_extra:
