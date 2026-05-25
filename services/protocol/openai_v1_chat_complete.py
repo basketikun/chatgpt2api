@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 import uuid
 from typing import Any, Iterable, Iterator
@@ -332,6 +333,16 @@ def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
         result = _wrap_mcp_stream(result, messages, route, body)
     elif isinstance(result, dict):
         result = _execute_mcp_tools_in_response(messages, result, route, body)
+
+    # HA voice / tab chat / Telegram render plain text — markdown bold/italic
+    # show up as literal **foo**. Strip them for device-control answers so
+    # "Đèn trần đang **tắt** (`off`)" → "Đèn trần đang tắt (off)".
+    # Tables are intentionally preserved.
+    if _request_wants_plain_text(messages):
+        if isinstance(result, dict):
+            result = _strip_markdown_in_response(result)
+        else:
+            result = _strip_markdown_in_stream(result)
     return result
 
 
@@ -979,6 +990,115 @@ _FORCE_TOOL_KEYWORDS = [
 def _has_device_keyword(text: str) -> bool:
     text_lower = text.lower()
     return any(kw in text_lower for kw in _FORCE_TOOL_KEYWORDS)
+
+
+def _request_wants_plain_text(messages: list[dict[str, Any]]) -> bool:
+    """Heuristic: last user turn looks like a device-control / status query
+    aimed at HA voice or a plain-text surface. We strip markdown for these so
+    `**tắt**` doesn't leak through as literal asterisks. Skip when the message
+    explicitly contains a markdown table — user clearly wants rich formatting.
+    """
+    for m in reversed(messages):
+        if m.get("role") != "user":
+            continue
+        content = m.get("content")
+        if isinstance(content, str):
+            text = content
+        elif isinstance(content, list):
+            text = " ".join(
+                str(p.get("text") or "") for p in content
+                if isinstance(p, dict) and p.get("type") in ("text", "input_text")
+            )
+        else:
+            text = ""
+        if not text:
+            return False
+        # Hint: user wrote a table or explicitly asked for one → keep markdown
+        if "|--" in text or "bảng" in text.lower() or "table" in text.lower():
+            return False
+        return _has_device_keyword(text)
+    return False
+
+
+# Markdown patterns we strip. Bold / italic / inline code / strike / headings.
+# Tables (lines with `|`) and code fences (```...```) are left alone.
+_MD_BOLD = re.compile(r"\*\*(.+?)\*\*", re.DOTALL)
+_MD_BOLD_UNDER = re.compile(r"__(.+?)__", re.DOTALL)
+_MD_ITALIC_STAR = re.compile(r"(?<![*\w])\*(?!\s)([^*\n]+?)(?<!\s)\*(?![*\w])")
+_MD_ITALIC_UNDER = re.compile(r"(?<![_\w])_(?!\s)([^_\n]+?)(?<!\s)_(?![_\w])")
+_MD_CODE = re.compile(r"`([^`\n]+)`")
+_MD_STRIKE = re.compile(r"~~(.+?)~~", re.DOTALL)
+_MD_HEADING = re.compile(r"^\s{0,3}#{1,6}\s+", re.MULTILINE)
+
+
+def _strip_markdown_inline(text: str) -> str:
+    if not text:
+        return text
+    out = _MD_BOLD.sub(r"\1", text)
+    out = _MD_BOLD_UNDER.sub(r"\1", out)
+    out = _MD_ITALIC_STAR.sub(r"\1", out)
+    out = _MD_ITALIC_UNDER.sub(r"\1", out)
+    out = _MD_CODE.sub(r"\1", out)
+    out = _MD_STRIKE.sub(r"\1", out)
+    out = _MD_HEADING.sub("", out)
+    return out
+
+
+def _strip_markdown_in_response(result: dict[str, Any]) -> dict[str, Any]:
+    choices = result.get("choices") or []
+    for ch in choices:
+        msg = ch.get("message") if isinstance(ch, dict) else None
+        if isinstance(msg, dict):
+            txt = msg.get("content")
+            if isinstance(txt, str):
+                msg["content"] = _strip_markdown_inline(txt)
+    return result
+
+
+def _safe_emit_split(buf: str) -> tuple[str, str]:
+    """Split accumulated buffer into (safe-to-emit, hold-for-next).
+
+    Markdown markers (`*`, `_`, `` ` ``) might be opening a pair that closes
+    in a later chunk. Hold everything from the last such marker onward so we
+    can rewrite it once the closing marker arrives. Final flush happens when
+    the stream ends.
+    """
+    if not buf:
+        return "", ""
+    last = max(buf.rfind("*"), buf.rfind("_"), buf.rfind("`"), buf.rfind("~"))
+    if last < 0:
+        return buf, ""
+    return buf[:last], buf[last:]
+
+
+def _strip_markdown_in_stream(it: Iterator[dict[str, Any]]) -> Iterator[dict[str, Any]]:
+    """Buffer enough lookahead to catch `**bold**` markers split across chunks,
+    then run the same inline strip the non-stream path uses.
+    """
+    buf = ""
+    for chunk in it:
+        try:
+            choices = chunk.get("choices") or []
+            for ch in choices:
+                delta = ch.get("delta") if isinstance(ch, dict) else None
+                finish = ch.get("finish_reason") if isinstance(ch, dict) else None
+                if isinstance(delta, dict):
+                    content = delta.get("content")
+                    if isinstance(content, str) and content:
+                        buf += content
+                        safe, buf = _safe_emit_split(buf)
+                        delta["content"] = _strip_markdown_inline(safe) if safe else ""
+                # On terminal chunk: flush any held tail so we don't drop chars
+                if finish and buf:
+                    if not isinstance(delta, dict):
+                        delta = {}
+                        ch["delta"] = delta
+                    existing = delta.get("content") or ""
+                    delta["content"] = (existing if isinstance(existing, str) else "") + _strip_markdown_inline(buf)
+                    buf = ""
+        except Exception:
+            pass
+        yield chunk
 
 
 def _inject_tool_force_hint(messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
