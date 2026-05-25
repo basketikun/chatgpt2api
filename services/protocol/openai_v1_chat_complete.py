@@ -1081,47 +1081,67 @@ def _strip_markdown_in_response(result: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _safe_emit_split(buf: str) -> tuple[str, str]:
-    """Split accumulated buffer into (safe-to-emit, hold-for-next).
-
-    Markdown markers (`*`, `_`, `` ` ``) might be opening a pair that closes
-    in a later chunk. Hold everything from the last such marker onward so we
-    can rewrite it once the closing marker arrives. Final flush happens when
-    the stream ends.
-    """
-    if not buf:
-        return "", ""
-    last = max(buf.rfind("*"), buf.rfind("_"), buf.rfind("`"), buf.rfind("~"))
-    if last < 0:
-        return buf, ""
-    return buf[:last], buf[last:]
-
-
 def _strip_markdown_in_stream(it: Iterator[dict[str, Any]]) -> Iterator[dict[str, Any]]:
-    """Buffer enough lookahead to catch `**bold**` markers split across chunks,
-    then run the same inline strip the non-stream path uses.
+    """Collect ALL content chunks, strip markdown on the joined text, then
+    replay them as: pass-through (non-content chunks) + one stripped content
+    chunk just before the finish_reason chunk.
+
+    Why not stream-strip incrementally: markdown markers like `**` can span
+    multiple chunks and the OpenAI streaming protocol has no way to "un-emit"
+    a character already sent. Per-chunk strip heuristics leak the opening
+    marker when its close hasn't arrived yet. Device-control responses are
+    short (~100 chars) so dropping live-typing UX is acceptable.
+
+    Tool-call chunks (delta.tool_calls) pass through unchanged so MCP/HA
+    server-side execution still works.
     """
-    buf = ""
+    pending: list[dict[str, Any]] = []
+    full_text = ""
+    emitted_final = False
     for chunk in it:
         try:
             choices = chunk.get("choices") or []
+            has_finish = False
+            has_content = False
             for ch in choices:
-                delta = ch.get("delta") if isinstance(ch, dict) else None
-                finish = ch.get("finish_reason") if isinstance(ch, dict) else None
+                if not isinstance(ch, dict):
+                    continue
+                if ch.get("finish_reason"):
+                    has_finish = True
+                delta = ch.get("delta")
                 if isinstance(delta, dict):
                     content = delta.get("content")
                     if isinstance(content, str) and content:
-                        buf += content
-                        safe, buf = _safe_emit_split(buf)
-                        delta["content"] = _strip_markdown_inline(safe) if safe else ""
-                # On terminal chunk: flush any held tail so we don't drop chars
-                if finish and buf:
-                    if not isinstance(delta, dict):
-                        delta = {}
-                        ch["delta"] = delta
-                    existing = delta.get("content") or ""
-                    delta["content"] = (existing if isinstance(existing, str) else "") + _strip_markdown_inline(buf)
-                    buf = ""
+                        full_text += content
+                        # Strip content from THIS chunk; we'll re-emit the
+                        # whole stripped text just before the finish chunk.
+                        delta["content"] = ""
+                        has_content = True
+
+            if has_finish and not emitted_final and full_text:
+                # Emit the stripped full text as a content chunk first
+                stripped = _strip_markdown_inline(full_text)
+                content_chunk = {
+                    "id": chunk.get("id"),
+                    "object": chunk.get("object"),
+                    "created": chunk.get("created"),
+                    "model": chunk.get("model"),
+                    "choices": [{
+                        "index": 0,
+                        "delta": {"content": stripped},
+                        "finish_reason": None,
+                    }],
+                }
+                yield content_chunk
+                emitted_final = True
+        except Exception:
+            pass
+        # Skip empty content chunks (we'll send the merged one)
+        try:
+            ch0 = (chunk.get("choices") or [{}])[0]
+            delta0 = ch0.get("delta") if isinstance(ch0, dict) else None
+            if isinstance(delta0, dict) and delta0.get("content") == "" and not ch0.get("finish_reason") and not delta0.get("tool_calls") and not delta0.get("role"):
+                continue
         except Exception:
             pass
         yield chunk
