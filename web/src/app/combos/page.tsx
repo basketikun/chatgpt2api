@@ -98,8 +98,19 @@ function ComboEditView({ editModels, allModels, filteredModels, dropdownOpen, se
           <ChevronDown className="size-4 text-stone-500" />
         </button>
         {dropdownOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setDropdownOpen(false)}>
-            <div className="bg-white rounded-2xl shadow-2xl w-[720px] max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
+            onClick={() => setDropdownOpen(false)}
+            onMouseDown={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+          >
+            <div
+              className="bg-white rounded-2xl shadow-2xl w-[720px] max-h-[80vh] flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
               <div className="flex items-center justify-between px-5 py-4 border-b border-stone-100 shrink-0">
                 <h3 className="text-[15px] font-bold text-slate-900">Thêm Model vào chuỗi</h3>
                 <button onClick={() => setDropdownOpen(false)} className="rounded-lg p-1.5 text-stone-400 hover:bg-stone-100 hover:text-stone-700"><X className="size-5" /></button>
