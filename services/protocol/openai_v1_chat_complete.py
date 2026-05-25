@@ -284,6 +284,7 @@ def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
                     result = _wrap_mcp_stream(result, messages_copy, route, body)
                 elif isinstance(result, dict):
                     result = _execute_mcp_tools_in_response(messages_copy, result, route, body)
+                result = _maybe_strip_markdown(result, messages_copy)
                 model_cooldown.record_success("combo:" + model, route.model)
                 return result
             except Exception as exc:
@@ -334,16 +335,17 @@ def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
     elif isinstance(result, dict):
         result = _execute_mcp_tools_in_response(messages, result, route, body)
 
-    # HA voice / tab chat / Telegram render plain text — markdown bold/italic
-    # show up as literal **foo**. Strip them for device-control answers so
-    # "Đèn trần đang **tắt** (`off`)" → "Đèn trần đang tắt (off)".
-    # Tables are intentionally preserved.
-    if _request_wants_plain_text(messages):
-        if isinstance(result, dict):
-            result = _strip_markdown_in_response(result)
-        else:
-            result = _strip_markdown_in_stream(result)
+    result = _maybe_strip_markdown(result, messages)
     return result
+
+
+def _maybe_strip_markdown(result, messages):
+    """Apply device-keyword markdown strip to both dict and Iterator results."""
+    if not _request_wants_plain_text(messages):
+        return result
+    if isinstance(result, dict):
+        return _strip_markdown_in_response(result)
+    return _strip_markdown_in_stream(result)
 
 
 def _curate_search_results(messages: list[dict[str, Any]]) -> None:
