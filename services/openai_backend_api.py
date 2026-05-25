@@ -292,6 +292,20 @@ class OpenAIBackendAPI:
 
     def _api_messages_to_conversation_messages(self, messages: list[Dict[str, Any]]) -> list[Dict[str, Any]]:
         """把标准 chat messages 转成 web conversation 所需的 messages。"""
+        # DEBUG: snapshot incoming shape to find where vision content disappears
+        try:
+            shape = []
+            for m in messages[-3:]:
+                c = m.get("content")
+                if isinstance(c, list):
+                    shape.append({"role": m.get("role"), "parts": [
+                        (p.get("type") if isinstance(p, dict) else type(p).__name__) for p in c
+                    ]})
+                else:
+                    shape.append({"role": m.get("role"), "content": "str" if isinstance(c, str) else type(c).__name__})
+            logger.info({"event": "chatgpt_web_api_to_conv_msgs_in", "count": len(messages), "tail_shape": shape})
+        except Exception:
+            pass
         conversation_messages = []
         for item in messages:
             role = item.get("role", "user")

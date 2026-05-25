@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
 import {
   Combine, Plus, Trash2, ArrowDown, MessageSquare,
   ImageIcon, Eye, X, ChevronDown, Save, Video, Camera,
@@ -11,6 +10,10 @@ import { request } from "@/lib/request";
 import { cn } from "@/lib/utils";
 import { useLangStore } from "@/store/lang";
 import { translations, TranslationKey } from "@/lib/i18n";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 
 function ModelPickerModal({
   open, onClose, title, models, excludeIds, selectedIds, onPick,
@@ -27,30 +30,19 @@ function ModelPickerModal({
   onSearchChange?: (v: string) => void;
   emptyMessage: string;
 }) {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => { setMounted(true); }, []);
-  if (!open || !mounted) return null;
   const filtered = models.filter((m) => !excludeIds.includes(m.id));
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[60] flex justify-center bg-black/60 backdrop-blur-[1px]"
-      onClick={onClose}
-      onMouseDown={(e) => e.stopPropagation()}
-      onPointerDown={(e) => e.stopPropagation()}
-      onTouchStart={(e) => e.stopPropagation()}
-    >
-      <div
-        className="bg-white shadow-2xl w-[min(92vw,720px)] h-[100dvh] flex flex-col border-l border-r border-stone-200"
-        onClick={(e) => e.stopPropagation()}
-        onMouseDown={(e) => e.stopPropagation()}
-        onPointerDown={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-stone-100 shrink-0">
-          <h3 className="text-[15px] font-bold text-slate-900">{title}</h3>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-stone-400 hover:bg-stone-100 hover:text-stone-700"><X className="size-5" /></button>
-        </div>
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent showCloseButton className="!p-0">
+        <DialogHeader className="px-6 pt-6">
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>
+            {filtered.length} model khả dụng
+            {excludeIds.length > 0 ? ` (đã loại ${excludeIds.length} model đã thêm)` : ""}
+          </DialogDescription>
+        </DialogHeader>
         {showSearch && (
-          <div className="p-3 border-b border-stone-50 shrink-0">
+          <div className="px-6 pb-2">
             <input
               autoFocus
               className="w-full rounded-lg border border-stone-200 px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 focus:border-stone-400 focus:outline-none"
@@ -59,7 +51,7 @@ function ModelPickerModal({
             />
           </div>
         )}
-        <div className="overflow-y-auto flex-1 p-2">
+        <div className="flex-1 overflow-y-auto px-3 pb-3">
           {filtered.length === 0 ? (
             <p className="px-4 py-8 text-sm text-stone-400 text-center">{emptyMessage}</p>
           ) : filtered.map((m) => {
@@ -81,12 +73,23 @@ function ModelPickerModal({
             );
           })}
         </div>
-        <div className="px-5 py-3 border-t border-stone-100 shrink-0 text-right">
-          <button onClick={onClose} className="rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800">Xong</button>
-        </div>
-      </div>
-    </div>,
-    document.body,
+        <DialogFooter className="px-6 pb-6">
+          <Button
+            variant="secondary"
+            className="h-10 rounded-xl bg-stone-100 px-5 text-stone-700 hover:bg-stone-200"
+            onClick={onClose}
+          >
+            Đóng
+          </Button>
+          <Button
+            className="h-10 rounded-xl bg-stone-900 px-5 text-white hover:bg-stone-800"
+            onClick={onClose}
+          >
+            Xong
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
