@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { History, LoaderCircle, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -360,6 +361,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [libraryImages, setLibraryImages] = useState<Array<{url: string; name: string}>>([]);
+  const [mounted, setMounted] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [deleteConfirm, setDeleteConfirm] = useState<
     | { type: "one"; id: string }
@@ -406,6 +408,8 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
   useEffect(() => {
     conversationsRef.current = conversations;
   }, [conversations]);
+
+  useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -1319,9 +1323,9 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       ) : null}
 
       {/* Library image picker modal */}
-      {libraryOpen && (
+      {libraryOpen && mounted && createPortal(
         <div
-          className="fixed inset-0 z-50 flex justify-center bg-black/60 backdrop-blur-[1px]"
+          className="fixed inset-0 z-[60] flex justify-center bg-black/60 backdrop-blur-[1px]"
           onClick={() => setLibraryOpen(false)}
           onMouseDown={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
@@ -1348,7 +1352,8 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
               ))}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );

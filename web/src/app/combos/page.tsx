@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Combine, Plus, Trash2, ArrowDown, MessageSquare,
   ImageIcon, Eye, X, ChevronDown, Save, Video, Camera,
@@ -69,6 +70,8 @@ function ComboEditView({ editModels, allModels, filteredModels, dropdownOpen, se
   moveUpInEdit: (idx: number) => void; moveDownInEdit: (idx: number) => void;
   cancelEdit: () => void; saveEdit: () => void;
 }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
   return (
     <div className="space-y-3">
       {editModels.length > 0 && (
@@ -97,9 +100,9 @@ function ComboEditView({ editModels, allModels, filteredModels, dropdownOpen, se
           <span className="text-stone-500">+ Thêm model vào chuỗi</span>
           <ChevronDown className="size-4 text-stone-500" />
         </button>
-        {dropdownOpen && (
+        {dropdownOpen && mounted && createPortal(
           <div
-            className="fixed inset-0 z-50 flex justify-center bg-black/60 backdrop-blur-[1px]"
+            className="fixed inset-0 z-[60] flex justify-center bg-black/60 backdrop-blur-[1px]"
             onClick={() => setDropdownOpen(false)}
             onMouseDown={(e) => e.stopPropagation()}
             onPointerDown={(e) => e.stopPropagation()}
@@ -131,7 +134,8 @@ function ComboEditView({ editModels, allModels, filteredModels, dropdownOpen, se
                 <button onClick={() => setDropdownOpen(false)} className="rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800">Xong</button>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body,
         )}
       </div>
       <div className="flex gap-2 justify-end">
@@ -160,7 +164,9 @@ export default function CombosPage() {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [editDropdownOpen, setEditDropdownOpen] = useState(false);
   const [modelSearch, setModelSearch] = useState("");
+  const [mounted, setMounted] = useState(false);
 
+  useEffect(() => { setMounted(true); }, []);
   useEffect(() => { loadAll(); }, []);
 
   async function loadAll() {
@@ -312,9 +318,20 @@ export default function CombosPage() {
             <button type="button" onClick={() => setDropdownOpen(true)} className="flex w-full items-center justify-between rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm text-stone-900 hover:border-stone-600 transition">
               <span className="text-stone-500">{selectedModels.length > 0 ? `Đã chọn ${selectedModels.length} model` : t("selectModelPlaceholder")}</span><ChevronDown className="size-4 text-stone-500" />
             </button>
-            {dropdownOpen && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-                <div className="bg-white rounded-2xl shadow-2xl w-[720px] max-h-[80vh] flex flex-col">
+            {dropdownOpen && mounted && createPortal(
+              <div
+                className="fixed inset-0 z-[60] flex justify-center bg-black/60 backdrop-blur-[1px]"
+                onClick={() => setDropdownOpen(false)}
+                onMouseDown={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+                onTouchStart={(e) => e.stopPropagation()}
+              >
+                <div
+                  className="bg-white shadow-2xl w-[min(92vw,720px)] h-[100dvh] flex flex-col border-l border-r border-stone-200"
+                  onClick={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                >
                   <div className="flex items-center justify-between px-5 py-4 border-b border-stone-100 shrink-0">
                     <h3 className="text-[15px] font-bold text-slate-900">Chọn Model</h3>
                     <button onClick={() => setDropdownOpen(false)} className="rounded-lg p-1.5 text-stone-400 hover:bg-stone-100 hover:text-stone-700"><X className="size-5" /></button>
@@ -351,7 +368,8 @@ export default function CombosPage() {
                     <button onClick={() => setDropdownOpen(false)} className="rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800">Xong</button>
                   </div>
                 </div>
-              </div>
+              </div>,
+              document.body,
             )}
           </div>
           <button type="button" onClick={addCombo} disabled={!newName.trim() || selectedModels.length < 2} className="inline-flex items-center gap-1.5 rounded-lg bg-stone-100 px-4 py-2 text-sm font-medium text-stone-950 transition hover:bg-white disabled:opacity-40 shrink-0">

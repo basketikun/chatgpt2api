@@ -53,8 +53,6 @@ function DialogContent({
       <DialogOverlay />
       <DialogPrimitive.Content
         data-slot="dialog-content"
-        onPointerDownOutside={(e) => e.preventDefault()}
-        onInteractOutside={(e) => e.preventDefault()}
         className={cn(
           "bg-background data-[state=open]:animate-in data-[state=closed]:animate-out !fixed !top-0 !bottom-0 !left-1/2 !z-50 flex !h-[100dvh] w-[min(92vw,720px)] !-translate-x-1/2 !translate-y-0 flex-col gap-0 overflow-y-auto border-l border-r border-stone-200 !rounded-none !p-0 shadow-[0_36px_120px_-45px_rgba(16,24,40,0.4)] duration-200",
           className,
