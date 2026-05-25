@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import json
 import time
+from collections import defaultdict
+from threading import Lock
 from typing import Any
 
 from curl_cffi import requests
@@ -25,9 +27,33 @@ UNRECOVERABLE_CODES = {
     "unsupported_grant_type",
 }
 
+# Per-refresh_token mutex — see codex_token_refresh.py for rationale.
+_refresh_locks: dict[str, Lock] = defaultdict(Lock)
+_refresh_locks_guard = Lock()
+_MAX_REFRESH_LOCKS = 4096
+
+
+def _lock_for(refresh_token: str) -> Lock:
+    """Return the per-token Lock, creating one on first use."""
+    with _refresh_locks_guard:
+        if len(_refresh_locks) > _MAX_REFRESH_LOCKS:
+            for key in list(_refresh_locks.keys()):
+                lock = _refresh_locks[key]
+                if lock.acquire(blocking=False):
+                    try:
+                        _refresh_locks.pop(key, None)
+                    finally:
+                        lock.release()
+                if len(_refresh_locks) <= _MAX_REFRESH_LOCKS // 2:
+                    break
+        return _refresh_locks[refresh_token]
+
 
 def refresh_antigravity_token(refresh_token: str) -> dict[str, Any] | None:
     """Exchange a Google refresh_token for a fresh access_token.
+
+    Concurrency-safe: per-refresh_token Lock + re-check pattern (see
+    codex_token_refresh.py for rationale).
 
     Returns:
         On success: {"access_token": str, "refresh_token": str, "expires_in": int,
@@ -38,6 +64,29 @@ def refresh_antigravity_token(refresh_token: str) -> dict[str, Any] | None:
     if not refresh_token or not isinstance(refresh_token, str):
         return None
 
+    lock = _lock_for(refresh_token)
+    with lock:
+        try:
+            from services.account_service import account_service
+            existing = account_service.find_by_refresh_token(refresh_token)
+        except Exception:
+            existing = None
+        if existing:
+            cached_access = str(existing.get("access_token") or "")
+            cached_exp = float(existing.get("expires_at") or 0.0)
+            # Google access_tokens live 1h — re-use only when ≥10min remain.
+            if cached_access and cached_exp - time.time() > 600:
+                return {
+                    "access_token": cached_access,
+                    "refresh_token": refresh_token,
+                    "expires_in": int(cached_exp - time.time()),
+                    "expires_at": cached_exp,
+                }
+        return _refresh_antigravity_token_locked(refresh_token)
+
+
+def _refresh_antigravity_token_locked(refresh_token: str) -> dict[str, Any] | None:
+    """Inner worker: actual OAuth call. Caller MUST hold _lock_for(refresh_token)."""
     body = {
         "grant_type": "refresh_token",
         "refresh_token": refresh_token,

@@ -29,6 +29,8 @@ from __future__ import annotations
 
 import json
 import time
+from collections import defaultdict
+from threading import Lock
 from typing import Any
 
 from curl_cffi import requests
@@ -48,9 +50,45 @@ UNRECOVERABLE_CODES = {
     "invalid_request",
 }
 
+# Per-refresh_token mutex: prevents the rotation race where two callers
+# concurrently exchange the SAME refresh_token, OpenAI rotates it, and
+# one of the two access_tokens gets invalidated on first use.
+#
+# After acquiring the lock, callers MUST re-check account_service for a
+# fresh access_token written by an earlier holder of the lock — see
+# refresh_codex_token below.
+_refresh_locks: dict[str, Lock] = defaultdict(Lock)
+_refresh_locks_guard = Lock()
+# Cap on retained locks to bound memory; pruned opportunistically when the
+# guard is held. 4096 keys × ~200 B/lock = ~800 KB worst case.
+_MAX_REFRESH_LOCKS = 4096
+
+
+def _lock_for(refresh_token: str) -> Lock:
+    """Return the per-token Lock, creating one on first use."""
+    with _refresh_locks_guard:
+        if len(_refresh_locks) > _MAX_REFRESH_LOCKS:
+            # Drop unlocked entries; held ones stay (they'll be cleaned next time).
+            for key in list(_refresh_locks.keys()):
+                lock = _refresh_locks[key]
+                if lock.acquire(blocking=False):
+                    try:
+                        _refresh_locks.pop(key, None)
+                    finally:
+                        lock.release()
+                if len(_refresh_locks) <= _MAX_REFRESH_LOCKS // 2:
+                    break
+        return _refresh_locks[refresh_token]
+
 
 def refresh_codex_token(refresh_token: str) -> dict[str, Any] | None:
     """Exchange a Codex refresh_token for a fresh access_token.
+
+    Concurrency-safe: acquires a per-refresh_token Lock so two threads
+    holding the SAME refresh_token serialize. The second holder re-reads
+    account_service and returns the access_token written by the first
+    holder, avoiding a duplicate OAuth call (which would invalidate one
+    of the two new access_tokens via refresh-token rotation).
 
     Returns:
         On success: {"access_token": str, "refresh_token": str, "expires_in": int,
@@ -61,6 +99,32 @@ def refresh_codex_token(refresh_token: str) -> dict[str, Any] | None:
     if not refresh_token or not isinstance(refresh_token, str):
         return None
 
+    lock = _lock_for(refresh_token)
+    with lock:
+        # Re-check: another caller may have already refreshed this token
+        # while we waited on the lock. If account_service holds an access
+        # token for this refresh_token whose expiry is still > 1h away,
+        # short-circuit and return that.
+        try:
+            from services.account_service import account_service  # avoid import cycle at module load
+            existing = account_service.find_by_refresh_token(refresh_token)
+        except Exception:
+            existing = None
+        if existing:
+            cached_access = str(existing.get("access_token") or "")
+            cached_exp = float(existing.get("expires_at") or 0.0)
+            if cached_access and cached_exp - time.time() > 3600:
+                return {
+                    "access_token": cached_access,
+                    "refresh_token": refresh_token,
+                    "expires_in": int(cached_exp - time.time()),
+                    "expires_at": cached_exp,
+                }
+        return _refresh_codex_token_locked(refresh_token)
+
+
+def _refresh_codex_token_locked(refresh_token: str) -> dict[str, Any] | None:
+    """Inner worker: actual OAuth call. Caller MUST hold _lock_for(refresh_token)."""
     body = {
         "grant_type": "refresh_token",
         "refresh_token": refresh_token,

@@ -293,6 +293,23 @@ class AccountService:
         with self._lock:
             return [dict(item) for item in self._accounts.values()]
 
+    def find_by_refresh_token(self, refresh_token: str) -> dict | None:
+        """Return the account dict matching a given refresh_token, or None.
+
+        Used by token-refresh code paths that hold a per-token mutex: once a
+        thread finishes refreshing, a second thread that was waiting on the
+        same mutex can re-read the account here and observe the fresh
+        access_token instead of issuing another OAuth call (which would
+        trigger refresh-token rotation race and brick the account).
+        """
+        if not refresh_token:
+            return None
+        with self._lock:
+            for account in self._accounts.values():
+                if account.get("refresh_token") == refresh_token:
+                    return dict(account)
+        return None
+
     def list_limited_tokens(self) -> list[str]:
         with self._lock:
             return [
