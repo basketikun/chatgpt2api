@@ -697,21 +697,44 @@ async def list_models(profile: str, headless: bool = True, timeout: int = 30) ->
         if not opened:
             logger.info("gemini_web list_models: could not open model picker")
             return []
+        # Give the menu transition time to render — Material menus animate
+        # for ~300ms before items become interactive, and slower devices
+        # exceed the previous 4s wait_for_selector during cold opens.
+        await asyncio.sleep(1.5)
         try:
-            # Material menu items render under <button role="menuitemradio">.
-            await page.wait_for_selector(
-                'button[role="menuitemradio"], button[role="menuitem"], [role="option"]',
-                timeout=4000,
+            # Try several selector strategies. Google has rotated the menu
+            # role markup at least twice (menuitemradio → menuitem → no
+            # role at all, just clickable rows). Collect labels from each
+            # match until we find a non-empty set.
+            candidates = (
+                'div[role="menu"] button',
+                'button[role="menuitemradio"]',
+                'button[role="menuitem"]',
+                '[role="option"]',
+                'mat-action-list button',
+                'cdk-overlay-pane button',
+                'div[role="menu"] [role="button"]',
             )
-            items = await page.locator(
-                'button[role="menuitemradio"], button[role="menuitem"], [role="option"]'
-            ).all_text_contents()
+            items: list[str] = []
+            for sel in candidates:
+                try:
+                    found = page.locator(sel)
+                    if await found.count() == 0:
+                        continue
+                    items = await found.all_text_contents()
+                    if items:
+                        break
+                except Exception:
+                    continue
             for raw in items:
                 cleaned = " ".join(raw.split())
-                if cleaned and len(cleaned) < 80:
+                if cleaned and 2 <= len(cleaned) < 120:
                     labels.append(cleaned)
+            if not labels:
+                logger.info("gemini_web list_models: no menu labels harvested (tried %d selectors)",
+                            len(candidates))
         except Exception as exc:
-            logger.info("gemini_web list_models: menu items not found: %s", exc)
+            logger.info("gemini_web list_models: menu scrape failed: %s", exc)
         finally:
             # Close the picker so the next interaction starts from a known state.
             try:
