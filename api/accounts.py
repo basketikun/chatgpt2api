@@ -235,6 +235,50 @@ def create_router() -> APIRouter:
                 "total": len(builtin_list),
             })
 
+        # ── Gemini Web profile branch ──
+        # gemini.google.com lives behind a Google session in a captcha-solver
+        # profile. Surface it as a single-instance branch so the Accounts UI
+        # actually shows the profile the user just onboarded (otherwise the
+        # only feedback for a successful login is that the model dropdown
+        # gained `gmw/*` — confusing).
+        gw_cfg = providers_cfg.get("gemini_web") or {}
+        if gw_cfg.get("enabled") and gw_cfg.get("profile"):
+            tree.append({
+                "provider": "Gemini Web",
+                "icon": "gemini",
+                "type": "gemini_web",
+                "instances": [{
+                    "ordinal": 1,
+                    "is_primary": True,
+                    "profile": str(gw_cfg.get("profile") or ""),
+                    "label": str(gw_cfg.get("profile") or ""),
+                }],
+                "total": 1,
+                "captcha_solver_url": gw_cfg.get("captcha_solver_url") or "",
+            })
+
+        # ── ChatGPT Web profile branch ──
+        # chatgpt.com via captcha-solver browser scrape. The JWT free-pool
+        # branch is the primary ChatGPT entry; this one only shows up when
+        # the user opted into the cgw/* route (a fallback for OAuth tokens
+        # that aren't audience-chatgpt.com but the captcha-solver has the
+        # cookie session for).
+        cgw_cfg = providers_cfg.get("chatgpt_web") or {}
+        if cgw_cfg.get("enabled") and cgw_cfg.get("profile"):
+            tree.append({
+                "provider": "ChatGPT Web",
+                "icon": "chatgpt",
+                "type": "chatgpt_web",
+                "instances": [{
+                    "ordinal": 1,
+                    "is_primary": True,
+                    "profile": str(cgw_cfg.get("profile") or ""),
+                    "label": str(cgw_cfg.get("profile") or ""),
+                }],
+                "total": 1,
+                "captcha_solver_url": cgw_cfg.get("captcha_solver_url") or "",
+            })
+
         # ── Google Labs Flow accounts branch ──
         flow_cfg = providers_cfg.get("flow") or {}
         flow_accounts = flow_cfg.get("accounts") if isinstance(flow_cfg.get("accounts"), list) else []
