@@ -1,0 +1,18 @@
+# Files agentmemory must NOT capture into long-term memory.
+# See plans/integration_master_plan.md §E.2.1.
+#
+# agentmemory's auto-capture hooks index whatever appears in tool output.
+# Reading any of these files into context would persist their contents
+# across sessions; block them here as a backstop to its built-in privacy
+# filter (which is regex-based and not bulletproof).
+
+services/antigravity_token_refresh.py
+services/codex_token_refresh.py
+config.json
+.env
+.env.*
+data/
+chatgpt2api/data/
+*.db
+*.sqlite
+*.sqlite3
