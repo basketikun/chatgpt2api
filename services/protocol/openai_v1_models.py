@@ -73,13 +73,18 @@ FALLBACK_MODELS = {
     #   flash-extended — flash + extended thinking
     #   pro         — slower, deep thinking
     #   pro-thinking — pro + maximum reasoning (explicit deep-think mode)
-    #   imagen-4    — image generation
+    # Image-generation models below — these never appear in the model
+    # picker because Gemini Web auto-routes image prompts through a
+    # `data_analysis_tool` envelope. The RPC trace exposes the actual
+    # model name (`Nano Banana 2`, `Imagen 4`) in the response footer.
     "gemini_web": [
         "gmw/3.1-flash-lite",
         "gmw/3.1",
         "gmw/3.5-flash-extended",
         "gmw/3-pro",
         "gmw/3-pro-thinking",
+        "gmw/nano-banana-2",
+        "gmw/nano-banana-pro",
         "gmw/imagen-4",
     ],
     "chatgpt_web": [

@@ -713,7 +713,10 @@ async def list_models(profile: str, headless: bool = True, timeout: int = 30) ->
                     if (el.children.length > 3) continue;  // skip wrapper nodes
                     const text = (el.innerText || '').trim();
                     if (text.length < 2 || text.length > 60) continue;
-                    if (/^(?:\\d+\\.?\\d*\\s+)?(?:Flash(?:-Lite| Extended)?|Pro(?: Thinking| with Deep Think)?|Deep Think|Imagen \\d+)\\b/i.test(text)) {
+                    // Match the model-name patterns the picker uses:
+                    //   chat tiers: 2.5/3.1/3 + Flash/Pro/Deep Think/Thinking
+                    //   image gens: Imagen N, Nano Banana (Pro / N)
+                    if (/^(?:\\d+\\.?\\d*\\s+)?(?:Flash(?:-Lite| Extended)?|Pro(?: Thinking| with Deep Think)?|Deep Think|Imagen \\d+|Nano Banana(?: \\d+| Pro)?)\\b/i.test(text)) {
                         out.add(text);
                     }
                 }
@@ -739,7 +742,11 @@ async def list_models(profile: str, headless: bool = True, timeout: int = 30) ->
     # is on the first 1-3 tokens of model-shaped text.
     import re as _re
     short_pattern = _re.compile(
-        r"^((?:\d+(?:\.\d+)?\s+)?(?:Flash(?:-Lite| Extended)?|Pro(?: Thinking)?|Deep Think|Imagen\s+\d+))",
+        r"^("
+        r"(?:\d+(?:\.\d+)?\s+)?(?:Flash(?:-Lite| Extended)?|Pro(?: Thinking)?|Deep Think)"
+        r"|Imagen\s+\d+"
+        r"|Nano Banana(?:\s+\d+| Pro)?"
+        r")",
         _re.IGNORECASE,
     )
     out = []
