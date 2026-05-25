@@ -222,6 +222,7 @@ class BrowserPool:
     async def page(self, profile: str = "default", headless: bool = True) -> AsyncIterator:
         ctx = await self.get(profile=profile, headless=headless)
         page = await ctx.new_page()
+        _attach_model_tracker(page, profile)
         try:
             yield page
         finally:
@@ -229,6 +230,51 @@ class BrowserPool:
                 await page.close()
             except Exception:
                 pass
+
+
+def _attach_model_tracker(page, profile: str) -> None:
+    """Subscribe to network responses on `page` and pipe the bodies of
+    Gemini Web / ChatGPT Web RPC frames through the passive model
+    tracker. New model names ("Nano Banana 3", "Lyria 2", ...) get
+    learned the first time the user's account actually uses them, so
+    the /v1/models catalogue keeps up with upstream renames without
+    code edits.
+
+    Best-effort: any failure inside the handler is swallowed so a
+    misbehaving response can't break the chat / image / music flows
+    we're sharing the page with.
+    """
+    try:
+        from .solvers.model_tracker import extract_gemini_models, record
+    except Exception:
+        return
+
+    async def _handler(response):
+        try:
+            url = response.url
+            if "BardChatUi" in url or "/_/BardChatUi" in url or "gemini.google.com" in url:
+                provider = "gemini_web"
+            elif "chatgpt.com" in url and "backend-api" in url:
+                provider = "chatgpt_web"
+            else:
+                return
+            # Only inspect text-like content — image binaries are noise.
+            ct = (response.headers.get("content-type") or "").lower()
+            if "json" not in ct and "javascript" not in ct and "text" not in ct:
+                return
+            try:
+                body = await response.text()
+            except Exception:
+                return
+            for name in extract_gemini_models(body):
+                record(provider, profile, name)
+        except Exception:
+            pass
+
+    try:
+        page.on("response", _handler)
+    except Exception as exc:
+        logger.debug("model tracker hook failed: %s", exc)
 
 
 pool = BrowserPool()

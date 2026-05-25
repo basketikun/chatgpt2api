@@ -736,6 +736,17 @@ async def list_models(profile: str, headless: bool = True, timeout: int = 30) ->
                 if cleaned and 2 <= len(cleaned) < 60:
                     labels.append(cleaned)
 
+    # Augment picker output with everything the passive tracker has
+    # observed in past RPC responses (image / music / video tools never
+    # appear in the dropdown, but their model names show up in the
+    # wrb.fr footer the first time the user actually invokes them).
+    try:
+        from .model_tracker import list_seen as _list_seen
+        for tracked in _list_seen("gemini_web", profile):
+            labels.append(tracked)
+    except Exception:
+        pass
+
     # Gemini's picker renders each tier twice: once as the bare model
     # name (e.g. "3.1 Flash-Lite") and once as name + tagline ("3.1
     # Flash-Lite Câu trả lời nhanh nhất"). Keep the short form. Match
@@ -746,6 +757,7 @@ async def list_models(profile: str, headless: bool = True, timeout: int = 30) ->
         r"(?:\d+(?:\.\d+)?\s+)?(?:Flash(?:-Lite| Extended)?|Pro(?: Thinking)?|Deep Think)"
         r"|Imagen\s+\d+"
         r"|Nano Banana(?:\s+\d+| Pro)?"
+        r"|Lyria"
         r")",
         _re.IGNORECASE,
     )
