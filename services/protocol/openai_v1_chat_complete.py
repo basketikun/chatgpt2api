@@ -340,18 +340,53 @@ def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
 
 
 def _maybe_strip_markdown(result, messages, force=False):
-    """Apply markdown strip when:
+    """Always strip backend artifacts (citation markers etc.). Conditionally
+    strip markdown when:
     - the request looks like a plain-text surface (device-keyword heuristic), OR
     - the caller forces it (e.g. HA voice / Conversation API which cannot
       render markdown tables — `giá xăng hôm nay` should arrive as plain
       text on HA even though it has no device keyword).
     Stream and dict results are both supported.
     """
+    # Always strip backend artifacts — these never belong in user-facing text
+    if isinstance(result, dict):
+        result = _strip_artifacts_in_response(result)
+    else:
+        result = _strip_artifacts_in_stream(result)
+    # Conditionally strip markdown on top
     if not (force or _request_wants_plain_text(messages)):
         return result
     if isinstance(result, dict):
         return _strip_markdown_in_response(result)
     return _strip_markdown_in_stream(result)
+
+
+def _strip_artifacts_in_response(result: dict[str, Any]) -> dict[str, Any]:
+    choices = result.get("choices") or []
+    for ch in choices:
+        msg = ch.get("message") if isinstance(ch, dict) else None
+        if isinstance(msg, dict):
+            txt = msg.get("content")
+            if isinstance(txt, str):
+                msg["content"] = _strip_artifacts_inline(txt)
+    return result
+
+
+def _strip_artifacts_in_stream(it: Iterator[dict[str, Any]]) -> Iterator[dict[str, Any]]:
+    for chunk in it:
+        try:
+            choices = chunk.get("choices") or []
+            for ch in choices:
+                if not isinstance(ch, dict):
+                    continue
+                delta = ch.get("delta")
+                if isinstance(delta, dict):
+                    content = delta.get("content")
+                    if isinstance(content, str) and content:
+                        delta["content"] = _strip_artifacts_inline(content)
+        except Exception:
+            pass
+        yield chunk
 
 
 def _curate_search_results(messages: list[dict[str, Any]]) -> None:
@@ -1038,11 +1073,28 @@ _MD_CODE = re.compile(r"`([^`\n]+)`")
 _MD_STRIKE = re.compile(r"~~(.+?)~~", re.DOTALL)
 _MD_HEADING = re.compile(r"^\s{0,3}#{1,6}\s+", re.MULTILINE)
 
+# Backend artifact patterns that should NEVER reach the user.
+# ChatGPT web-search backends sometimes leak raw citation markers when the
+# response isn't converted to proper inline citations.
+#   citeturn0search0 / citeturn0search0turn0search2turn0search8 / ...
+#   [oaicite:0] / 【oaicite:0】 / oaicite:N (various brackets)
+_CITE_TURN = re.compile(r"cite(?:turn\d+\w+)+")
+_OAICITE = re.compile(r"[\[【]?\s*oaicite[^\]】\)]*[\]】\)]?")
+
+
+def _strip_artifacts_inline(text: str) -> str:
+    if not text:
+        return text
+    out = _CITE_TURN.sub("", text)
+    out = _OAICITE.sub("", out)
+    return out
+
 
 def _strip_markdown_inline(text: str) -> str:
     if not text:
         return text
-    out = _MD_BOLD.sub(r"\1", text)
+    out = _strip_artifacts_inline(text)
+    out = _MD_BOLD.sub(r"\1", out)
     out = _MD_BOLD_UNDER.sub(r"\1", out)
     out = _MD_ITALIC_STAR.sub(r"\1", out)
     out = _MD_ITALIC_UNDER.sub(r"\1", out)
