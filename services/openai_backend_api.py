@@ -1,4 +1,5 @@
 import base64
+import logging
 import os
 import re
 import time
@@ -13,6 +14,8 @@ from PIL import Image
 
 from services.account_service import account_service
 from services.config import config
+
+logger = logging.getLogger(__name__)
 from services.proxy_service import proxy_settings
 from utils.helper import ensure_ok, iter_sse_payloads, new_uuid
 from utils.log import logger
@@ -853,6 +856,30 @@ class OpenAIBackendAPI:
         requirements = self._get_chat_requirements()
         path, timezone = self._chat_target()
         payload = self._conversation_payload(normalized, model, timezone, tools=tools, tool_choice=tool_choice)
+        # DEBUG: log conversation payload shape when image content is present
+        try:
+            has_img = any(
+                isinstance(m, dict) and isinstance(m.get("content"), dict) and m["content"].get("content_type") == "multimodal_text"
+                for m in payload.get("messages") or []
+            )
+            if has_img:
+                preview = []
+                for m in payload.get("messages", [])[-3:]:
+                    c = m.get("content") if isinstance(m, dict) else None
+                    if isinstance(c, dict):
+                        ct = c.get("content_type")
+                        parts_summary = []
+                        for p in (c.get("parts") or []):
+                            if isinstance(p, dict):
+                                parts_summary.append({k: (str(v)[:80] if isinstance(v, str) else v) for k, v in p.items() if k in ("content_type", "asset_pointer", "width", "height")})
+                            elif isinstance(p, str):
+                                parts_summary.append({"text": p[:120]})
+                        preview.append({"role": m.get("author", {}).get("role"), "ct": ct, "parts": parts_summary})
+                    elif isinstance(c, str):
+                        preview.append({"role": m.get("author", {}).get("role"), "text": c[:120]})
+                logger.info({"event": "chatgpt_web_vision_payload", "model": payload.get("model"), "messages_preview": preview})
+        except Exception as e:
+            logger.warning({"event": "chatgpt_web_vision_payload_log_failed", "error": str(e)[:200]})
         response = self.session.post(
             self.base_url + path,
             headers=self._conversation_headers(path, requirements),
