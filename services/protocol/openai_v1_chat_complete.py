@@ -341,7 +341,25 @@ def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
 
 def _maybe_strip_markdown(result, messages):
     """Apply device-keyword markdown strip to both dict and Iterator results."""
-    if not _request_wants_plain_text(messages):
+    wants = _request_wants_plain_text(messages)
+    last_user_preview = ""
+    for m in reversed(messages):
+        if m.get("role") == "user":
+            c = m.get("content")
+            if isinstance(c, str):
+                last_user_preview = c[:120]
+            elif isinstance(c, list):
+                for p in c:
+                    if isinstance(p, dict) and p.get("type") in ("text", "input_text"):
+                        last_user_preview = str(p.get("text") or "")[:120]
+                        break
+            break
+    logger.info({"event": "md_strip_check", "wants_plain": wants,
+                 "result_is_dict": isinstance(result, dict),
+                 "last_user": last_user_preview,
+                 "msg_count": len(messages),
+                 "msg_roles": [m.get("role") for m in messages[-5:]]})
+    if not wants:
         return result
     if isinstance(result, dict):
         return _strip_markdown_in_response(result)
