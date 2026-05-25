@@ -309,41 +309,76 @@ def _rtk_compress_messages(messages: list[dict[str, Any]], max_bytes: int = _MAX
     return system_msgs + other_msgs
 
 
+def _payload_size_bytes(messages: list[dict[str, Any]]) -> int:
+    """Approximate the wire-size of the messages without inflating binary
+    image data — `json.dumps(..., default=str)` stringifies bytes as
+    `b'\\xff\\xd8...'` which is 3-4x larger than the actual upload size.
+    Treat image parts as their raw byte length so the truncation gate
+    doesn't drop messages just because they carry an image attachment.
+    """
+    total = 0
+    for msg in messages:
+        content = msg.get("content")
+        if isinstance(content, list):
+            for part in content:
+                if isinstance(part, dict) and part.get("type") == "image":
+                    data = part.get("data")
+                    if isinstance(data, (bytes, bytearray)):
+                        total += len(data)
+                    else:
+                        total += len(json.dumps(part, ensure_ascii=False, default=str).encode("utf-8"))
+                else:
+                    total += len(json.dumps(part, ensure_ascii=False, default=str).encode("utf-8"))
+        else:
+            total += len(json.dumps(content, ensure_ascii=False, default=str).encode("utf-8"))
+        # Per-message overhead for role/keys
+        total += 40
+    return total
+
+
 def _truncate_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Drop oldest non-system messages when the serialized payload exceeds the size limit."""
-    payload = json.dumps(messages, ensure_ascii=False, default=str)
-    if len(payload.encode("utf-8")) <= _MAX_PAYLOAD_BYTES:
+    """Drop oldest non-system messages when the serialized payload exceeds the size limit.
+
+    Preserve messages with image content — those carry the user's visual
+    intent and must reach the vision model. Without this guard a single
+    snapshot was enough to push the payload over `_MAX_PAYLOAD_BYTES` once
+    bytes were stringified, and the truncation loop happily dropped the
+    only user message, leaving the model staring at the system prompt and
+    replying with a generic greeting.
+    """
+    if _payload_size_bytes(messages) <= _MAX_PAYLOAD_BYTES:
         return messages
 
     system_msgs = [m for m in messages if m.get("role") == "system"]
     other_msgs = [m for m in messages if m.get("role") != "system"]
+    img_msgs = [m for m in other_msgs if _has_image_content(m)]
+    text_msgs = [m for m in other_msgs if not _has_image_content(m)]
 
-    while other_msgs:
-        test_payload = json.dumps(system_msgs + other_msgs, ensure_ascii=False, default=str)
-        if len(test_payload.encode("utf-8")) <= _MAX_PAYLOAD_BYTES:
+    while text_msgs:
+        if _payload_size_bytes(system_msgs + img_msgs + text_msgs) <= _MAX_PAYLOAD_BYTES:
             break
-        other_msgs.pop(0)
+        text_msgs.pop(0)
 
-    test_payload = json.dumps(system_msgs + other_msgs, ensure_ascii=False, default=str)
-    if len(test_payload.encode("utf-8")) > _MAX_PAYLOAD_BYTES and system_msgs:
+    remaining = system_msgs + img_msgs + text_msgs
+    if _payload_size_bytes(remaining) > _MAX_PAYLOAD_BYTES and system_msgs:
         last_sys = system_msgs[-1]
         if isinstance(last_sys.get("content"), str):
             content = last_sys["content"]
-            excess = len(test_payload.encode("utf-8")) - _MAX_PAYLOAD_BYTES
+            excess = _payload_size_bytes(remaining) - _MAX_PAYLOAD_BYTES
             allowed_len = max(500, len(content) - excess - 200)
             if len(content) > allowed_len:
                 last_sys["content"] = content[:allowed_len] + "\n\n[System prompt truncated due to size limits]"
 
-    if other_msgs and len(test_payload.encode("utf-8")) > _MAX_PAYLOAD_BYTES:
-        last_user = other_msgs[-1]
+    if text_msgs and _payload_size_bytes(remaining) > _MAX_PAYLOAD_BYTES:
+        last_user = text_msgs[-1]
         if last_user.get("role") == "user" and isinstance(last_user.get("content"), str):
             content = last_user["content"]
-            excess = len(test_payload.encode("utf-8")) - _MAX_PAYLOAD_BYTES
+            excess = _payload_size_bytes(remaining) - _MAX_PAYLOAD_BYTES
             allowed_len = max(500, len(content) - excess - 200)
             if len(content) > allowed_len:
                 last_user["content"] = content[:allowed_len] + "\n\n[Content truncated due to size limits]"
 
-    return system_msgs + other_msgs
+    return system_msgs + img_msgs + text_msgs
 
 
 def normalize_messages(messages: object, system: Any = None, tools: list[dict[str, Any]] | None = None, tool_choice: Any = None) -> list[dict[str, Any]]:
