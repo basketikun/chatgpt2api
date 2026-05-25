@@ -339,12 +339,21 @@ def _payload_size_bytes(messages: list[dict[str, Any]]) -> int:
 def _truncate_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Drop oldest non-system messages when the serialized payload exceeds the size limit.
 
-    Preserve messages with image content — those carry the user's visual
-    intent and must reach the vision model. Without this guard a single
-    snapshot was enough to push the payload over `_MAX_PAYLOAD_BYTES` once
-    bytes were stringified, and the truncation loop happily dropped the
-    only user message, leaving the model staring at the system prompt and
-    replying with a generic greeting.
+    INVARIANT — DO NOT BREAK: every message that carries image content
+    (`_has_image_content` returns True) MUST be present in the return
+    value. The chatgpt/free/auto vision path through ChatGPT Web depends
+    on this; if an image message is dropped here, the model receives only
+    the system prompt and replies with a generic greeting (the "Chào bạn!"
+    bug). The image-preserving split below — and the
+    `chatgpt_web_vision_image_dropped` warning in
+    `OpenAIBackendAPI.stream_conversation` — guard against the bytes-size
+    inflation that made the original `json.dumps(..., default=str)` size
+    estimate overshoot by 3-4x and trigger this loop on payloads that
+    were actually well under the cap.
+
+    If you reorganize this function, run
+    `plans/test_vision_truncation_regression.py` and keep the existing
+    behaviour — text-only history can still be trimmed, images cannot.
     """
     if _payload_size_bytes(messages) <= _MAX_PAYLOAD_BYTES:
         return messages
@@ -378,7 +387,21 @@ def _truncate_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
             if len(content) > allowed_len:
                 last_user["content"] = content[:allowed_len] + "\n\n[Content truncated due to size limits]"
 
-    return system_msgs + img_msgs + text_msgs
+    final = system_msgs + img_msgs + text_msgs
+    # Invariant: no image message may be dropped. Surface a loud warning if
+    # the future-proofing somehow regresses; never silently fall through.
+    inbound_img_count = sum(1 for m in messages if _has_image_content(m))
+    outbound_img_count = sum(1 for m in final if _has_image_content(m))
+    if inbound_img_count != outbound_img_count:
+        import logging
+        logging.getLogger(__name__).error({
+            "event": "truncate_messages_dropped_image",
+            "inbound_img_count": inbound_img_count,
+            "outbound_img_count": outbound_img_count,
+            "inbound_total": len(messages),
+            "outbound_total": len(final),
+        })
+    return final
 
 
 def normalize_messages(messages: object, system: Any = None, tools: list[dict[str, Any]] | None = None, tool_choice: Any = None) -> list[dict[str, Any]]:

@@ -292,20 +292,6 @@ class OpenAIBackendAPI:
 
     def _api_messages_to_conversation_messages(self, messages: list[Dict[str, Any]]) -> list[Dict[str, Any]]:
         """把标准 chat messages 转成 web conversation 所需的 messages。"""
-        # DEBUG: snapshot incoming shape to find where vision content disappears
-        try:
-            shape = []
-            for m in messages[-3:]:
-                c = m.get("content")
-                if isinstance(c, list):
-                    shape.append({"role": m.get("role"), "parts": [
-                        (p.get("type") if isinstance(p, dict) else type(p).__name__) for p in c
-                    ]})
-                else:
-                    shape.append({"role": m.get("role"), "content": "str" if isinstance(c, str) else type(c).__name__})
-            logger.info({"event": "chatgpt_web_api_to_conv_msgs_in", "count": len(messages), "tail_shape": shape})
-        except Exception:
-            pass
         conversation_messages = []
         for item in messages:
             role = item.get("role", "user")
@@ -870,30 +856,36 @@ class OpenAIBackendAPI:
         requirements = self._get_chat_requirements()
         path, timezone = self._chat_target()
         payload = self._conversation_payload(normalized, model, timezone, tools=tools, tool_choice=tool_choice)
-        # DEBUG: log conversation payload shape when image content is present
+        # Vision safety check: if the inbound messages carried image parts
+        # but the outbound payload has no multimodal_text content, the
+        # truncation/normalization pipeline silently dropped the image.
+        # Surface that as a warning instead of letting the model reply
+        # with a generic greeting (regression of conversation.py
+        # `_truncate_messages` bytes-size bug — see that function's
+        # docstring for context).
         try:
-            has_img = any(
-                isinstance(m, dict) and isinstance(m.get("content"), dict) and m["content"].get("content_type") == "multimodal_text"
+            inbound_has_image = any(
+                isinstance(m, dict) and isinstance(m.get("content"), list)
+                and any(
+                    isinstance(p, dict) and p.get("type") in ("image", "image_url", "input_image")
+                    for p in m["content"]
+                )
+                for m in normalized
+            )
+            outbound_has_image = any(
+                isinstance(m, dict) and isinstance(m.get("content"), dict)
+                and m["content"].get("content_type") == "multimodal_text"
                 for m in payload.get("messages") or []
             )
-            if has_img:
-                preview = []
-                for m in payload.get("messages", [])[-3:]:
-                    c = m.get("content") if isinstance(m, dict) else None
-                    if isinstance(c, dict):
-                        ct = c.get("content_type")
-                        parts_summary = []
-                        for p in (c.get("parts") or []):
-                            if isinstance(p, dict):
-                                parts_summary.append({k: (str(v)[:80] if isinstance(v, str) else v) for k, v in p.items() if k in ("content_type", "asset_pointer", "width", "height")})
-                            elif isinstance(p, str):
-                                parts_summary.append({"text": p[:120]})
-                        preview.append({"role": m.get("author", {}).get("role"), "ct": ct, "parts": parts_summary})
-                    elif isinstance(c, str):
-                        preview.append({"role": m.get("author", {}).get("role"), "text": c[:120]})
-                logger.info({"event": "chatgpt_web_vision_payload", "model": payload.get("model"), "messages_preview": preview})
-        except Exception as e:
-            logger.warning({"event": "chatgpt_web_vision_payload_log_failed", "error": str(e)[:200]})
+            if inbound_has_image and not outbound_has_image:
+                logger.warning({
+                    "event": "chatgpt_web_vision_image_dropped",
+                    "model": payload.get("model"),
+                    "inbound_msg_count": len(normalized),
+                    "outbound_msg_count": len(payload.get("messages") or []),
+                })
+        except Exception:
+            pass
         response = self.session.post(
             self.base_url + path,
             headers=self._conversation_headers(path, requirements),
