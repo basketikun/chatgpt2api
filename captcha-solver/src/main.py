@@ -62,7 +62,6 @@ from .solvers.flow_google import (
 from .solvers.phatnguoi import lookup_phatnguoi
 from .solvers.recaptcha import solve_recaptcha_v2, solve_recaptcha_v3
 from .solvers.turnstile import solve_turnstile
-from .cloak_client import cloak, is_enabled as cloak_is_enabled, CloakBridgeError
 
 logging.basicConfig(
     level=logging.INFO,
@@ -108,61 +107,6 @@ app.add_middleware(
 @app.get("/health")
 async def health() -> dict[str, Any]:
     return {"status": "ok", "novnc": settings.novnc_external_url}
-
-
-# ────────────────────── CloakBrowser bridge (POC) ────────────────────────
-# These endpoints proxy to the local cloak-bridge Node service. They exist
-# so we can validate the second stealth layer against a target (e.g. open
-# chatgpt.com, dump HTML, screenshot) before wiring it into the production
-# login/captcha flows. Keep them gated behind the same Bearer auth as
-# everything else — the bridge itself binds 127.0.0.1 only, so the public
-# surface stays one endpoint.
-
-
-class CloakRunRequest(BaseModel):
-    url: str
-    profile: str = "cloak_test"
-    timeout: float = 30.0
-    selector: str | None = Field(default=None, description="Optional CSS selector to extract text from")
-    screenshot: bool = Field(default=False, description="Return a base64 PNG screenshot too")
-
-
-@app.get("/v1/cloak/health")
-async def cloak_health(_: None = Depends(require_api_key)) -> dict[str, Any]:
-    return {
-        "enabled": cloak_is_enabled(),
-        "bridge_reachable": await cloak.health(),
-        "bridge_url": cloak.base_url,
-    }
-
-
-@app.post("/v1/cloak/run")
-async def cloak_run(req: CloakRunRequest, _: None = Depends(require_api_key)) -> dict[str, Any]:
-    """Open `url` in cloakbrowser, return URL + visible text (+ optional screenshot).
-
-    Useful for validating stealth bypass against a specific target without
-    touching the production login flows. The cloak context for `profile`
-    stays alive after the call so cookies persist for the next request.
-    """
-    import base64
-
-    try:
-        async with cloak.session(req.profile) as page:
-            await page.navigate(req.url, timeout=req.timeout)
-            text = await page.get_text(req.selector) if req.selector else await page.get_text()
-            payload: dict[str, Any] = {"ok": True, "url_after": req.url, "text": text}
-            if req.screenshot:
-                png = await page.screenshot(full_page=False)
-                payload["screenshot_b64"] = base64.b64encode(png).decode("ascii")
-            return payload
-    except CloakBridgeError as exc:
-        raise HTTPException(status_code=502, detail=f"cloak-bridge failure: {exc}") from exc
-
-
-@app.post("/v1/cloak/close/{profile}")
-async def cloak_close(profile: str, _: None = Depends(require_api_key)) -> dict[str, Any]:
-    ok = await cloak.close_profile(profile)
-    return {"closed": ok, "profile": profile}
 
 
 class TurnstileReq(BaseModel):

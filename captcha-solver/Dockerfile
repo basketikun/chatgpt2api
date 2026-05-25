@@ -39,25 +39,10 @@ RUN pip install -r requirements.txt
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 RUN patchright install chromium
 
-# Node + cloak-bridge: a second stealth layer on top of patchright.
-# We install Node here (used only by the bridge sidecar, not Python) so the
-# Python process can `httpx.post` to a localhost cloakbrowser endpoint
-# instead of subprocessing Node per call. Node 20 LTS is small (~30 MB).
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install cloak-bridge dependencies separately to keep the npm cache layer
-# stable across source-only changes.
-COPY cloak-bridge/package.json /app/cloak-bridge/package.json
-RUN cd /app/cloak-bridge && npm install --omit=dev
-
-COPY cloak-bridge/server.js /app/cloak-bridge/server.js
 COPY src /app/src
 COPY supervisord.conf /etc/supervisor/conf.d/captcha-solver.conf
 
 VOLUME ["/data"]
-# 8010 = FastAPI captcha-solver, 6080 = noVNC, 8011 = cloak-bridge (internal)
 EXPOSE 8010 6080
 
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/captcha-solver.conf"]
