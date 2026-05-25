@@ -12,6 +12,84 @@ import { cn } from "@/lib/utils";
 import { useLangStore } from "@/store/lang";
 import { translations, TranslationKey } from "@/lib/i18n";
 
+function ModelPickerModal({
+  open, onClose, title, models, excludeIds, selectedIds, onPick,
+  showSearch, onSearchChange, emptyMessage,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  models: ModelInfo[];
+  excludeIds: string[];
+  selectedIds?: string[];
+  onPick: (id: string) => void;
+  showSearch?: boolean;
+  onSearchChange?: (v: string) => void;
+  emptyMessage: string;
+}) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+  if (!open || !mounted) return null;
+  const filtered = models.filter((m) => !excludeIds.includes(m.id));
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[60] flex justify-center bg-black/60 backdrop-blur-[1px]"
+      onClick={onClose}
+      onMouseDown={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
+    >
+      <div
+        className="bg-white shadow-2xl w-[min(92vw,720px)] h-[100dvh] flex flex-col border-l border-r border-stone-200"
+        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b border-stone-100 shrink-0">
+          <h3 className="text-[15px] font-bold text-slate-900">{title}</h3>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-stone-400 hover:bg-stone-100 hover:text-stone-700"><X className="size-5" /></button>
+        </div>
+        {showSearch && (
+          <div className="p-3 border-b border-stone-50 shrink-0">
+            <input
+              autoFocus
+              className="w-full rounded-lg border border-stone-200 px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 focus:border-stone-400 focus:outline-none"
+              placeholder="Tìm model... (lọc theo tên)"
+              onChange={(e) => onSearchChange?.(e.target.value)}
+            />
+          </div>
+        )}
+        <div className="overflow-y-auto flex-1 p-2">
+          {filtered.length === 0 ? (
+            <p className="px-4 py-8 text-sm text-stone-400 text-center">{emptyMessage}</p>
+          ) : filtered.map((m) => {
+            const isSelected = selectedIds?.includes(m.id);
+            return (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => onPick(m.id)}
+                className={cn(
+                  "flex w-full items-center gap-3 px-4 py-2.5 text-left rounded-lg transition mb-0.5",
+                  isSelected ? "bg-emerald-50 border border-emerald-200" : "hover:bg-stone-50 border border-transparent",
+                )}
+              >
+                <span className="text-[13px] font-mono text-stone-800 truncate flex-1">{m.id}</span>
+                <span className="text-[10px] text-stone-400">{m.owned_by}</span>
+                {isSelected && <Check className="size-4 text-emerald-500 shrink-0" />}
+              </button>
+            );
+          })}
+        </div>
+        <div className="px-5 py-3 border-t border-stone-100 shrink-0 text-right">
+          <button onClick={onClose} className="rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800">Xong</button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 type ModelInfo = {
   id: string;
   owned_by: string;
@@ -70,8 +148,6 @@ function ComboEditView({ editModels, allModels, filteredModels, dropdownOpen, se
   moveUpInEdit: (idx: number) => void; moveDownInEdit: (idx: number) => void;
   cancelEdit: () => void; saveEdit: () => void;
 }) {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => { setMounted(true); }, []);
   return (
     <div className="space-y-3">
       {editModels.length > 0 && (
@@ -100,43 +176,15 @@ function ComboEditView({ editModels, allModels, filteredModels, dropdownOpen, se
           <span className="text-stone-500">+ Thêm model vào chuỗi</span>
           <ChevronDown className="size-4 text-stone-500" />
         </button>
-        {dropdownOpen && mounted && createPortal(
-          <div
-            className="fixed inset-0 z-[60] flex justify-center bg-black/60 backdrop-blur-[1px]"
-            onClick={() => setDropdownOpen(false)}
-            onMouseDown={(e) => e.stopPropagation()}
-            onPointerDown={(e) => e.stopPropagation()}
-            onTouchStart={(e) => e.stopPropagation()}
-          >
-            <div
-              className="bg-white shadow-2xl w-[min(92vw,720px)] h-[100dvh] flex flex-col border-l border-r border-stone-200"
-              onClick={(e) => e.stopPropagation()}
-              onMouseDown={(e) => e.stopPropagation()}
-              onPointerDown={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between px-5 py-4 border-b border-stone-100 shrink-0">
-                <h3 className="text-[15px] font-bold text-slate-900">Thêm Model vào chuỗi</h3>
-                <button onClick={() => setDropdownOpen(false)} className="rounded-lg p-1.5 text-stone-400 hover:bg-stone-100 hover:text-stone-700"><X className="size-5" /></button>
-              </div>
-              <div className="overflow-y-auto flex-1 p-2">
-                {filteredModels.filter(m => !editModels.includes(m.id)).length === 0 ? (
-                  <p className="px-4 py-8 text-sm text-stone-400 text-center">Đã thêm tất cả model</p>
-                ) : (
-                  filteredModels.filter(m => !editModels.includes(m.id)).map(m => (
-                    <button key={m.id} type="button" onClick={() => { addToEdit(m.id); setDropdownOpen(false); }} className="flex w-full items-center gap-3 px-4 py-2.5 text-left rounded-lg transition mb-0.5 hover:bg-stone-50 border border-transparent">
-                      <span className="text-[13px] font-mono text-stone-800 truncate flex-1">{m.id}</span>
-                      <span className="text-[10px] text-stone-400">{m.owned_by}</span>
-                    </button>
-                  ))
-                )}
-              </div>
-              <div className="px-5 py-3 border-t border-stone-100 shrink-0 text-right">
-                <button onClick={() => setDropdownOpen(false)} className="rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800">Xong</button>
-              </div>
-            </div>
-          </div>,
-          document.body,
-        )}
+        <ModelPickerModal
+          open={dropdownOpen}
+          onClose={() => setDropdownOpen(false)}
+          title="Thêm Model vào chuỗi"
+          models={filteredModels}
+          excludeIds={editModels}
+          onPick={(id) => { addToEdit(id); setDropdownOpen(false); }}
+          emptyMessage="Đã thêm tất cả model"
+        />
       </div>
       <div className="flex gap-2 justify-end">
         <button type="button" onClick={cancelEdit} className="rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs text-stone-500 hover:bg-stone-100">Hủy</button>
@@ -164,9 +212,7 @@ export default function CombosPage() {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [editDropdownOpen, setEditDropdownOpen] = useState(false);
   const [modelSearch, setModelSearch] = useState("");
-  const [mounted, setMounted] = useState(false);
 
-  useEffect(() => { setMounted(true); }, []);
   useEffect(() => { loadAll(); }, []);
 
   async function loadAll() {
@@ -318,59 +364,18 @@ export default function CombosPage() {
             <button type="button" onClick={() => setDropdownOpen(true)} className="flex w-full items-center justify-between rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm text-stone-900 hover:border-stone-600 transition">
               <span className="text-stone-500">{selectedModels.length > 0 ? `Đã chọn ${selectedModels.length} model` : t("selectModelPlaceholder")}</span><ChevronDown className="size-4 text-stone-500" />
             </button>
-            {dropdownOpen && mounted && createPortal(
-              <div
-                className="fixed inset-0 z-[60] flex justify-center bg-black/60 backdrop-blur-[1px]"
-                onClick={() => setDropdownOpen(false)}
-                onMouseDown={(e) => e.stopPropagation()}
-                onPointerDown={(e) => e.stopPropagation()}
-                onTouchStart={(e) => e.stopPropagation()}
-              >
-                <div
-                  className="bg-white shadow-2xl w-[min(92vw,720px)] h-[100dvh] flex flex-col border-l border-r border-stone-200"
-                  onClick={(e) => e.stopPropagation()}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onPointerDown={(e) => e.stopPropagation()}
-                >
-                  <div className="flex items-center justify-between px-5 py-4 border-b border-stone-100 shrink-0">
-                    <h3 className="text-[15px] font-bold text-slate-900">Chọn Model</h3>
-                    <button onClick={() => setDropdownOpen(false)} className="rounded-lg p-1.5 text-stone-400 hover:bg-stone-100 hover:text-stone-700"><X className="size-5" /></button>
-                  </div>
-                  <div className="p-3 border-b border-stone-50 shrink-0">
-                    <input autoFocus className="w-full rounded-lg border border-stone-200 px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 focus:border-stone-400 focus:outline-none" placeholder="Tìm model... (lọc theo tên)" onChange={(e) => setModelSearch(e.target.value)} />
-                  </div>
-                  <div className="overflow-y-auto flex-1 p-2">
-                    {availableForSelection.length === 0 ? (
-                      <p className="px-4 py-8 text-sm text-stone-400 text-center">{filterCap !== "all" ? t("noModelsInCategory") : t("allModelsSelected")}</p>
-                    ) : availableForSelection.map(m => {
-                      const CapIcon = CAP_ICONS[m.capability] || MessageSquare;
-                      const isSelected = selectedModels.includes(m.id);
-                      return (
-                        <button key={m.id} type="button" onClick={() => addModelToSelection(m.id)}
-                          className={cn("flex w-full items-center gap-3 px-4 py-2.5 text-left rounded-lg transition mb-0.5",
-                            isSelected ? "bg-emerald-50 border border-emerald-200" : "hover:bg-stone-50 border border-transparent")}>
-                          <CapIcon className="size-4 shrink-0 text-stone-400" />
-                          <div className="flex-1 min-w-0">
-                            <span className="text-[13px] font-mono text-stone-800 truncate block">{m.id}</span>
-                            <span className="text-[10px] text-stone-400">{m.owned_by}</span>
-                          </div>
-                          {(m.capability_labels || ["Chat"]).map((label: string) => {
-                            const capKey = label === "Chat" ? "chat" : label === t("vision") ? "vision" : label === "Phân tích ảnh" ? "vision" : label === "Video" ? "video" : label === "Phân tích video" ? "video" : "image";
-                            return <span key={label} className={cn("text-[10px] px-1.5 py-0.5 rounded border shrink-0", CAP_COLORS[capKey])}>{label}</span>;
-                          })}
-                          {isSelected && <Check className="size-4 text-emerald-500 shrink-0" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <div className="px-5 py-3 border-t border-stone-100 shrink-0 flex justify-between">
-                    <span className="text-xs text-stone-400">{availableForSelection.length} model có sẵn</span>
-                    <button onClick={() => setDropdownOpen(false)} className="rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800">Xong</button>
-                  </div>
-                </div>
-              </div>,
-              document.body,
-            )}
+            <ModelPickerModal
+              open={dropdownOpen}
+              onClose={() => setDropdownOpen(false)}
+              title="Chọn Model"
+              models={filteredModels}
+              excludeIds={[]}
+              selectedIds={selectedModels}
+              onPick={(id) => addModelToSelection(id)}
+              showSearch
+              onSearchChange={setModelSearch}
+              emptyMessage={filterCap !== "all" ? t("noModelsInCategory") : t("allModelsSelected")}
+            />
           </div>
           <button type="button" onClick={addCombo} disabled={!newName.trim() || selectedModels.length < 2} className="inline-flex items-center gap-1.5 rounded-lg bg-stone-100 px-4 py-2 text-sm font-medium text-stone-950 transition hover:bg-white disabled:opacity-40 shrink-0">
             <Plus className="size-4" /> Thêm
