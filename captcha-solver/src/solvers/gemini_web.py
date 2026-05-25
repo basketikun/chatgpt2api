@@ -674,73 +674,64 @@ async def list_models(profile: str, headless: bool = True, timeout: int = 30) ->
             await _wait_for_ready(page, timeout=15)
         except Exception:
             pass
-        labels: list[str] = []
-        # Try a handful of selectors for the picker trigger — Google
-        # rotates DOM class names but stable attrs survive longer.
-        picker_selectors = (
-            'button[data-test-id="bard-mode-menu-button"]',
-            'button[aria-label*="model" i]',
-            'button[aria-label*="Model" i]',
-            'bard-mode-switcher button',
+
+        # Scrape with JS instead of Playwright locators — Google's Angular
+        # build rotates role attributes (`menuitemradio` / `menuitem` /
+        # nothing at all) often enough that selector-only approaches are
+        # fragile. We rely on the picker labels following a stable text
+        # pattern ("2.5 Pro", "3.1 Flash", "Deep Think", "Imagen") and
+        # filter by visibility so we don't pick up off-screen content.
+        scraped = await page.evaluate(
+            """
+            async () => {
+                const sleep = ms => new Promise(r => setTimeout(r, ms));
+                // Find the picker button. Try stable attrs first, fall
+                // back to any button whose label looks model-like.
+                const allButtons = Array.from(document.querySelectorAll('button'));
+                const stable = allButtons.find(b =>
+                    b.getAttribute('data-test-id') === 'bard-mode-menu-button'
+                );
+                const fuzzy = allButtons.find(b => {
+                    const t = (b.innerText || b.getAttribute('aria-label') || '').trim();
+                    return /\\b(model|2\\.5|3\\.|3\\b|flash|pro|deep think|imagen)\\b/i.test(t)
+                        && b.offsetParent !== null;
+                });
+                const picker = stable || fuzzy;
+                if (!picker) return { error: 'picker_not_found', sample: allButtons.slice(0, 5).map(b => (b.innerText || '').slice(0, 40)) };
+                picker.click();
+                await sleep(1500);
+                // After the picker opens, harvest visible text that matches
+                // the model-name pattern. Use a Set to dedupe across nested
+                // wrappers that often repeat the same label.
+                const visible = el => {
+                    const r = el.getBoundingClientRect();
+                    return r.width > 0 && r.height > 0;
+                };
+                const out = new Set();
+                for (const el of document.querySelectorAll('*')) {
+                    if (!visible(el)) continue;
+                    if (el.children.length > 3) continue;  // skip wrapper nodes
+                    const text = (el.innerText || '').trim();
+                    if (text.length < 2 || text.length > 60) continue;
+                    if (/^(?:\\d+\\.?\\d*\\s+)?(?:Flash(?:-Lite| Extended)?|Pro(?: Thinking| with Deep Think)?|Deep Think|Imagen \\d+)\\b/i.test(text)) {
+                        out.add(text);
+                    }
+                }
+                // Close the picker before returning.
+                document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+                return { models: Array.from(out) };
+            }
+            """
         )
-        opened = False
-        for sel in picker_selectors:
-            try:
-                loc = page.locator(sel).first
-                if await loc.count() == 0:
-                    continue
-                await loc.click(timeout=4000)
-                opened = True
-                break
-            except Exception:
-                continue
-        if not opened:
-            logger.info("gemini_web list_models: could not open model picker")
-            return []
-        # Give the menu transition time to render — Material menus animate
-        # for ~300ms before items become interactive, and slower devices
-        # exceed the previous 4s wait_for_selector during cold opens.
-        await asyncio.sleep(1.5)
-        try:
-            # Try several selector strategies. Google has rotated the menu
-            # role markup at least twice (menuitemradio → menuitem → no
-            # role at all, just clickable rows). Collect labels from each
-            # match until we find a non-empty set.
-            candidates = (
-                'div[role="menu"] button',
-                'button[role="menuitemradio"]',
-                'button[role="menuitem"]',
-                '[role="option"]',
-                'mat-action-list button',
-                'cdk-overlay-pane button',
-                'div[role="menu"] [role="button"]',
-            )
-            items: list[str] = []
-            for sel in candidates:
-                try:
-                    found = page.locator(sel)
-                    if await found.count() == 0:
-                        continue
-                    items = await found.all_text_contents()
-                    if items:
-                        break
-                except Exception:
-                    continue
-            for raw in items:
-                cleaned = " ".join(raw.split())
-                if cleaned and 2 <= len(cleaned) < 120:
+        labels: list[str] = []
+        if isinstance(scraped, dict):
+            if scraped.get("error"):
+                logger.info("gemini_web list_models: %s sample=%r",
+                            scraped["error"], scraped.get("sample"))
+            for m in (scraped.get("models") or []):
+                cleaned = " ".join(str(m).split())
+                if cleaned and 2 <= len(cleaned) < 60:
                     labels.append(cleaned)
-            if not labels:
-                logger.info("gemini_web list_models: no menu labels harvested (tried %d selectors)",
-                            len(candidates))
-        except Exception as exc:
-            logger.info("gemini_web list_models: menu scrape failed: %s", exc)
-        finally:
-            # Close the picker so the next interaction starts from a known state.
-            try:
-                await page.keyboard.press("Escape")
-            except Exception:
-                pass
 
     out = []
     seen = set()
