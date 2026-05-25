@@ -594,11 +594,12 @@ def _try_refresh_token(stale_access_token: str) -> str | None:
         if not item:
             return None
         refresh_token = item.get("refresh_token") or ""
+        device_id = item.get("device_id") or None
     if not refresh_token:
         return None
 
     from services.codex_token_refresh import refresh_codex_token
-    result = refresh_codex_token(refresh_token)
+    result = refresh_codex_token(refresh_token, device_id=device_id)
     if not result:
         return None
     if result.get("error") == "unrecoverable":

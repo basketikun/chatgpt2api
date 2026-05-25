@@ -81,7 +81,7 @@ def _lock_for(refresh_token: str) -> Lock:
         return _refresh_locks[refresh_token]
 
 
-def refresh_codex_token(refresh_token: str) -> dict[str, Any] | None:
+def refresh_codex_token(refresh_token: str, device_id: str | None = None) -> dict[str, Any] | None:
     """Exchange a Codex refresh_token for a fresh access_token.
 
     Concurrency-safe: acquires a per-refresh_token Lock so two threads
@@ -89,6 +89,14 @@ def refresh_codex_token(refresh_token: str) -> dict[str, Any] | None:
     account_service and returns the access_token written by the first
     holder, avoiding a duplicate OAuth call (which would invalidate one
     of the two new access_tokens via refresh-token rotation).
+
+    Args:
+        refresh_token: the refresh_token to exchange.
+        device_id: stable per-account UUID. When set, sent as the
+            ``X-Device-Id`` header so the request looks like a real
+            persistent Codex CLI install rather than a fresh device on
+            every refresh. Backed by ``account.device_id`` set in
+            ``account_service._normalize_account``.
 
     Returns:
         On success: {"access_token": str, "refresh_token": str, "expires_in": int,
@@ -120,10 +128,15 @@ def refresh_codex_token(refresh_token: str) -> dict[str, Any] | None:
                     "expires_in": int(cached_exp - time.time()),
                     "expires_at": cached_exp,
                 }
-        return _refresh_codex_token_locked(refresh_token)
+            # Pull device_id from the stored account if caller didn't pass one.
+            if device_id is None:
+                device_id = str(existing.get("device_id") or "") or None
+        return _refresh_codex_token_locked(refresh_token, device_id)
 
 
-def _refresh_codex_token_locked(refresh_token: str) -> dict[str, Any] | None:
+def _refresh_codex_token_locked(
+    refresh_token: str, device_id: str | None = None
+) -> dict[str, Any] | None:
     """Inner worker: actual OAuth call. Caller MUST hold _lock_for(refresh_token)."""
     body = {
         "grant_type": "refresh_token",
@@ -133,13 +146,18 @@ def _refresh_codex_token_locked(refresh_token: str) -> dict[str, Any] | None:
     }
 
     try:
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Accept": "application/json",
+        }
+        if device_id:
+            # Stable per-account device identity. Real Codex CLI persists
+            # a device_id; rotating it on every refresh is an abuse signal.
+            headers["X-Device-Id"] = device_id
         resp = requests.post(
             OAUTH_TOKEN_URL,
             data=body,
-            headers={
-                "Content-Type": "application/x-www-form-urlencoded",
-                "Accept": "application/json",
-            },
+            headers=headers,
             timeout=20,
             impersonate="chrome110",
         )

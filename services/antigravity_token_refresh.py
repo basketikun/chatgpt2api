@@ -49,11 +49,18 @@ def _lock_for(refresh_token: str) -> Lock:
         return _refresh_locks[refresh_token]
 
 
-def refresh_antigravity_token(refresh_token: str) -> dict[str, Any] | None:
+def refresh_antigravity_token(refresh_token: str, device_id: str | None = None) -> dict[str, Any] | None:
     """Exchange a Google refresh_token for a fresh access_token.
 
     Concurrency-safe: per-refresh_token Lock + re-check pattern (see
     codex_token_refresh.py for rationale).
+
+    Args:
+        refresh_token: the refresh_token to exchange.
+        device_id: stable per-account UUID. Currently logged but not sent
+            to Google (Google OAuth doesn't honour an X-Device-Id header).
+            Kept on the signature to match the Codex side and so future
+            device-fingerprint work can wire it through here.
 
     Returns:
         On success: {"access_token": str, "refresh_token": str, "expires_in": int,
@@ -82,10 +89,14 @@ def refresh_antigravity_token(refresh_token: str) -> dict[str, Any] | None:
                     "expires_in": int(cached_exp - time.time()),
                     "expires_at": cached_exp,
                 }
-        return _refresh_antigravity_token_locked(refresh_token)
+            if device_id is None:
+                device_id = str(existing.get("device_id") or "") or None
+        return _refresh_antigravity_token_locked(refresh_token, device_id)
 
 
-def _refresh_antigravity_token_locked(refresh_token: str) -> dict[str, Any] | None:
+def _refresh_antigravity_token_locked(
+    refresh_token: str, device_id: str | None = None
+) -> dict[str, Any] | None:
     """Inner worker: actual OAuth call. Caller MUST hold _lock_for(refresh_token)."""
     body = {
         "grant_type": "refresh_token",

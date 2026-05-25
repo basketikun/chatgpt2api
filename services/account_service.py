@@ -109,6 +109,14 @@ class AccountService:
         normalized["type"] = normalized.get("type") or "free"
         normalized["plan"] = normalized.get("plan") or None
         normalized["audience"] = normalized.get("audience") or detect_token_audience(access_token)
+        # Stable per-account device_id (UUID) — sent as a header on Codex
+        # OAuth refresh so the account looks like a real CLI install with
+        # a persistent device, not an impersonator that rotates devices
+        # on every refresh. Backfilled lazily for accounts that pre-date
+        # this field. Once set, never changes.
+        if not normalized.get("device_id"):
+            import uuid
+            normalized["device_id"] = str(uuid.uuid4())
         # Auto-migrate Chinese status to English
         raw_status = normalized.get("status") or "active"
         normalized["status"] = _STATUS_MIGRATION.get(raw_status, raw_status)
