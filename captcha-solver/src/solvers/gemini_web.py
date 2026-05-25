@@ -733,17 +733,34 @@ async def list_models(profile: str, headless: bool = True, timeout: int = 30) ->
                 if cleaned and 2 <= len(cleaned) < 60:
                     labels.append(cleaned)
 
+    # Gemini's picker renders each tier twice: once as the bare model
+    # name (e.g. "3.1 Flash-Lite") and once as name + tagline ("3.1
+    # Flash-Lite Câu trả lời nhanh nhất"). Keep the short form. Match
+    # is on the first 1-3 tokens of model-shaped text.
+    import re as _re
+    short_pattern = _re.compile(
+        r"^((?:\d+(?:\.\d+)?\s+)?(?:Flash(?:-Lite| Extended)?|Pro(?: Thinking)?|Deep Think|Imagen\s+\d+))",
+        _re.IGNORECASE,
+    )
     out = []
-    seen = set()
+    seen_titles = set()
+    seen_slugs = set()
     for raw_label in labels:
-        # Strip secondary descriptor (e.g. "2.5 Pro\nFor complex tasks").
-        title = raw_label.split("\n")[0].strip() if "\n" in raw_label else raw_label
+        # Strip secondary descriptor on newline.
+        candidate = raw_label.split("\n")[0].strip() if "\n" in raw_label else raw_label
+        m = short_pattern.match(candidate)
+        title = m.group(1).strip() if m else candidate.strip()
         if not title:
             continue
-        slug = _slug(title)
-        if slug in seen:
+        # Canonicalize whitespace so "3.1  Flash" and "3.1 Flash" dedupe.
+        canonical = " ".join(title.split()).lower()
+        if canonical in seen_titles:
             continue
-        seen.add(slug)
+        seen_titles.add(canonical)
+        slug = _slug(title)
+        if slug in seen_slugs:
+            continue
+        seen_slugs.add(slug)
         out.append({
             "id": f"gmw/{slug}",
             "title": title,
