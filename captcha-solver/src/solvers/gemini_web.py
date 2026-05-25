@@ -651,6 +651,93 @@ async def generate_music(
         }
 
 
+async def list_models(profile: str, headless: bool = True, timeout: int = 30) -> list[dict[str, Any]]:
+    """Scrape the model picker on gemini.google.com.
+
+    Gemini Web has no public "list models" API. The picker is rendered
+    inside a Material-style menu — we open the menu, read the rendered
+    button labels, then close it. Returns rows like
+        [{"id": "gmw/gemini-2.5-pro", "title": "2.5 Pro"}, ...]
+    with the prefix normalized to `gmw/`. Empty list on any error
+    (logged-out profile, picker missing, layout change) so /v1/models
+    can fall back to the static catalogue without erroring out.
+    """
+    import re
+
+    def _slug(label: str) -> str:
+        s = re.sub(r"[^a-z0-9]+", "-", label.lower()).strip("-")
+        return s or "unknown"
+
+    async with pool.page(profile=profile, headless=headless) as page:
+        await page.goto(_GEMINI_HOME, wait_until="domcontentloaded", timeout=timeout * 1000)
+        try:
+            await _wait_for_ready(page, timeout=15)
+        except Exception:
+            pass
+        labels: list[str] = []
+        # Try a handful of selectors for the picker trigger — Google
+        # rotates DOM class names but stable attrs survive longer.
+        picker_selectors = (
+            'button[data-test-id="bard-mode-menu-button"]',
+            'button[aria-label*="model" i]',
+            'button[aria-label*="Model" i]',
+            'bard-mode-switcher button',
+        )
+        opened = False
+        for sel in picker_selectors:
+            try:
+                loc = page.locator(sel).first
+                if await loc.count() == 0:
+                    continue
+                await loc.click(timeout=4000)
+                opened = True
+                break
+            except Exception:
+                continue
+        if not opened:
+            logger.info("gemini_web list_models: could not open model picker")
+            return []
+        try:
+            # Material menu items render under <button role="menuitemradio">.
+            await page.wait_for_selector(
+                'button[role="menuitemradio"], button[role="menuitem"], [role="option"]',
+                timeout=4000,
+            )
+            items = await page.locator(
+                'button[role="menuitemradio"], button[role="menuitem"], [role="option"]'
+            ).all_text_contents()
+            for raw in items:
+                cleaned = " ".join(raw.split())
+                if cleaned and len(cleaned) < 80:
+                    labels.append(cleaned)
+        except Exception as exc:
+            logger.info("gemini_web list_models: menu items not found: %s", exc)
+        finally:
+            # Close the picker so the next interaction starts from a known state.
+            try:
+                await page.keyboard.press("Escape")
+            except Exception:
+                pass
+
+    out = []
+    seen = set()
+    for raw_label in labels:
+        # Strip secondary descriptor (e.g. "2.5 Pro\nFor complex tasks").
+        title = raw_label.split("\n")[0].strip() if "\n" in raw_label else raw_label
+        if not title:
+            continue
+        slug = _slug(title)
+        if slug in seen:
+            continue
+        seen.add(slug)
+        out.append({
+            "id": f"gmw/{slug}",
+            "title": title,
+            "raw_slug": slug,
+        })
+    return out
+
+
 async def chat(profile: str, prompt: str, timeout: int = 90, headless: bool = False) -> dict[str, Any]:
     """Send a single prompt to gemini.google.com and return its response.
 

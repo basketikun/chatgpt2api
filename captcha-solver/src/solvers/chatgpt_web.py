@@ -323,6 +323,54 @@ async def _wait_for_image(page, timeout: int = 180) -> list[str]:
     return []
 
 
+async def list_models(profile: str, headless: bool = True, timeout: int = 30) -> list[dict[str, Any]]:
+    """Fetch the live model catalogue from chatgpt.com.
+
+    Uses the internal /backend-api/models endpoint (the same one the
+    real chatgpt.com UI hits to populate the model picker). We `fetch`
+    it from within an authenticated page so the session/edge cookies
+    are attached automatically. Returns a list of normalized rows:
+        [{"id": "cgw/gpt-5", "title": "GPT-5", "raw_slug": "..."}, ...]
+    Empty list if the request fails (logged-out profile, Cloudflare,
+    etc.) so /v1/models can fall back to the static catalogue without
+    blowing up the whole models page.
+    """
+    async with pool.page(profile=profile, headless=headless) as page:
+        await page.goto(_CHATGPT_HOME, wait_until="domcontentloaded", timeout=timeout * 1000)
+        try:
+            payload = await page.evaluate(
+                """
+                async () => {
+                    const r = await fetch('/backend-api/models', { credentials: 'include' });
+                    if (!r.ok) return { error: 'HTTP ' + r.status };
+                    return await r.json();
+                }
+                """
+            )
+        except Exception as exc:
+            logger.warning("chatgpt_web list_models fetch failed: %s", exc)
+            return []
+        if not isinstance(payload, dict) or "models" not in payload:
+            logger.info("chatgpt_web list_models: unexpected payload %r", str(payload)[:200])
+            return []
+        out = []
+        seen = set()
+        for m in payload.get("models") or []:
+            if not isinstance(m, dict):
+                continue
+            slug = str(m.get("slug") or "").strip()
+            if not slug or slug in seen:
+                continue
+            seen.add(slug)
+            out.append({
+                "id": f"cgw/{slug}",
+                "title": str(m.get("title") or slug),
+                "raw_slug": slug,
+                "description": str(m.get("description") or "")[:200],
+            })
+        return out
+
+
 async def chat(profile: str, prompt: str, timeout: int = 90, headless: bool = False) -> dict[str, Any]:
     """Plain text chat with chatgpt.com (DOM-scrape)."""
     started = time.time()

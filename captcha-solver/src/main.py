@@ -46,11 +46,13 @@ from .solvers.gemini_web import (
     chat as gemini_web_chat,
     generate_image as gemini_web_generate_image,
     generate_music as gemini_web_generate_music,
+    list_models as gemini_web_list_models,
 )
 from .solvers.chatgpt_web import (
     analyze_image as chatgpt_web_analyze_image,
     chat as chatgpt_web_chat,
     generate_image as chatgpt_web_generate_image,
+    list_models as chatgpt_web_list_models,
 )
 from .browser_pool import pool
 from .settings import settings
@@ -816,6 +818,38 @@ async def api_chatgpt_refresh_jwt(profile: str) -> dict[str, Any]:
 
 
 # ── Gemini Web (gemini.google.com) ──────────────────────────────────────
+
+@app.get("/v1/gemini-web/{profile}/models", dependencies=[Depends(require_api_key)])
+async def api_gemini_web_models(profile: str, headless: bool = True, timeout: int = 30) -> dict[str, Any]:
+    """Live model list scraped from gemini.google.com's model picker.
+
+    Returns `{"models": [...]}` shaped like the catalogue chatgpt2api
+    exposes elsewhere — each item carries `id: "gmw/<slug>"` so the
+    aggregator in /v1/models can drop them straight into the response.
+    """
+    try:
+        models = await gemini_web_list_models(profile=profile, headless=headless, timeout=timeout)
+        return {"profile": profile, "count": len(models), "models": models}
+    except Exception as exc:
+        logger.exception("gemini_web list_models failed")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/v1/chatgpt-web/{profile}/models", dependencies=[Depends(require_api_key)])
+async def api_chatgpt_web_models(profile: str, headless: bool = True, timeout: int = 30) -> dict[str, Any]:
+    """Live model list pulled from chatgpt.com /backend-api/models.
+
+    Same wire shape as the gemini-web equivalent. Each item carries
+    `id: "cgw/<slug>"` so /v1/models can splice them in without
+    knowing about the underlying scrape.
+    """
+    try:
+        models = await chatgpt_web_list_models(profile=profile, headless=headless, timeout=timeout)
+        return {"profile": profile, "count": len(models), "models": models}
+    except Exception as exc:
+        logger.exception("chatgpt_web list_models failed")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
 
 @app.post("/v1/gemini-web/onboard", dependencies=[Depends(require_api_key)])
 async def api_gemini_web_onboard(req: GeminiWebOnboardReq) -> dict[str, Any]:

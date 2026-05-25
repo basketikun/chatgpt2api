@@ -62,13 +62,19 @@ FALLBACK_MODELS = {
         "cx/gpt-5-codex", "cx/gpt-5-codex-review",
         "cx/gpt-5-codex-mini", "cx/gpt-5-codex-mini-review",
     ],
+    # Static fallback only — the real catalogue is fetched live from the
+    # captcha-solver (see `_fetch_web_models` below). These slugs match
+    # what the upstream picker actually serves today so the static list
+    # is at least directionally correct when the live fetch is offline.
     "gemini_web": [
-        "gmw/auto",
-        "gmw/vision",
+        "gmw/gemini-2.5-pro",
+        "gmw/gemini-2.5-flash",
+        "gmw/imagen-4",
     ],
     "chatgpt_web": [
-        "cgw/auto",
-        "cgw/vision",
+        "cgw/gpt-4o",
+        "cgw/gpt-4o-mini",
+        "cgw/o3-mini",
     ],
     "nvidia_nim": [
         "nv/auto",
@@ -147,6 +153,63 @@ def _fetch_gemini_models() -> set[str]:
             continue
 
     return set()
+
+
+def _fetch_web_models(provider_key: str, endpoint_path: str) -> set[str]:
+    """Shared helper for the captcha-solver-backed providers (gemini_web,
+    chatgpt_web). Reads the profile + captcha-solver URL from
+    `config.providers.<provider_key>`, hits the live-list endpoint,
+    and returns the prefixed model IDs. Empty set when the provider
+    isn't enabled / has no profile / the captcha-solver is unreachable —
+    the caller then falls back to the static `FALLBACK_MODELS` entry.
+    """
+    cfg = (config.data.get("providers") or {}).get(provider_key) or {}
+    if not cfg.get("enabled"):
+        return set()
+    profile = str(cfg.get("profile") or "").strip()
+    if not profile:
+        return set()
+    # captcha_solver_url + key live on `providers.flow` historically; some
+    # deployments duplicate them on each web provider. Check both.
+    cs_url = str(cfg.get("captcha_solver_url") or "").strip().rstrip("/")
+    cs_key = str(cfg.get("captcha_solver_api_key") or "").strip()
+    if not cs_url or not cs_key:
+        flow_cfg = (config.data.get("providers") or {}).get("flow") or {}
+        cs_url = cs_url or str(flow_cfg.get("captcha_solver_url") or "").strip().rstrip("/")
+        cs_key = cs_key or str(flow_cfg.get("captcha_solver_api_key") or "").strip()
+    if not cs_url or not cs_key:
+        logger.info({"event": "list_models_web_skip", "provider": provider_key, "reason": "no_captcha_solver_config"})
+        return set()
+    try:
+        resp = requests.get(
+            f"{cs_url}{endpoint_path}/{profile}/models",
+            headers={"Authorization": f"Bearer {cs_key}"},
+            timeout=45,
+        )
+        if resp.status_code != 200:
+            logger.warning({"event": "list_models_web_http", "provider": provider_key,
+                            "status": resp.status_code, "body": resp.text[:200]})
+            return set()
+        data = resp.json()
+    except Exception as exc:
+        logger.warning({"event": "list_models_web_error", "provider": provider_key, "error": str(exc)[:200]})
+        return set()
+    out: set[str] = set()
+    for m in (data.get("models") or []):
+        mid = str(m.get("id") or "").strip()
+        if mid:
+            out.add(mid)
+    logger.info({"event": "list_models_web_fetched", "provider": provider_key,
+                 "profile": profile, "count": len(out)})
+    return out
+
+
+def _fetch_gemini_web_models() -> set[str]:
+    return _fetch_web_models("gemini_web", "/v1/gemini-web")
+
+
+def _fetch_chatgpt_web_models() -> set[str]:
+    return _fetch_web_models("chatgpt_web", "/v1/chatgpt-web")
 
 
 def _fetch_opencode_models() -> set[str]:
@@ -547,6 +610,8 @@ def list_models(force_refresh: bool = False, apply_filter: bool = False) -> dict
         "opencode": _fetch_opencode_models,
         "openrouter": _fetch_openrouter_models,
         "nvidia_nim": _fetch_nvidia_models,
+        "gemini_web": _fetch_gemini_web_models,
+        "chatgpt_web": _fetch_chatgpt_web_models,
     }
 
     # Add custom providers dynamically
@@ -598,7 +663,7 @@ def list_models(force_refresh: bool = False, apply_filter: bool = False) -> dict
                 })
 
     # Apply fallbacks for providers that returned nothing
-    for provider_name in ["opencode", "gemini_free", "chatgpt", "openai_oauth", "nvidia_nim", "chatgpt2api", "antigravity"]:
+    for provider_name in ["opencode", "gemini_free", "chatgpt", "openai_oauth", "nvidia_nim", "chatgpt2api", "antigravity", "gemini_web", "chatgpt_web"]:
         if provider_name not in all_models:
             for model_id in sorted(_apply_fallback(provider_name)):
                 if model_id not in seen:
