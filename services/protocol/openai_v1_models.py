@@ -62,6 +62,14 @@ FALLBACK_MODELS = {
         "cx/gpt-5-codex", "cx/gpt-5-codex-review",
         "cx/gpt-5-codex-mini", "cx/gpt-5-codex-mini-review",
     ],
+    "gemini_web": [
+        "gmw/auto",
+        "gmw/vision",
+    ],
+    "chatgpt_web": [
+        "cgw/auto",
+        "cgw/vision",
+    ],
     "nvidia_nim": [
         "nv/auto",
         "nv-image/black-forest-labs/flux.2-klein-4b",
@@ -470,6 +478,8 @@ def _apply_enabled_filter(data: list[dict]) -> list[dict]:
     always_allow = {
         "cx/auto", "oc/auto", "chatgpt/auto",
         "gemini_free/auto", "ag/auto",
+        "gmw/auto", "gmw/vision",
+        "cgw/auto", "cgw/vision",
     }
     all_enabled |= always_allow
 
