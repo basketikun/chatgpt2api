@@ -284,7 +284,7 @@ def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
                     result = _wrap_mcp_stream(result, messages_copy, route, body)
                 elif isinstance(result, dict):
                     result = _execute_mcp_tools_in_response(messages_copy, result, route, body)
-                result = _maybe_strip_markdown(result, messages_copy)
+                result = _maybe_strip_markdown(result, messages_copy, force=ha_context_injected)
                 model_cooldown.record_success("combo:" + model, route.model)
                 return result
             except Exception as exc:
@@ -335,13 +335,19 @@ def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
     elif isinstance(result, dict):
         result = _execute_mcp_tools_in_response(messages, result, route, body)
 
-    result = _maybe_strip_markdown(result, messages)
+    result = _maybe_strip_markdown(result, messages, force=ha_context_injected)
     return result
 
 
-def _maybe_strip_markdown(result, messages):
-    """Apply device-keyword markdown strip to both dict and Iterator results."""
-    if not _request_wants_plain_text(messages):
+def _maybe_strip_markdown(result, messages, force=False):
+    """Apply markdown strip when:
+    - the request looks like a plain-text surface (device-keyword heuristic), OR
+    - the caller forces it (e.g. HA voice / Conversation API which cannot
+      render markdown tables — `giá xăng hôm nay` should arrive as plain
+      text on HA even though it has no device keyword).
+    Stream and dict results are both supported.
+    """
+    if not (force or _request_wants_plain_text(messages)):
         return result
     if isinstance(result, dict):
         return _strip_markdown_in_response(result)
