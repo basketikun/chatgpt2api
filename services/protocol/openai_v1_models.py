@@ -66,15 +66,18 @@ FALLBACK_MODELS = {
     # captcha-solver (see `_fetch_web_models` below). These slugs match
     # what the upstream picker actually serves today so the static list
     # is at least directionally correct when the live fetch is offline.
+    # Refreshed from a live Gemini Web `wrb.fr` chat response on 2026-05-25
+    # — gemini.google.com currently surfaces 3.1 Flash-Lite / 3.1 / 3 Pro.
     "gemini_web": [
-        "gmw/gemini-2.5-pro",
-        "gmw/gemini-2.5-flash",
+        "gmw/3.1-flash-lite",
+        "gmw/3.1",
+        "gmw/3-pro",
         "gmw/imagen-4",
     ],
     "chatgpt_web": [
-        "cgw/gpt-4o",
-        "cgw/gpt-4o-mini",
-        "cgw/o3-mini",
+        "cgw/auto",
+        "cgw/gpt-5",
+        "cgw/gpt-5-mini",
     ],
     "nvidia_nim": [
         "nv/auto",
