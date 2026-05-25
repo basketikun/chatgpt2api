@@ -1,10 +1,36 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { request } from "@/lib/request";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+
+const mdComponents = {
+  p: (props: any) => <p className="my-1" {...props} />,
+  ul: (props: any) => <ul className="list-disc ml-5 my-1 space-y-0.5" {...props} />,
+  ol: (props: any) => <ol className="list-decimal ml-5 my-1 space-y-0.5" {...props} />,
+  li: (props: any) => <li className="leading-relaxed" {...props} />,
+  strong: (props: any) => <strong className="font-semibold" {...props} />,
+  em: (props: any) => <em className="italic" {...props} />,
+  code: ({ inline, ...props }: any) =>
+    inline ? (
+      <code className="px-1 py-0.5 rounded bg-background/60 text-[0.9em]" {...props} />
+    ) : (
+      <code className="block p-2 rounded bg-background/60 text-[0.9em] overflow-x-auto" {...props} />
+    ),
+  pre: (props: any) => <pre className="my-2 rounded bg-background/60 overflow-x-auto" {...props} />,
+  h1: (props: any) => <h2 className="text-base font-bold mt-2 mb-1" {...props} />,
+  h2: (props: any) => <h3 className="text-sm font-bold mt-2 mb-1" {...props} />,
+  h3: (props: any) => <h4 className="text-sm font-semibold mt-1 mb-1" {...props} />,
+  blockquote: (props: any) => <blockquote className="border-l-2 pl-3 my-1 opacity-80" {...props} />,
+  table: (props: any) => <table className="border-collapse my-2 text-xs" {...props} />,
+  th: (props: any) => <th className="border px-2 py-1 bg-background/40 font-semibold" {...props} />,
+  td: (props: any) => <td className="border px-2 py-1" {...props} />,
+  a: (props: any) => <a className="underline text-primary" target="_blank" rel="noreferrer" {...props} />,
+};
 
 type Message = {
   role: "user" | "assistant";
@@ -148,10 +174,22 @@ export default function ChatPage() {
         )}
         {messages.map((m, i) => (
           <div key={i} className={`flex flex-col ${m.role === "user" ? "items-end" : "items-start"}`}>
-            <div className={`max-w-[80%] px-4 py-2 rounded-xl whitespace-pre-wrap ${
-              m.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
+            <div className={`max-w-[80%] px-4 py-2 rounded-xl ${
+              m.role === "user"
+                ? "bg-primary text-primary-foreground whitespace-pre-wrap"
+                : "bg-muted text-foreground"
             }`}>
-              {m.content || (streaming && i === messages.length - 1 ? "▊" : "")}
+              {m.role === "assistant" ? (
+                m.content ? (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+                    {m.content}
+                  </ReactMarkdown>
+                ) : (
+                  streaming && i === messages.length - 1 ? "▊" : ""
+                )
+              ) : (
+                m.content
+              )}
             </div>
             {m.role === "assistant" && m.duration !== undefined && (
               <div className="flex gap-2 mt-1 px-1 text-[11px] text-muted-foreground/60">

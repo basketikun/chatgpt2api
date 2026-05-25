@@ -7,11 +7,37 @@ from __future__ import annotations
 
 import logging
 import json
+import re
 import time
 import urllib.request
 from typing import Any
 
 from services.config import config
+
+
+_MD_BOLD_DOUBLE = re.compile(r"\*\*(.+?)\*\*", re.DOTALL)
+_MD_BOLD_UNDER_DOUBLE = re.compile(r"__(.+?)__", re.DOTALL)
+_MD_HEADING = re.compile(r"^\s{0,3}#{1,6}\s+", re.MULTILINE)
+_MD_STRIKE = re.compile(r"~~(.+?)~~", re.DOTALL)
+_MD_TABLE_PIPE = re.compile(r"^\s*\|.+\|\s*$", re.MULTILINE)
+_MD_TABLE_SEP = re.compile(r"^\s*\|?[\s:-]+\|[\s:|\-]+\s*$", re.MULTILINE)
+
+
+def _to_telegram_markdown(text: str) -> str:
+    """Convert LLM markdown to Telegram MarkdownV1 syntax.
+
+    Telegram MarkdownV1 uses *single-asterisk* for bold (not **double**),
+    has no headings, and breaks on stray unbalanced markers. Convert the
+    common cases so messages render with bold/italic/code instead of
+    failing or showing literal asterisks.
+    """
+    if not text:
+        return text
+    out = _MD_BOLD_DOUBLE.sub(r"*\1*", text)
+    out = _MD_BOLD_UNDER_DOUBLE.sub(r"*\1*", out)
+    out = _MD_HEADING.sub("", out)
+    out = _MD_STRIKE.sub(r"\1", out)
+    return out
 
 logger = logging.getLogger(__name__)
 
@@ -68,8 +94,17 @@ def register_webhook() -> bool:
 def send_message(chat_id: int | str, text: str) -> dict:
     if len(text) > 4000:
         text = text[:3900] + "..."
+    converted = _to_telegram_markdown(text)
+    r = _api_call("sendMessage", {
+        "chat_id": str(chat_id), "text": converted, "parse_mode": "Markdown",
+        "link_preview_options": {"is_disabled": True},
+    })
+    if r.get("ok"):
+        return r
+    # Telegram rejected the markdown (often unbalanced markers from the LLM).
+    # Retry as plain text so the user at least sees the answer.
     return _api_call("sendMessage", {
-        "chat_id": str(chat_id), "text": text, "parse_mode": "Markdown",
+        "chat_id": str(chat_id), "text": text,
         "link_preview_options": {"is_disabled": True},
     })
 
