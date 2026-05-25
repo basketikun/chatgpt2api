@@ -56,6 +56,63 @@ _TAP_MATCH_SELECTORS = (
     '.NQ5OL',
 )
 
+# Selectors for the "Choose how you'll sign in" page. When Google shows
+# a list of 2FA methods (tap-on-device / Authenticator / SMS / recovery
+# email), this page sits between password and the actual challenge.
+# `_detect_state` would otherwise treat it as "working" and the 4-minute
+# deadline expires before any code field shows up. We pick the TOTP /
+# Authenticator option automatically because it's the fastest fully-
+# automatable path — user only has to read the 6-digit Authenticator
+# code and POST it to /v1/session/{profile}/auto-login-2fa-code.
+_AUTHENTICATOR_OPTION_SELECTORS = (
+    'li[data-challengetype="9"]',          # 9 = TOTP in Google's taxonomy
+    'div[data-challengetype="9"]',
+    'div[role="link"]:has-text("Google Authenticator")',
+    'div[role="link"]:has-text("authenticator")',
+    'li:has-text("Google Authenticator")',
+    'li:has-text("Nhận mã xác minh")',
+    'li:has-text("ứng dụng xác thực")',
+    'div:has-text("Google Authenticator"):not(:has(div))',
+)
+
+_METHOD_SELECTOR_HINTS = (
+    "choose how you", "chọn cách",
+    "try another way", "thử cách khác",
+    "google authenticator",
+    "nhận mã xác minh", "ứng dụng xác thực",
+)
+
+
+async def _pick_authenticator_method(page) -> bool:
+    """When Google shows the method picker, click the Authenticator entry.
+
+    Returns True if a click was made (page likely advanced to the code
+    input step). False if the picker isn't visible or no Authenticator
+    option could be found — caller should fall through to need_tap.
+    """
+    try:
+        body_text = (await page.locator("body").inner_text(timeout=600)).lower()
+    except Exception:
+        return False
+    if not any(h in body_text for h in _METHOD_SELECTOR_HINTS):
+        return False
+    if not any(k in body_text for k in (
+        "google authenticator", "ứng dụng xác thực", "nhận mã xác minh",
+    )):
+        return False
+    for sel in _AUTHENTICATOR_OPTION_SELECTORS:
+        try:
+            loc = page.locator(sel).first
+            if await loc.count() == 0:
+                continue
+            await loc.click(timeout=2500)
+            logger.info("auto_login: picked Authenticator method via selector=%s", sel)
+            return True
+        except Exception:
+            continue
+    logger.info("auto_login: method-picker visible but no Authenticator selector matched")
+    return False
+
 
 @dataclass
 class LoginSession:
@@ -212,12 +269,27 @@ async def _safe_click(page, *selectors, timeout: int = 2500) -> bool:
     return False
 
 
-async def do_google_login_steps(session: LoginSession, page, ctx, password: str) -> bool:
+async def do_google_login_steps(
+    session: LoginSession,
+    page,
+    ctx,
+    password: str,
+    prefer_method: str = "auth",
+) -> bool:
     """Shared Google login email/password/2FA dance.
 
     Assumes `page` is already navigated to an accounts.google.com page
     (signin form OR an OAuth redirect target). Drives the form forward
     and handles 2FA prompts.
+
+    `prefer_method` selects how to satisfy a 2FA challenge when Google
+    offers a method picker:
+      "auth" — click the Authenticator option; flow advances to need_code
+               and the user POSTs the 6-digit code via the existing
+               /auto-login-2fa-code endpoint.
+      "tap"  — skip the picker; let Google fall through to the
+               tap-on-device prompt (need_tap). The user opens Gmail/
+               Google app on their phone and taps "Yes, it's me".
 
     Updates `session.state` / `.message` / `.error` in-place. Returns
     True on success, False on failure. Caller decides what to do next
@@ -256,8 +328,26 @@ async def do_google_login_steps(session: LoginSession, page, ctx, password: str)
 
     # ── 2FA poll loop ──
     deadline = time.time() + 240
+    picker_clicked = False
     while time.time() < deadline:
         await asyncio.sleep(2.0)
+
+        # If Google shows the method picker (tap-on-device / Authenticator /
+        # SMS / recovery email), pick Authenticator automatically. Without
+        # this the loop spins on state="working" for the full 4 minutes
+        # waiting for a code field that never appears — Google needs us
+        # to choose the method first. We only click once per session to
+        # avoid re-clicking after the page advances.
+        if not picker_clicked:
+            try:
+                if await _pick_authenticator_method(page):
+                    picker_clicked = True
+                    session.message = "Đã chọn Google Authenticator, đang chờ code..."
+                    await asyncio.sleep(1.5)
+                    continue
+            except Exception:
+                pass
+
         state, info = await _detect_state(page)
 
         if state == "success":
