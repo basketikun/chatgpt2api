@@ -1,0 +1,25 @@
+# Files codegraph must NOT index — secret-bearing or otherwise sensitive.
+# See plans/integration_master_plan.md §E.2.1.
+
+# OAuth + token-refresh modules contain client_id / client_secret literals
+# even when env-overridable; defense-in-depth keeps them out of the index.
+services/antigravity_token_refresh.py
+services/codex_token_refresh.py
+
+# Local config file with the JWT pool, HA token, etc.
+config.json
+.env
+.env.*
+
+# Account / token storage
+data/
+chatgpt2api/data/
+
+# Build / cache / dependency dirs
+.codegraph/
+__pycache__/
+*.pyc
+node_modules/
+.venv/
+build/
+dist/

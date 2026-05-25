@@ -27,3 +27,6 @@ docker-compose-local.yml
 
 # Git cache
 git_cache/
+
+# codegraph local index (per-repo SQLite + FTS5)
+.codegraph/

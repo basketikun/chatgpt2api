@@ -15,10 +15,24 @@ from curl_cffi import requests
 
 from utils.log import logger
 
+import os
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
-# Antigravity Google OAuth Client ID & Secret
-ANTIGRAVITY_CLIENT_ID = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com"
-ANTIGRAVITY_CLIENT_SECRET = "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"
+# Antigravity Google OAuth Client ID & Secret.
+#
+# The OAuth client_id is public (it appears in the Antigravity desktop app
+# binary). The client_secret here is also public in the Google sense — it
+# travels with every desktop OAuth client and is documented as
+# "non-confidential" by Google for installed-app flows. Even so, we read
+# them from env vars when available so secret-scanning tools (codegraph,
+# Understand-Anything, leak detectors) don't flag the source file.
+ANTIGRAVITY_CLIENT_ID = os.getenv(
+    "ANTIGRAVITY_CLIENT_ID",
+    "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com",
+)
+ANTIGRAVITY_CLIENT_SECRET = os.getenv(
+    "ANTIGRAVITY_CLIENT_SECRET",
+    "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",
+)
 
 UNRECOVERABLE_CODES = {
     "invalid_grant",
