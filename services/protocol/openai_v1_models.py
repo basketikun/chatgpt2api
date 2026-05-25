@@ -29,7 +29,6 @@ FALLBACK_MODELS = {
     ],
     "chatgpt": [
         "chatgpt/auto",
-        "chatgpt/free/auto",
         "chatgpt/gpt-4.1-mini",
         "chatgpt/gpt-4.1-nano",
         "chatgpt/gpt-4o",
@@ -469,7 +468,7 @@ def _apply_enabled_filter(data: list[dict]) -> list[dict]:
                     all_enabled.add(m.strip())
 
     always_allow = {
-        "cx/auto", "oc/auto", "chatgpt/auto", "chatgpt/free/auto",
+        "cx/auto", "oc/auto", "chatgpt/auto",
         "gemini_free/auto", "ag/auto",
     }
     all_enabled |= always_allow
@@ -603,10 +602,15 @@ def list_models(force_refresh: bool = False, apply_filter: bool = False) -> dict
 
     # Always add chatgpt/* aliases so HA / SDK dropdowns and combo-model
     # pickers can see them.
-    #  - chatgpt/auto      = pool ưu tiên (codex trước, free sau)
-    #  - chatgpt/free/auto = ép free pool
-    #  - cx/auto           = ép codex (handled by openai_oauth provider — no dup here)
-    openai_extra = ["chatgpt/auto", "chatgpt/free/auto",
+    #  - chatgpt/auto = free pool only (codex routing uses cx/auto)
+    #  - cx/auto      = ép codex (handled by openai_oauth provider — no dup here)
+    # `chatgpt/free/auto` previously coexisted with `chatgpt/auto` to force
+    # the free pool. It has been merged into `chatgpt/auto` per user request:
+    # `chatgpt/auto` is now hard-pinned to the free pool inside
+    # `_handle_chatgpt_chat` so there is no longer a separate `free/` slug
+    # to expose. The string remains accepted by the chat handler for
+    # backwards compatibility with HA / saved combos.
+    openai_extra = ["chatgpt/auto",
                     "chatgpt/gpt-4o", "chatgpt/gpt-4o-mini", "chatgpt/gpt-4.1-mini",
                     "chatgpt/gpt-4.1-nano", "chatgpt/o3-mini", "chatgpt/o4-mini"]
     for mid in openai_extra:

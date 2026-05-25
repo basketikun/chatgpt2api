@@ -848,7 +848,13 @@ def _handle_chatgpt_chat(
     from services.account_service import detect_token_audience, _TOKEN_AUDIENCE_OPENAI_API, _TOKEN_AUDIENCE_CHATGPT
 
     # Parse optional type-override prefix from model string.
-    preferred_type: str | None = None
+    # Note: `chatgpt/auto` and bare `chatgpt/<slug>` now hard-pin to the
+    # free pool. The previous default — scanning every active account
+    # regardless of type, with codex tokens served first if they were
+    # added first — let HA AI Task accidentally burn paid Codex quota
+    # on routine vision/chat requests. Codex traffic must go through
+    # `cx/auto` (or `chatgpt/codex/<slug>`) explicitly.
+    preferred_type: str | None = "free"
     if model.startswith("chatgpt/free/"):
         preferred_type = "free"
         model = "chatgpt/" + model[len("chatgpt/free/"):]
