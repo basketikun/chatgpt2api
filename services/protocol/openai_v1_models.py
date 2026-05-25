@@ -73,10 +73,12 @@ FALLBACK_MODELS = {
     #   flash-extended — flash + extended thinking
     #   pro         — slower, deep thinking
     #   pro-thinking — pro + maximum reasoning (explicit deep-think mode)
-    # Image-generation models below — these never appear in the model
-    # picker because Gemini Web auto-routes image prompts through a
-    # `data_analysis_tool` envelope. The RPC trace exposes the actual
-    # model name (`Nano Banana 2`, `Imagen 4`) in the response footer.
+    # Image / audio generation models below — these never appear in the
+    # picker because Gemini Web auto-routes image / music prompts
+    # through a `data_analysis_tool` envelope. The RPC trace exposes
+    # the actual model name (`Nano Banana 2`, `Imagen 4`, `Lyria`) in
+    # the response footer. `generate_music` in the captcha-solver
+    # already targets Lyria explicitly.
     "gemini_web": [
         "gmw/3.1-flash-lite",
         "gmw/3.1",
@@ -86,11 +88,17 @@ FALLBACK_MODELS = {
         "gmw/nano-banana-2",
         "gmw/nano-banana-pro",
         "gmw/imagen-4",
+        "gmw/lyria",
     ],
     "chatgpt_web": [
         "cgw/auto",
         "cgw/gpt-5",
         "cgw/gpt-5-mini",
+        # Image generation goes through chatgpt.com's "Tạo hình ảnh" tool
+        # which the picker doesn't surface as a separate model entry —
+        # but it IS a distinct routable capability behind the same
+        # session, served by DALL-E (free) / gpt-image-1 (paid).
+        "cgw/dall-e",
     ],
     "nvidia_nim": [
         "nv/auto",
