@@ -63,6 +63,40 @@ _refresh_locks_guard = Lock()
 # guard is held. 4096 keys × ~200 B/lock = ~800 KB worst case.
 _MAX_REFRESH_LOCKS = 4096
 
+# In-process recent-refresh cache: dedupes concurrent callers on the same
+# refresh_token even when the persistent store (account_service) hasn't
+# been written yet. Without this, two threads could each acquire the lock
+# in turn, both miss the persistence re-check, and both POST — defeating
+# the dedupe goal of the mutex. Entries TTL 60s; account_service catches
+# up well within that window.
+_recent_refreshes: dict[str, tuple[float, dict]] = {}
+_recent_lock = Lock()
+_RECENT_TTL_SECONDS = 60.0
+
+
+def _stash_recent(old_rt: str, result: dict) -> None:
+    """Cache a fresh refresh result keyed by the old refresh_token."""
+    with _recent_lock:
+        now = time.time()
+        # Opportunistic prune of expired entries.
+        for k in list(_recent_refreshes.keys()):
+            if now - _recent_refreshes[k][0] > _RECENT_TTL_SECONDS:
+                del _recent_refreshes[k]
+        _recent_refreshes[old_rt] = (now, result)
+
+
+def _peek_recent(old_rt: str) -> dict | None:
+    """Return a recently-issued result for old_rt, if still within TTL."""
+    with _recent_lock:
+        item = _recent_refreshes.get(old_rt)
+        if item is None:
+            return None
+        ts, result = item
+        if time.time() - ts > _RECENT_TTL_SECONDS:
+            del _recent_refreshes[old_rt]
+            return None
+        return result
+
 
 def _lock_for(refresh_token: str) -> Lock:
     """Return the per-token Lock, creating one on first use."""
@@ -109,6 +143,13 @@ def refresh_codex_token(refresh_token: str, device_id: str | None = None) -> dic
 
     lock = _lock_for(refresh_token)
     with lock:
+        # Fast path: another caller within the last 60s already exchanged
+        # this exact refresh_token. Return their result instead of POSTing
+        # again — POSTing again would either return a duplicate (if OpenAI
+        # is lenient) or invalidate the prior result (if rotation kicks in).
+        recent = _peek_recent(refresh_token)
+        if recent is not None:
+            return recent
         # Re-check: another caller may have already refreshed this token
         # while we waited on the lock. If account_service holds an access
         # token for this refresh_token whose expiry is still > 1h away,
@@ -177,12 +218,19 @@ def _refresh_codex_token_locked(
         expires_in = int(payload.get("expires_in") or 0)
         if not access_token:
             return None
-        return {
+        result = {
             "access_token": access_token,
             "refresh_token": new_refresh,
             "expires_in": expires_in,
             "expires_at": time.time() + expires_in if expires_in > 0 else 0.0,
         }
+        # Cache under the OLD refresh_token (the one our caller passed in)
+        # so a concurrent caller arriving on the same key gets the result
+        # without POSTing again. Without this, callers serialize but each
+        # still triggers an OAuth call — exactly what the rotation race
+        # depends on.
+        _stash_recent(refresh_token, result)
+        return result
 
     # Non-200 — inspect error body for unrecoverable codes
     error_text = ""
