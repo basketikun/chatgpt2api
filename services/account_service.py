@@ -20,25 +20,37 @@ _TOKEN_AUDIENCE_CHATGPT = "chatgpt.com"
 _TOKEN_AUDIENCE_OPENAI_API = "api.openai.com"
 
 
-def detect_token_audience(access_token: str) -> str:
-    """Decode JWT to determine which API the token works with."""
+def _decode_jwt_payload(access_token: str) -> dict | None:
+    """Best-effort base64url decode of the JWT payload segment. Returns
+    None on any error so callers can fall back to their existing path."""
     if not access_token or not access_token.startswith("eyJ"):
-        return "unknown"
+        return None
     try:
         import base64, json
         parts = access_token.split(".")
-        if len(parts) >= 2:
-            # Fix base64 padding: JWT uses base64url without padding
-            padded = parts[1] + "=" * (-len(parts[1]) % 4)
-            payload = json.loads(base64.urlsafe_b64decode(padded))
-            aud = payload.get("aud", "")
-            if isinstance(aud, list):
-                aud = aud[0] if aud else ""
-            aud_str = str(aud).lower()
-            if "api.openai.com" in aud_str:
-                return _TOKEN_AUDIENCE_OPENAI_API
-            if "chatgpt.com" in aud_str:
-                return _TOKEN_AUDIENCE_CHATGPT
+        if len(parts) < 2:
+            return None
+        padded = parts[1] + "=" * (-len(parts[1]) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(padded))
+        return payload if isinstance(payload, dict) else None
+    except Exception:
+        return None
+
+
+def detect_token_audience(access_token: str) -> str:
+    """Decode JWT to determine which API the token works with."""
+    payload = _decode_jwt_payload(access_token)
+    if not payload:
+        return "unknown"
+    try:
+        aud = payload.get("aud", "")
+        if isinstance(aud, list):
+            aud = aud[0] if aud else ""
+        aud_str = str(aud).lower()
+        if "api.openai.com" in aud_str:
+            return _TOKEN_AUDIENCE_OPENAI_API
+        if "chatgpt.com" in aud_str:
+            return _TOKEN_AUDIENCE_CHATGPT
     except Exception:
         pass
     return "unknown"
@@ -122,6 +134,27 @@ class AccountService:
         normalized["status"] = _STATUS_MIGRATION.get(raw_status, raw_status)
         normalized["quota"] = max(0, int(normalized.get("quota") if normalized.get("quota") is not None else 0))
         normalized["image_quota_unknown"] = bool(normalized.get("image_quota_unknown"))
+        # Backfill email/user_id from JWT payload when missing. chatgpt.com
+        # access tokens carry the user's email under the `email` claim or
+        # under `https://api.openai.com/profile.email`. This lets one-click
+        # token-import flows display the correct identity straight away
+        # instead of showing "(none)" until a separate refresh step runs.
+        if not normalized.get("email") and access_token.startswith("eyJ"):
+            payload = _decode_jwt_payload(access_token)
+            if payload:
+                claim_email = payload.get("email")
+                if not (isinstance(claim_email, str) and "@" in claim_email):
+                    profile = payload.get("https://api.openai.com/profile") or {}
+                    if isinstance(profile, dict):
+                        claim_email = profile.get("email")
+                if isinstance(claim_email, str) and "@" in claim_email:
+                    normalized["email"] = claim_email
+                if not normalized.get("user_id"):
+                    auth = payload.get("https://api.openai.com/auth") or {}
+                    if isinstance(auth, dict) and auth.get("user_id"):
+                        normalized["user_id"] = str(auth["user_id"])
+                    elif payload.get("sub"):
+                        normalized["user_id"] = str(payload["sub"])
         normalized["email"] = normalized.get("email") or None
         normalized["user_id"] = normalized.get("user_id") or None
         limits_progress = normalized.get("limits_progress")
