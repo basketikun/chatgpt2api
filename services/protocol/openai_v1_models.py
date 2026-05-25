@@ -466,6 +466,13 @@ import os as _os
 _CACHE_FILE = DATA_DIR / "models_cache.json"
 _models_cache: dict[str, Any] | None = None
 _cache_config_hash: str = ""
+_cache_loaded_at: float = 0.0
+# Auto-refresh cadence. The web-scraped catalogues (gmw/*, cgw/*) and the
+# Codex / OpenAI live lists can change between deploys without any config
+# edit on our side, so the cache deliberately expires even when the config
+# hash is stable. 24h is the same cadence Google / OpenAI use for their
+# own publicly-cached metadata.
+_CACHE_TTL_SECONDS = 24 * 3600
 
 
 def _load_cache_from_disk() -> dict[str, Any] | None:
@@ -522,8 +529,19 @@ def invalidate_models_cache():
         pass
 
 
+_DYNAMIC_PREFIXES = ("gmw/", "cgw/")
+
+
 def _apply_enabled_filter(data: list[dict]) -> list[dict]:
-    """Filter model list by model_settings.enabled_models. Used for HA /v1/models."""
+    """Filter model list by model_settings.enabled_models. Used for HA /v1/models.
+
+    Models whose IDs start with one of the dynamic web-provider prefixes
+    (`gmw/`, `cgw/`) bypass the filter entirely — the captcha-solver
+    discovers their slugs at runtime so the user has no way to add them
+    to `enabled_models` ahead of time, and the prefix already implies
+    the source. Static providers (chatgpt/, cx/, gemini_free/, ...)
+    still go through the enabled filter as before.
+    """
     model_settings = config.data.get("model_settings") or {}
     if not isinstance(model_settings, dict):
         return data
@@ -565,7 +583,11 @@ def _apply_enabled_filter(data: list[dict]) -> list[dict]:
             pass
 
     before = len(data)
-    filtered = [item for item in data if str(item.get("id") or "").strip() in all_enabled]
+    filtered = []
+    for item in data:
+        mid = str(item.get("id") or "").strip()
+        if mid in all_enabled or mid.startswith(_DYNAMIC_PREFIXES):
+            filtered.append(item)
     logger.info({"event": "list_models_filtered", "before": before, "after": len(filtered)})
     return filtered
 
@@ -575,18 +597,21 @@ def list_models(force_refresh: bool = False, apply_filter: bool = False) -> dict
     Cache always stores UNFILTERED data; filter is applied at read time so the UI
     (which needs all models for toggle UI) and HA (which needs only enabled) share
     the same cache without one polluting the other."""
-    global _models_cache, _cache_config_hash
+    global _models_cache, _cache_config_hash, _cache_loaded_at
 
     # Load from disk on first access
     if _models_cache is None:
         _models_cache = _load_cache_from_disk()
         _cache_config_hash = _config_hash()
+        if _models_cache is not None:
+            _cache_loaded_at = time.time()
 
     current_hash = _config_hash()
     config_changed = _cache_config_hash != current_hash
+    cache_stale = (time.time() - _cache_loaded_at) > _CACHE_TTL_SECONDS
 
-    # Use cache if: loaded from disk, not forced, and config hasn't changed
-    if _models_cache is not None and not force_refresh and not config_changed:
+    # Use cache if: loaded, not forced, config stable, AND inside TTL.
+    if _models_cache is not None and not force_refresh and not config_changed and not cache_stale:
         logger.info({"event": "list_models_cache_hit"})
         cached = dict(_models_cache)  # type: ignore[arg-type]
         if apply_filter:
@@ -743,6 +768,7 @@ def list_models(force_refresh: bool = False, apply_filter: bool = False) -> dict
     result = {"object": "list", "data": data}
     _models_cache = result
     _cache_config_hash = current_hash
+    _cache_loaded_at = time.time()
     _save_cache_to_disk(result)
     logger.info({"event": "list_models_cached_to_disk", "total": len(data)})
 
