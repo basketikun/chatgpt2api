@@ -284,7 +284,7 @@ def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
                     result = _wrap_mcp_stream(result, messages_copy, route, body)
                 elif isinstance(result, dict):
                     result = _execute_mcp_tools_in_response(messages_copy, result, route, body)
-                result = _maybe_strip_markdown(result, messages_copy, force=ha_context_injected)
+                result = _maybe_strip_markdown(result, messages_copy, force=ha_context_injected or bool(body.get("_is_ha_request")))
                 model_cooldown.record_success("combo:" + model, route.model)
                 return result
             except Exception as exc:
@@ -335,7 +335,7 @@ def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
     elif isinstance(result, dict):
         result = _execute_mcp_tools_in_response(messages, result, route, body)
 
-    result = _maybe_strip_markdown(result, messages, force=ha_context_injected)
+    result = _maybe_strip_markdown(result, messages, force=ha_context_injected or bool(body.get("_is_ha_request")))
     return result
 
 

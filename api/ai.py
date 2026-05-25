@@ -134,9 +134,19 @@ def create_router() -> APIRouter:
         return await call.run(openai_v1_image_edit.handle, payload)
 
     @router.post("/v1/chat/completions")
-    async def create_chat_completion(body: ChatCompletionRequest, authorization: str | None = Header(default=None)):
+    async def create_chat_completion(
+        body: ChatCompletionRequest,
+        authorization: str | None = Header(default=None),
+        user_agent: str | None = Header(default=None, alias="user-agent"),
+    ):
         identity = require_identity(authorization)
         payload = body.model_dump(mode="python")
+        # HA Conversation / voice surfaces can't render markdown — flag the
+        # request so the chat handler force-strips the response. User-Agent
+        # contains "HomeAssistant" for both REST and websocket integrations.
+        ua = (user_agent or "").lower()
+        if "homeassistant" in ua or "hass.io" in ua:
+            payload["_is_ha_request"] = True
         model = str(payload.get("model") or "auto")
         request_preview = request_text(payload.get("prompt"), payload.get("messages"))
         call = LoggedCall(identity, "/v1/chat/completions", model, "Sinh văn bản", request_text=request_preview)
