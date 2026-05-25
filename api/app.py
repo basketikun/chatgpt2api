@@ -36,6 +36,15 @@ def create_app() -> FastAPI:
             start_jwt_refresh()
         except Exception:
             pass
+        # Start models-catalogue auto-refresh (every 6h ± 30 min).
+        # Keeps the dynamic gmw/* + cgw/* + codex live lists warm even
+        # when nothing hits /v1/models — so the dropdown the user opens
+        # tomorrow already reflects upstream's renames/additions today.
+        try:
+            from services.models_refresh_scheduler import start as start_models_refresh
+            start_models_refresh()
+        except Exception:
+            pass
         # Pre-load HA client to start background scheduler
         try:
             from services.ha_client import format_states_context

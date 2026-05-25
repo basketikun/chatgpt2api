@@ -66,12 +66,20 @@ FALLBACK_MODELS = {
     # captcha-solver (see `_fetch_web_models` below). These slugs match
     # what the upstream picker actually serves today so the static list
     # is at least directionally correct when the live fetch is offline.
-    # Refreshed from a live Gemini Web `wrb.fr` chat response on 2026-05-25
-    # — gemini.google.com currently surfaces 3.1 Flash-Lite / 3.1 / 3 Pro.
+    # Refreshed from live Gemini Web `wrb.fr` chat responses on 2026-05-25.
+    # Tiers correspond to Google's reasoning effort levels:
+    #   flash-lite  — fastest, no/low thinking
+    #   flash       — default chat
+    #   flash-extended — flash + extended thinking
+    #   pro         — slower, deep thinking
+    #   pro-thinking — pro + maximum reasoning (explicit deep-think mode)
+    #   imagen-4    — image generation
     "gemini_web": [
         "gmw/3.1-flash-lite",
         "gmw/3.1",
+        "gmw/3.5-flash-extended",
         "gmw/3-pro",
+        "gmw/3-pro-thinking",
         "gmw/imagen-4",
     ],
     "chatgpt_web": [
