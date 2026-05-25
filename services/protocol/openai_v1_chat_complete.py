@@ -1080,6 +1080,10 @@ _MD_HEADING = re.compile(r"^\s{0,3}#{1,6}\s+", re.MULTILINE)
 #   [oaicite:0] / 【oaicite:0】 / oaicite:N (various brackets)
 _CITE_TURN = re.compile(r"cite(?:turn\d+\w+)+")
 _OAICITE = re.compile(r"[\[【]?\s*oaicite[^\]】\)]*[\]】\)]?")
+# Tool-call args leaking as text: `entity["city","Hà Nội",...]` — match the
+# `entity[ "string", "string", ... ]` shape with at least one quoted arg so we
+# don't accidentally strip valid `entity[0]` / `entity[i]` code in answers.
+_ENTITY_LEAK = re.compile(r'\bentity\[\s*"[^"]*"(?:\s*,\s*"[^"]*")*\s*\]')
 
 
 def _strip_artifacts_inline(text: str) -> str:
@@ -1087,6 +1091,7 @@ def _strip_artifacts_inline(text: str) -> str:
         return text
     out = _CITE_TURN.sub("", text)
     out = _OAICITE.sub("", out)
+    out = _ENTITY_LEAK.sub("", out)
     return out
 
 
