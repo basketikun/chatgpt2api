@@ -223,6 +223,27 @@ async def _run(session: ChatGPTLoginSession, password: str) -> None:
         await page.goto(_CHATGPT_HOME, wait_until="domcontentloaded", timeout=30_000)
         await asyncio.sleep(2.0)  # let any client-side redirect settle
 
+        # ── Cloudflare challenge wait ──
+        # chatgpt.com puts an interactive Cloudflare challenge in front of
+        # automated clients. The URL stays at .../?__cf_chl_rt_tk=... while
+        # the JS verifier runs, then redirects to the clean URL once it
+        # passes. Manual click via noVNC works; locator.click() during the
+        # challenge does not because the DOM hasn't rendered the real page
+        # yet. Wait up to 60s for the cf_chl_rt_tk parameter to drop before
+        # searching for the Log in button.
+        session.message = "Chờ Cloudflare verify..."
+        cf_deadline = time.time() + 60
+        while time.time() < cf_deadline:
+            try:
+                cur = page.url
+            except Exception:
+                cur = ""
+            if "__cf_chl_rt_tk" not in cur and "/cdn-cgi/challenge" not in cur:
+                break
+            await asyncio.sleep(2.0)
+        else:
+            logger.info("chatgpt_login: cloudflare challenge did not clear in 60s (url=%s)", page.url)
+
         # If already authenticated, just scrape session and finish.
         scraped = await _scrape_session(page)
         if scraped and scraped.get("accessToken"):

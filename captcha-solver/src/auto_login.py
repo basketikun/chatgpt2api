@@ -125,6 +125,10 @@ class LoginSession:
     started_at: float = field(default_factory=time.time)
     completed_at: Optional[float] = None
     error: Optional[str] = None
+    # Selects how to satisfy a 2FA challenge when Google offers a picker.
+    # "auth" → click Authenticator → state=need_code, user POSTs 6-digit.
+    # "tap"  → skip picker, fall through to tap-on-phone (state=need_tap).
+    prefer_method: str = "auth"
 
     def to_dict(self) -> dict:
         return {
@@ -167,14 +171,26 @@ async def start_auto_login(
     profile: str,
     email: str,
     password: str,
+    prefer_method: str = "auth",
 ) -> LoginSession:
     """Kick off background auto-login. Returns the LoginSession immediately
-    so the UI can start polling /auto-login-status."""
+    so the UI can start polling /auto-login-status.
+
+    `prefer_method` selects the 2FA path when Google offers a picker:
+    "auth" = click Authenticator (need_code), "tap" = wait for the
+    tap-on-device prompt (need_tap).
+    """
     old_task = _tasks.pop(profile, None)
     if old_task and not old_task.done():
         old_task.cancel()
 
-    session = LoginSession(profile=profile, email=email, state="starting", message="Khởi tạo Chrome")
+    session = LoginSession(
+        profile=profile,
+        email=email,
+        state="starting",
+        message="Khởi tạo Chrome",
+        prefer_method=prefer_method if prefer_method in ("auth", "tap") else "auth",
+    )
     _sessions[profile] = session
 
     task = asyncio.create_task(_run(session, password))
@@ -333,12 +349,13 @@ async def do_google_login_steps(
         await asyncio.sleep(2.0)
 
         # If Google shows the method picker (tap-on-device / Authenticator /
-        # SMS / recovery email), pick Authenticator automatically. Without
-        # this the loop spins on state="working" for the full 4 minutes
-        # waiting for a code field that never appears — Google needs us
-        # to choose the method first. We only click once per session to
-        # avoid re-clicking after the page advances.
-        if not picker_clicked:
+        # SMS / recovery email), pick Authenticator automatically when the
+        # caller asked for the auth path. With prefer_method="tap" we skip
+        # the picker entirely and let _detect_state fall through to
+        # need_tap, so the user's existing on-device prompt drives the
+        # confirmation instead of getting overridden by an Authenticator
+        # click.
+        if session.prefer_method == "auth" and not picker_clicked:
             try:
                 if await _pick_authenticator_method(page):
                     picker_clicked = True

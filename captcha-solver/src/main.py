@@ -155,6 +155,21 @@ class AutoLoginReq(BaseModel):
     profile: str = "google-fx"
     email: str
     password: str
+    # "auth" → click Authenticator on the 2FA picker (state advances to
+    # need_code). "tap" → skip the picker so Google falls through to the
+    # tap-on-device prompt (state advances to need_tap).
+    prefer_method: str = "auth"
+
+
+class MultiOnboardReq(BaseModel):
+    profile: str = "google-multi"
+    email: str
+    password: str
+    # Same as AutoLoginReq.prefer_method but applied across all services.
+    prefer_method: str = "auth"
+    # Subset of {"gemini_web", "flow", "chatgpt"}. Order matters — we
+    # trigger them sequentially after the shared Google login succeeds.
+    services: list[str] = Field(default_factory=lambda: ["gemini_web", "flow"])
 
 
 class TwoFactorCodeReq(BaseModel):
@@ -526,6 +541,7 @@ async def api_auto_login(req: AutoLoginReq) -> dict[str, Any]:
         profile=req.profile,
         email=req.email,
         password=req.password,
+        prefer_method=req.prefer_method,
     )
     return {
         **session.to_dict(),
@@ -533,6 +549,174 @@ async def api_auto_login(req: AutoLoginReq) -> dict[str, Any]:
         "note": "Theo dõi tiến trình ở /v1/session/{profile}/auto-login-status. "
                 "Mở noVNC để giám sát/can thiệp khi cần.",
     }
+
+
+# ── Multi-service onboard ────────────────────────────────────────────────
+# One Google login → trigger Gemini Web + Flow + ChatGPT onboards in
+# sequence on the same persistent profile so the user only goes through
+# the 2FA prompt once. ChatGPT may still fail at the chatgpt.com Cloudflare
+# wall but Gemini/Flow inherit the Google session and succeed silently.
+
+_MULTI_STATES: dict[str, dict[str, Any]] = {}
+
+
+def _multi_state(profile: str) -> dict[str, Any]:
+    return _MULTI_STATES.setdefault(profile, {
+        "profile": profile,
+        "stage": "idle",
+        "results": {},   # service → {"state": ..., "token": ..., "error": ...}
+        "started_at": None,
+        "completed_at": None,
+        "error": None,
+    })
+
+
+async def _run_multi(req: MultiOnboardReq) -> None:
+    """Background runner for /v1/multi-onboard. State is exposed via
+    /v1/multi-onboard/{profile}/status; the UI polls it and feeds the
+    auth code (if any) via the existing /auto-login-2fa-code endpoint
+    on the SAME profile."""
+    import asyncio as _asyncio
+    state = _multi_state(req.profile)
+    state["stage"] = "google_login"
+    state["started_at"] = time.time()
+    state["error"] = None
+    try:
+        # Step 1 — Google login (shared session for every service below).
+        await start_auto_login(
+            profile=req.profile,
+            email=req.email,
+            password=req.password,
+            prefer_method=req.prefer_method,
+        )
+        deadline = time.time() + 360
+        while time.time() < deadline:
+            await _asyncio.sleep(2)
+            sess = get_login_session(req.profile)
+            if sess is None:
+                continue
+            if sess.state == "success":
+                break
+            if sess.state in ("failed", "error"):
+                state["stage"] = "failed"
+                state["error"] = f"google_login: {sess.error or sess.message}"
+                state["completed_at"] = time.time()
+                return
+        else:
+            state["stage"] = "failed"
+            state["error"] = "google_login: timeout"
+            state["completed_at"] = time.time()
+            return
+
+        # Step 2 — Per-service onboard. Each service reuses the same
+        # persistent Chrome profile so Google cookies are already there.
+        for svc in req.services:
+            state["stage"] = svc
+            state["results"][svc] = {"state": "running"}
+            try:
+                if svc == "gemini_web":
+                    s = await start_gemini_web_login(
+                        profile=req.profile, email=req.email, password=req.password,
+                    )
+                elif svc == "chatgpt":
+                    s = await start_chatgpt_login(
+                        profile=req.profile, email=req.email, password=req.password,
+                    )
+                elif svc == "flow":
+                    # Flow login = Google session + open labs.google. The
+                    # existing Google session is enough; we just record success.
+                    state["results"][svc] = {"state": "success", "note": "uses shared Google session"}
+                    continue
+                else:
+                    state["results"][svc] = {"state": "skipped", "error": "unknown service"}
+                    continue
+                # Poll the service-specific session until terminal.
+                svc_deadline = time.time() + 240
+                while time.time() < svc_deadline:
+                    await _asyncio.sleep(2)
+                    cur = get_chatgpt_session(req.profile) if svc == "chatgpt" else get_gemini_web_session(req.profile)
+                    if cur is None:
+                        continue
+                    if cur.state == "success":
+                        token = getattr(cur, "access_token", None)
+                        state["results"][svc] = {
+                            "state": "success",
+                            "token": token,
+                            "email": getattr(cur, "captured_email", None) or req.email,
+                        }
+                        break
+                    if cur.state in ("failed", "error"):
+                        state["results"][svc] = {
+                            "state": "failed",
+                            "error": cur.error or cur.message,
+                        }
+                        break
+                else:
+                    state["results"][svc] = {"state": "failed", "error": "timeout"}
+            except Exception as exc:
+                state["results"][svc] = {"state": "failed", "error": str(exc)[:200]}
+
+        state["stage"] = "done"
+        state["completed_at"] = time.time()
+    except Exception as exc:
+        state["stage"] = "failed"
+        state["error"] = str(exc)[:300]
+        state["completed_at"] = time.time()
+
+
+@app.post("/v1/multi-onboard", dependencies=[Depends(require_api_key)])
+async def api_multi_onboard(req: MultiOnboardReq) -> dict[str, Any]:
+    """Kick off one Google login + fan out to multiple service onboards.
+
+    UI flow:
+      1. POST /v1/multi-onboard {email, password, prefer_method, services}
+      2. Poll /v1/multi-onboard/{profile}/status to track progress
+      3. When the embedded Google session reports state=need_code, POST
+         the 6-digit Authenticator code to
+         /v1/session/{profile}/auto-login-2fa-code (existing endpoint —
+         same profile shared between the multi-flow and the embedded
+         auto-login session).
+      4. When stage=done, response.results[service].token is the JWT to
+         feed into chatgpt2api's account pool.
+    """
+    import asyncio as _asyncio
+    state = _multi_state(req.profile)
+    state.update({
+        "profile": req.profile,
+        "stage": "starting",
+        "results": {},
+        "started_at": time.time(),
+        "completed_at": None,
+        "error": None,
+        "prefer_method": req.prefer_method,
+        "services": list(req.services),
+    })
+    _asyncio.create_task(_run_multi(req))
+    return {
+        "profile": req.profile,
+        "stage": state["stage"],
+        "services": req.services,
+        "prefer_method": req.prefer_method,
+        "novnc": settings.novnc_external_url,
+        "note": "Poll /v1/multi-onboard/{profile}/status. Khi state Google "
+                "ở need_code, POST mã vào /v1/session/{profile}/auto-login-2fa-code.",
+    }
+
+
+@app.get("/v1/multi-onboard/{profile}/status", dependencies=[Depends(require_api_key)])
+async def api_multi_onboard_status(profile: str) -> dict[str, Any]:
+    state = dict(_multi_state(profile))
+    # Surface the embedded Google login state so the UI can detect
+    # need_code / need_tap without polling a second endpoint.
+    g = get_login_session(profile)
+    if g is not None:
+        state["google"] = {
+            "state": g.state,
+            "message": g.message,
+            "tap_number": g.tap_number,
+            "error": g.error,
+        }
+    return state
 
 
 @app.get(
