@@ -99,14 +99,14 @@ function ComboEditView({ editModels, allModels, filteredModels, dropdownOpen, se
         </button>
         {dropdownOpen && (
           <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
+            className="fixed inset-0 z-50 flex justify-center bg-black/60 backdrop-blur-[1px]"
             onClick={() => setDropdownOpen(false)}
             onMouseDown={(e) => e.stopPropagation()}
             onPointerDown={(e) => e.stopPropagation()}
             onTouchStart={(e) => e.stopPropagation()}
           >
             <div
-              className="bg-white rounded-2xl shadow-2xl w-[720px] max-h-[80vh] flex flex-col"
+              className="bg-white shadow-2xl w-[min(92vw,720px)] h-[100dvh] flex flex-col border-l border-r border-stone-200"
               onClick={(e) => e.stopPropagation()}
               onMouseDown={(e) => e.stopPropagation()}
               onPointerDown={(e) => e.stopPropagation()}
