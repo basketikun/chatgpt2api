@@ -788,6 +788,45 @@ async def list_models(profile: str, headless: bool = True, timeout: int = 30) ->
     return out
 
 
+async def get_plan(profile: str, headless: bool = True, timeout: int = 30) -> dict[str, Any]:
+    """Detect the Gemini Web subscription tier for `profile`.
+
+    No public API for this — gemini.google.com encodes the plan in the
+    page header / left rail ("Gemini", "Gemini Advanced", "Gemini AI
+    Pro", "Gemini Ultra"). Open the app, harvest visible text,
+    classify with a vocabulary regex. Returns
+        {"plan": "free|plus|pro|ultra", "label": "<raw label>"}
+    Plan="free" is the fallback when nothing premium-shaped is on
+    the page.
+    """
+    import re
+    async with pool.page(profile=profile, headless=headless) as page:
+        await page.goto(_GEMINI_HOME, wait_until="domcontentloaded", timeout=timeout * 1000)
+        try:
+            await _wait_for_ready(page, timeout=15)
+        except Exception:
+            pass
+        await asyncio.sleep(1.5)
+        # The plan label is in the header area — collect everything
+        # visible in the top-left brand region and the user account
+        # menu. Inner_text on the whole body is cheap and reliable.
+        body_text = ""
+        try:
+            body_text = (await page.locator("body").inner_text(timeout=2000)) or ""
+        except Exception:
+            pass
+    raw = body_text or ""
+    raw_lower = raw.lower()
+    # Order matters — match the most specific tier first.
+    if re.search(r"\bgemini\s+ultra\b", raw_lower):
+        return {"plan": "ultra", "label": "Gemini Ultra"}
+    if re.search(r"\bgemini\s+ai\s+pro\b", raw_lower) or re.search(r"\bgemini\s+pro\b", raw_lower):
+        return {"plan": "pro", "label": "Gemini AI Pro"}
+    if re.search(r"\bgemini\s+advanced\b", raw_lower) or re.search(r"\bgemini\s+plus\b", raw_lower):
+        return {"plan": "plus", "label": "Gemini Advanced"}
+    return {"plan": "free", "label": "Gemini"}
+
+
 async def chat(profile: str, prompt: str, timeout: int = 90, headless: bool = False) -> dict[str, Any]:
     """Send a single prompt to gemini.google.com and return its response.
 

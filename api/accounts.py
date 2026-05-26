@@ -237,9 +237,16 @@ def create_router() -> APIRouter:
 
         def _collect_web_accounts(cfg: dict) -> list[dict]:
             """Build a Flow-style instances list from either the legacy
-            single-`profile` field or the new `accounts: [{profile,label}]`
+            single-`profile` field or the new `accounts: [{profile,label,plan}]`
             array. Both shapes are accepted so existing deployments don't
-            break when the config gets migrated."""
+            break when the config gets migrated.
+
+            `plan` is read directly from the config (cached value from
+            the last captcha-solver scrape) — refreshing it requires a
+            separate `POST /api/accounts/refresh-web-plan` call so we
+            don't run a fresh browser scrape on every Accounts page
+            load.
+            """
             out: list[dict] = []
             ordered = []
             accounts_field = cfg.get("accounts") if isinstance(cfg.get("accounts"), list) else []
@@ -248,16 +255,18 @@ def create_router() -> APIRouter:
                     ordered.append({
                         "profile": str(a.get("profile") or ""),
                         "label": str(a.get("label") or a.get("profile") or ""),
+                        "plan": str(a.get("plan") or "") or None,
                     })
             legacy = str(cfg.get("profile") or "").strip()
             if legacy and not any(x["profile"] == legacy for x in ordered):
-                ordered.insert(0, {"profile": legacy, "label": legacy})
+                ordered.insert(0, {"profile": legacy, "label": legacy, "plan": None})
             for idx, item in enumerate(ordered):
                 out.append({
                     "ordinal": idx + 1,
                     "is_primary": idx == 0,
                     "profile": item["profile"],
                     "label": item["label"],
+                    "plan": item.get("plan"),
                 })
             return out
 

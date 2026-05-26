@@ -47,6 +47,7 @@ from .solvers.gemini_web import (
     generate_image as gemini_web_generate_image,
     generate_music as gemini_web_generate_music,
     list_models as gemini_web_list_models,
+    get_plan as gemini_web_get_plan,
 )
 from .solvers.chatgpt_web import (
     analyze_image as chatgpt_web_analyze_image,
@@ -818,6 +819,22 @@ async def api_chatgpt_refresh_jwt(profile: str) -> dict[str, Any]:
 
 
 # ── Gemini Web (gemini.google.com) ──────────────────────────────────────
+
+@app.get("/v1/gemini-web/{profile}/plan", dependencies=[Depends(require_api_key)])
+async def api_gemini_web_plan(profile: str, headless: bool = True, timeout: int = 30) -> dict[str, Any]:
+    """Detected subscription tier of a Gemini Web profile.
+
+    Wraps `solvers.gemini_web.get_plan` so the chatgpt2api provider-tree
+    can show a free/plus/pro/ultra badge next to each onboarded
+    profile. Plan classification is text-pattern based — there's no
+    public API for it on Google's side.
+    """
+    try:
+        return await gemini_web_get_plan(profile=profile, headless=headless, timeout=timeout)
+    except Exception as exc:
+        logger.exception("gemini_web get_plan failed")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
 
 @app.get("/v1/gemini-web/{profile}/models", dependencies=[Depends(require_api_key)])
 async def api_gemini_web_models(profile: str, headless: bool = True, timeout: int = 30) -> dict[str, Any]:
