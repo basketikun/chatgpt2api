@@ -472,6 +472,24 @@ def _wrap_mcp_stream(
             yield c
         return
 
+    # No native tool_calls — check for XML tool calls in content text.
+    # ChatGPT web backend models output ```xml <tool_call> instead of
+    # native function-call objects. Parse them so server-side tools
+    # (GetLiveContext, ha_*) are executed here.
+    if not final_tool_calls:
+        xml_calls = _extract_xml_tool_calls_from_text(full_content)
+        if xml_calls:
+            final_tool_calls = []
+            for i, xc in enumerate(xml_calls):
+                final_tool_calls.append({
+                    "id": f"xml_stream_{i}",
+                    "type": "function",
+                    "function": {
+                        "name": xc.get("name", ""),
+                        "arguments": json.dumps(xc.get("arguments", {}), ensure_ascii=False),
+                    },
+                })
+
     # No tool calls → stream as-is
     if not final_tool_calls:
         for c in chunks:
@@ -495,6 +513,12 @@ def _wrap_mcp_stream(
         return
 
     # Build a synthetic non-stream result to feed into the agentic loop
+    # Strip XML tool-call fence from content — tool_calls carry the intent.
+    import re
+    clean_content = re.sub(
+        r"```xml\s*<tool_call[^`]*```", "", full_content,
+        flags=re.DOTALL,
+    ).strip()
     synthetic_result = {
         "id": f"chatcmpl-{uuid.uuid4().hex}",
         "object": "chat.completion",
@@ -504,7 +528,7 @@ def _wrap_mcp_stream(
             "index": 0,
             "message": {
                 "role": "assistant",
-                "content": full_content,
+                "content": clean_content,
                 "tool_calls": mcp_calls,
             },
             "finish_reason": "tool_calls",
