@@ -244,21 +244,23 @@ def _rtk_compress_messages(messages: list[dict[str, Any]], max_bytes: int = _MAX
     # Deep copy to avoid mutating original
     msgs = copy.deepcopy(messages)
 
-    # Step 1: Compress large tool results (RTK-style: keep head+tail)
-    # For user/system messages > file_upload_threshold, use file-upload marker
-    # (preserves full content for later upload via /backend-api/files).
-    # System messages carry HA entity context — can be 100KB+ easily.
+    # Step 1: Compress large messages. When file_upload_threshold is set
+    # (>0 for chatgpt provider), large content gets uploaded to
+    # /backend-api/files and referenced via asset_pointer — no data loss.
+    # Otherwise fall back to head+tail RTK compression.
     for msg in msgs:
-        if msg.get("role") == "tool" and isinstance(msg.get("content"), str):
-            msg["content"] = _rtk_compress_tool_result(msg["content"])
-        if msg.get("role") in ("user", "system") and isinstance(msg.get("content"), str):
+        role = msg.get("role", "")
+        if isinstance(msg.get("content"), str):
             content = msg["content"]
-            if file_upload_threshold > 0 and len(content.encode("utf-8")) > file_upload_threshold:
+            content_bytes = len(content.encode("utf-8"))
+            if file_upload_threshold > 0 and content_bytes > file_upload_threshold:
                 key = hashlib.md5(content.encode()).hexdigest()[:16]
                 _file_upload_store[key] = content
                 preview = content[:500]
                 msg["content"] = f"{_FILE_UPLOAD_MARKER}{key}]\n{preview}\n...[full content uploaded as file]..."
-            elif len(content) > 3000:
+            elif role == "tool":
+                msg["content"] = _rtk_compress_tool_result(msg["content"])
+            elif content_bytes > 3000:
                 head = content[:1000]
                 tail = content[-1000:]
                 msg["content"] = f"{head}\n\n[... {len(content) - 2000} chars compressed ...]\n\n{tail}"
