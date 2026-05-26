@@ -19,6 +19,11 @@ from utils.helper import anthropic_sse_stream, sse_json_stream
 
 LOG_TYPE_CALL = "call"
 LOG_TYPE_ACCOUNT = "account"
+# Per-surface call logs so the Logs UI can filter chat vs image-gen
+# without grepping the generic LOG_TYPE_CALL bucket. Each entry carries
+# {provider, profile, op, duration_ms, prompt_len, ok, error}.
+LOG_TYPE_WEB_CHAT = "web_chat"          # gmw/cgw chat + vision
+LOG_TYPE_WEB_IMAGE = "web_image"        # gmw imagen / cgw dall-e / flow
 
 
 class LogService:

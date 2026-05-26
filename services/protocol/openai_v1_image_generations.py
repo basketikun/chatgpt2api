@@ -114,6 +114,18 @@ def _handle_adapter_image(route, body: dict[str, Any]) -> dict[str, Any] | Itera
         # Custom providers don't have image adapters — raise to trigger combo fallback
         raise RuntimeError(f"Provider '{route.provider}' does not support image generation")
 
+    # Per-call structured log for the Logs UI. Mirrors web_proxy._log_web_call
+    # so flow / gemini_web / chatgpt_web rows appear in the same image-gen
+    # bucket regardless of which code path executes them.
+    _img_log_started_at = time.time()
+    _img_log_provider = route.provider
+    _img_log_profile = ""
+    try:
+        _img_providers_cfg = config.data.get("providers") or {}
+        _img_log_profile = str((_img_providers_cfg.get(_img_log_provider) or {}).get("profile") or "")
+    except Exception:
+        pass
+
     prompt = str(body.get("prompt") or "")
     prompt = _translate_prompt(prompt)
     body = {**body, "prompt": prompt}
@@ -233,6 +245,24 @@ def _handle_adapter_image(route, body: dict[str, Any]) -> dict[str, Any] | Itera
                 logger.error({"event": "image_adapter_fatal", "provider": route.provider, "error": str(exc)})
                 if key_try < max_keys - 1:
                     continue  # try next key
+                # Structured log entry — surfaces in the Logs UI under
+                # web_image bucket alongside gemini_web / chatgpt_web.
+                try:
+                    from services.log_service import LOG_TYPE_WEB_IMAGE, log_service
+                    log_service.add(LOG_TYPE_WEB_IMAGE,
+                                     f"{_img_log_provider}/image_gen FAIL {int((time.time() - _img_log_started_at) * 1000)}ms",
+                                     {
+                                         "provider": _img_log_provider,
+                                         "profile": _img_log_profile,
+                                         "op": "image_gen",
+                                         "duration_ms": int((time.time() - _img_log_started_at) * 1000),
+                                         "prompt_len": len(prompt),
+                                         "ok": False,
+                                         "error": str(exc)[:300],
+                                         "model": route.model,
+                                     })
+                except Exception:
+                    pass
                 raise RuntimeError(f"Image generation failed: {exc}") from exc
 
     if stream and stream_outputs:
@@ -251,6 +281,25 @@ def _handle_adapter_image(route, body: dict[str, Any]) -> dict[str, Any] | Itera
     )
     if not result.get("data"):
         result["message"] = "Image generation completed but no images returned."
+    # Success log — only when at least one image came back so partial-fail
+    # paths still record the failure above.
+    if result.get("data"):
+        try:
+            from services.log_service import LOG_TYPE_WEB_IMAGE, log_service
+            log_service.add(LOG_TYPE_WEB_IMAGE,
+                             f"{_img_log_provider}/image_gen OK {int((time.time() - _img_log_started_at) * 1000)}ms",
+                             {
+                                 "provider": _img_log_provider,
+                                 "profile": _img_log_profile,
+                                 "op": "image_gen",
+                                 "duration_ms": int((time.time() - _img_log_started_at) * 1000),
+                                 "prompt_len": len(prompt),
+                                 "ok": True,
+                                 "got": len(result.get("data") or []),
+                                 "model": route.model,
+                             })
+        except Exception:
+            pass
     return result
 
 

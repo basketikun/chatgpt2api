@@ -29,6 +29,7 @@ from typing import Any, Iterator
 import httpx
 
 from services.config import config
+from services.log_service import LOG_TYPE_WEB_CHAT, LOG_TYPE_WEB_IMAGE, log_service
 from utils.log import logger
 
 
@@ -244,6 +245,44 @@ def _call_web_image_gen(
     return [str(u) for u in images if u]
 
 
+def _log_web_call(
+    log_type: str,
+    *,
+    provider: str,
+    profile: str,
+    op: str,
+    started_at: float,
+    prompt_len: int = 0,
+    ok: bool = True,
+    error: str = "",
+    extra: dict[str, Any] | None = None,
+) -> None:
+    """Append a structured entry to logs.jsonl with provider + duration.
+
+    Lets the Logs UI filter by surface (chat vs image) and provider
+    (gemini_web / chatgpt_web / flow) and see how long each call took.
+    """
+    duration_ms = int((time.time() - started_at) * 1000)
+    detail: dict[str, Any] = {
+        "provider": provider,
+        "profile": profile,
+        "op": op,
+        "duration_ms": duration_ms,
+        "prompt_len": prompt_len,
+        "ok": ok,
+    }
+    if error:
+        detail["error"] = error[:300]
+    if extra:
+        detail.update(extra)
+    summary = f"{provider}/{op} {'OK' if ok else 'FAIL'} {duration_ms}ms"
+    try:
+        log_service.add(log_type, summary, detail)
+    except Exception:
+        # Logging must never break the actual call.
+        pass
+
+
 def handle_gemini_web_chat(
     model: str,
     messages: list[dict[str, Any]],
@@ -257,18 +296,37 @@ def handle_gemini_web_chat(
     timeout = int(cfg.get("timeout") or 120)
     image_url = _last_user_image(messages)
     prompt = _last_user_text(messages)
+    started_at = time.time()
     if image_url:
         if not prompt:
             prompt = "Phân tích chi tiết nội dung ảnh này."
         logger.info({"event": "gemini_web_vision_request", "profile": profile,
                      "prompt_len": len(prompt), "image_kind": image_url[:30]})
-        text = _call_web_vision("gemini-web", profile, image_url, prompt, timeout=max(timeout, 180))
+        try:
+            text = _call_web_vision("gemini-web", profile, image_url, prompt, timeout=max(timeout, 180))
+        except Exception as exc:
+            _log_web_call(LOG_TYPE_WEB_CHAT, provider="gemini_web", profile=profile,
+                          op="vision", started_at=started_at, prompt_len=len(prompt),
+                          ok=False, error=str(exc))
+            raise
+        _log_web_call(LOG_TYPE_WEB_CHAT, provider="gemini_web", profile=profile,
+                      op="vision", started_at=started_at, prompt_len=len(prompt),
+                      extra={"text_len": len(text)})
         full_model = "gmw/vision"
     else:
         if not prompt:
             raise RuntimeError("Gemini Web chat requires a user message")
         logger.info({"event": "gemini_web_chat_request", "profile": profile, "prompt_len": len(prompt)})
-        text = _call_web_chat("gemini-web", profile, prompt, timeout=timeout)
+        try:
+            text = _call_web_chat("gemini-web", profile, prompt, timeout=timeout)
+        except Exception as exc:
+            _log_web_call(LOG_TYPE_WEB_CHAT, provider="gemini_web", profile=profile,
+                          op="chat", started_at=started_at, prompt_len=len(prompt),
+                          ok=False, error=str(exc))
+            raise
+        _log_web_call(LOG_TYPE_WEB_CHAT, provider="gemini_web", profile=profile,
+                      op="chat", started_at=started_at, prompt_len=len(prompt),
+                      extra={"text_len": len(text), "model": model})
         full_model = f"gmw/{model.split('/', 1)[-1] if '/' in model else 'chat'}"
     if stream:
         return _stream_chunks(text, full_model)
@@ -288,18 +346,37 @@ def handle_chatgpt_web_chat(
     timeout = int(cfg.get("timeout") or 120)
     image_url = _last_user_image(messages)
     prompt = _last_user_text(messages)
+    started_at = time.time()
     if image_url:
         if not prompt:
             prompt = "Phân tích chi tiết nội dung ảnh này."
         logger.info({"event": "chatgpt_web_vision_request", "profile": profile,
                      "prompt_len": len(prompt), "image_kind": image_url[:30]})
-        text = _call_web_vision("chatgpt-web", profile, image_url, prompt, timeout=max(timeout, 180))
+        try:
+            text = _call_web_vision("chatgpt-web", profile, image_url, prompt, timeout=max(timeout, 180))
+        except Exception as exc:
+            _log_web_call(LOG_TYPE_WEB_CHAT, provider="chatgpt_web", profile=profile,
+                          op="vision", started_at=started_at, prompt_len=len(prompt),
+                          ok=False, error=str(exc))
+            raise
+        _log_web_call(LOG_TYPE_WEB_CHAT, provider="chatgpt_web", profile=profile,
+                      op="vision", started_at=started_at, prompt_len=len(prompt),
+                      extra={"text_len": len(text)})
         full_model = "cgw/vision"
     else:
         if not prompt:
             raise RuntimeError("ChatGPT Web chat requires a user message")
         logger.info({"event": "chatgpt_web_chat_request", "profile": profile, "prompt_len": len(prompt)})
-        text = _call_web_chat("chatgpt-web", profile, prompt, timeout=timeout)
+        try:
+            text = _call_web_chat("chatgpt-web", profile, prompt, timeout=timeout)
+        except Exception as exc:
+            _log_web_call(LOG_TYPE_WEB_CHAT, provider="chatgpt_web", profile=profile,
+                          op="chat", started_at=started_at, prompt_len=len(prompt),
+                          ok=False, error=str(exc))
+            raise
+        _log_web_call(LOG_TYPE_WEB_CHAT, provider="chatgpt_web", profile=profile,
+                      op="chat", started_at=started_at, prompt_len=len(prompt),
+                      extra={"text_len": len(text), "model": model})
         full_model = f"cgw/{model.split('/', 1)[-1] if '/' in model else 'chat'}"
     if stream:
         return _stream_chunks(text, full_model)
@@ -312,10 +389,20 @@ def handle_gemini_web_image_gen(prompt: str, n: int = 1) -> dict[str, Any]:
     cfg = _web_provider_cfg("gemini_web")
     profile = str(cfg.get("profile") or "gemini-web-default")
     timeout = int(cfg.get("timeout") or 240)
+    started_at = time.time()
     logger.info({"event": "gemini_web_image_request", "profile": profile,
                  "prompt_len": len(prompt), "n": n})
-    urls = _call_web_image_gen("gemini-web", profile, prompt,
-                                count=max(1, n), timeout=timeout)
+    try:
+        urls = _call_web_image_gen("gemini-web", profile, prompt,
+                                    count=max(1, n), timeout=timeout)
+    except Exception as exc:
+        _log_web_call(LOG_TYPE_WEB_IMAGE, provider="gemini_web", profile=profile,
+                      op="image_gen", started_at=started_at, prompt_len=len(prompt),
+                      ok=False, error=str(exc), extra={"n": n})
+        raise
+    _log_web_call(LOG_TYPE_WEB_IMAGE, provider="gemini_web", profile=profile,
+                  op="image_gen", started_at=started_at, prompt_len=len(prompt),
+                  extra={"n": n, "got": len(urls)})
     return {"created": int(time.time()), "data": [{"url": u} for u in urls]}
 
 
@@ -325,18 +412,28 @@ def handle_chatgpt_web_image_gen(prompt: str, n: int = 1) -> dict[str, Any]:
     cfg = _web_provider_cfg("chatgpt_web")
     profile = str(cfg.get("profile") or "chatgpt-default")
     timeout = int(cfg.get("timeout") or 240)
+    started_at = time.time()
     logger.info({"event": "chatgpt_web_image_request", "profile": profile,
                  "prompt_len": len(prompt), "n": n})
     all_urls: list[str] = []
+    last_error = ""
     for i in range(max(1, n)):
         try:
             urls = _call_web_image_gen("chatgpt-web", profile, prompt,
                                         count=1, timeout=timeout)
             all_urls.extend(urls)
         except Exception as exc:
+            last_error = str(exc)
             if i == 0:
+                _log_web_call(LOG_TYPE_WEB_IMAGE, provider="chatgpt_web", profile=profile,
+                              op="image_gen", started_at=started_at, prompt_len=len(prompt),
+                              ok=False, error=last_error, extra={"n": n})
                 raise
             logger.warning({"event": "chatgpt_web_image_partial",
                             "got": len(all_urls), "error": str(exc)[:120]})
             break
+    _log_web_call(LOG_TYPE_WEB_IMAGE, provider="chatgpt_web", profile=profile,
+                  op="image_gen", started_at=started_at, prompt_len=len(prompt),
+                  extra={"n": n, "got": len(all_urls),
+                          **({"partial_error": last_error[:200]} if last_error else {})})
     return {"created": int(time.time()), "data": [{"url": u} for u in all_urls]}
