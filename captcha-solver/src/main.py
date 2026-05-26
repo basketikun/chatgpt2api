@@ -15,6 +15,7 @@ Endpoints (all require Authorization: Bearer <CAPTCHA_SOLVER_API_KEY>):
 from __future__ import annotations
 
 import logging
+import time
 from contextlib import asynccontextmanager
 from typing import Any
 
