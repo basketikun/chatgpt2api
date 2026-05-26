@@ -372,17 +372,31 @@ async def list_models(profile: str, headless: bool = True, timeout: int = 30) ->
 
 
 async def chat(profile: str, prompt: str, timeout: int = 90, headless: bool = False) -> dict[str, Any]:
-    """Plain text chat with chatgpt.com (DOM-scrape)."""
+    """Plain text chat with chatgpt.com (DOM-scrape).
+
+    Returns text + per-stage timing (goto/ready/inject/send/response) so the
+    Logs UI can pinpoint which stage made a slow call slow."""
     started = time.time()
+    stages: dict[str, int] = {}
     async with pool.page(profile=profile, headless=headless) as page:
+        t0 = time.time()
         await page.goto(_CHATGPT_HOME, wait_until="domcontentloaded", timeout=30_000)
+        stages["goto_ms"] = int((time.time() - t0) * 1000); t1 = time.time()
         await _wait_for_ready(page, timeout=30)
+        stages["ready_ms"] = int((time.time() - t1) * 1000); t2 = time.time()
         await _inject_prompt(page, prompt)
+        stages["inject_ms"] = int((time.time() - t2) * 1000); t3 = time.time()
         sent = await _click_send(page)
         if not sent:
             raise RuntimeError("Could not click ChatGPT Send button")
+        stages["send_ms"] = int((time.time() - t3) * 1000); t4 = time.time()
         text = await _wait_for_response_complete(page, timeout=timeout)
-        return {"text": text, "elapsed_ms": int((time.time() - started) * 1000)}
+        stages["response_ms"] = int((time.time() - t4) * 1000)
+        return {
+            "text": text,
+            "elapsed_ms": int((time.time() - started) * 1000),
+            "stages": stages,
+        }
 
 
 async def generate_image(

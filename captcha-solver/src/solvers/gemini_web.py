@@ -834,26 +834,44 @@ async def chat(profile: str, prompt: str, timeout: int = 90, headless: bool = Fa
         {
           "text": <assistant response>,
           "elapsed_ms": int,
+          "stages": {goto, ready, inject, send, response} — per-stage ms,
         }
 
     Profile must already be logged in via gemini_web_login.
     Each call opens a fresh chat (no history) — for multi-turn, the
     caller passes the previous messages in `prompt` as serialized text.
+
+    The `stages` map is what makes the slow-call diagnosis possible —
+    if elapsed_ms is high we want to know whether it was the
+    page open (cold profile, network), waiting for the chat UI to
+    hydrate (auth flicker, server-side delay), or actually waiting on
+    Gemini to finish streaming (long prompts, big tools).
     """
     started = time.time()
+    stages: dict[str, int] = {}
+    def _mark(name: str, since: float) -> float:
+        stages[name] = int((time.time() - since) * 1000)
+        return time.time()
     async with pool.page(profile=profile, headless=headless) as page:
+        t0 = time.time()
         await page.goto(_GEMINI_HOME, wait_until="domcontentloaded", timeout=30_000)
+        t1 = _mark("goto_ms", t0)
         await _wait_for_ready(page, timeout=30)
+        t2 = _mark("ready_ms", t1)
 
         await _inject_prompt(page, prompt)
         await asyncio.sleep(0.4)
+        t3 = _mark("inject_ms", t2)
 
         sent = await _click_send(page)
         if not sent:
             raise RuntimeError("Could not click Gemini Send button")
+        t4 = _mark("send_ms", t3)
 
         text = await _wait_for_response_complete(page, timeout=timeout)
+        _mark("response_ms", t4)
         return {
             "text": text,
             "elapsed_ms": int((time.time() - started) * 1000),
+            "stages": stages,
         }

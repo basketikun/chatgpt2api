@@ -150,8 +150,14 @@ def _call_web_chat(
     profile: str,
     prompt: str,
     timeout: int = 120,
-) -> str:
-    """POST to captcha-solver /v1/{provider}-web/chat and return text."""
+) -> tuple[str, dict[str, Any]]:
+    """POST to captcha-solver /v1/{provider}-web/chat.
+
+    Returns (text, meta) where meta carries the per-stage timing
+    breakdown (`stages`) plus the captcha-solver-side `elapsed_ms` so
+    the caller can attribute slow calls to the right phase (page open,
+    UI hydrate, prompt inject, send, model response).
+    """
     cfg = _captcha_solver_cfg()
     if not cfg["url"]:
         raise RuntimeError(
@@ -173,7 +179,12 @@ def _call_web_chat(
     text = str(data.get("text") or "")
     if not text:
         raise RuntimeError(f"web chat returned no text: {data}")
-    return text
+    meta: dict[str, Any] = {}
+    if isinstance(data.get("stages"), dict):
+        meta["stages"] = data["stages"]
+    if data.get("elapsed_ms") is not None:
+        meta["solver_elapsed_ms"] = data["elapsed_ms"]
+    return text, meta
 
 
 def _call_web_vision(
@@ -182,8 +193,12 @@ def _call_web_vision(
     image: str,
     prompt: str,
     timeout: int = 180,
-) -> str:
-    """POST to captcha-solver /v1/{provider}-web/analyze-image."""
+) -> tuple[str, dict[str, Any]]:
+    """POST to captcha-solver /v1/{provider}-web/analyze-image.
+
+    Returns (text, meta) — meta carries `stages` + `solver_elapsed_ms`
+    when the solver populates them, used by the slow-call diagnosis log.
+    """
     cfg = _captcha_solver_cfg()
     if not cfg["url"]:
         raise RuntimeError("captcha-solver URL chưa cấu hình")
@@ -206,7 +221,12 @@ def _call_web_vision(
     text = str(data.get("text") or "")
     if not text:
         raise RuntimeError(f"web vision returned no text: {data}")
-    return text
+    meta: dict[str, Any] = {}
+    if isinstance(data.get("stages"), dict):
+        meta["stages"] = data["stages"]
+    if data.get("elapsed_ms") is not None:
+        meta["solver_elapsed_ms"] = data["elapsed_ms"]
+    return text, meta
 
 
 def _call_web_image_gen(
@@ -215,9 +235,10 @@ def _call_web_image_gen(
     prompt: str,
     count: int = 1,
     timeout: int = 240,
-) -> list[str]:
+) -> tuple[list[str], dict[str, Any]]:
     """POST to captcha-solver /v1/{provider}-web/generate-image.
-    Returns a list of image URLs (or data URLs)."""
+    Returns (image_urls, meta) where meta carries `stages` + `solver_elapsed_ms`
+    for the slow-call diagnosis log."""
     cfg = _captcha_solver_cfg()
     if not cfg["url"]:
         raise RuntimeError("captcha-solver URL chưa cấu hình")
@@ -242,7 +263,46 @@ def _call_web_image_gen(
     images = data.get("images") or data.get("urls") or []
     if not isinstance(images, list) or not images:
         raise RuntimeError(f"web image returned no images: {data}")
-    return [str(u) for u in images if u]
+    urls = [str(u) for u in images if u]
+    meta: dict[str, Any] = {}
+    if isinstance(data.get("stages"), dict):
+        meta["stages"] = data["stages"]
+    if data.get("elapsed_ms") is not None:
+        meta["solver_elapsed_ms"] = data["elapsed_ms"]
+    return urls, meta
+
+
+def _diagnose_slow_call(meta: dict[str, Any], total_ms: int) -> str:
+    """Inspect the per-stage timing breakdown returned by captcha-solver
+    and produce a one-line reason for why the call took total_ms.
+
+    Categorises slow time by which phase ate the budget:
+      - cold_browser   → page open + UI hydrate dominate (cold profile,
+                          headful Chrome boot inside the container)
+      - model_thinking → response stage dominates (Gemini/ChatGPT actually
+                          generating; not our fault)
+      - solver_overhead → captcha-solver elapsed_ms ≪ chatgpt2api total
+                          (network round-trip, queue, browser_pool lock)
+      - normal         → nothing stands out
+    """
+    stages = meta.get("stages") if isinstance(meta, dict) else None
+    if not isinstance(stages, dict):
+        return ""
+    goto = int(stages.get("goto_ms") or 0)
+    ready = int(stages.get("ready_ms") or 0)
+    inject = int(stages.get("inject_ms") or 0)
+    send = int(stages.get("send_ms") or 0)
+    response = int(stages.get("response_ms") or 0)
+    solver_total = int(meta.get("solver_elapsed_ms") or (goto + ready + inject + send + response))
+    if total_ms <= 0:
+        return ""
+    if response > 0 and response >= 0.6 * solver_total and response >= 5_000:
+        return f"model_thinking ({response}ms streaming)"
+    if (goto + ready) >= 0.5 * solver_total and (goto + ready) >= 5_000:
+        return f"cold_browser (goto={goto}ms, ready={ready}ms)"
+    if solver_total > 0 and total_ms - solver_total >= max(2_000, 0.3 * total_ms):
+        return f"solver_overhead (chatgpt2api={total_ms}ms vs solver={solver_total}ms)"
+    return "normal"
 
 
 def _log_web_call(
@@ -275,7 +335,16 @@ def _log_web_call(
         detail["error"] = error[:300]
     if extra:
         detail.update(extra)
+    # Add a one-line "why was this slow" reason when the call took >5s
+    # AND the per-stage breakdown is available. Caller passes stages /
+    # solver_elapsed_ms via `extra`.
+    if ok and duration_ms >= 5_000:
+        reason = _diagnose_slow_call(detail, duration_ms)
+        if reason:
+            detail["slow_reason"] = reason
     summary = f"{provider}/{op} {'OK' if ok else 'FAIL'} {duration_ms}ms"
+    if detail.get("slow_reason"):
+        summary += f" [{detail['slow_reason']}]"
     try:
         log_service.add(log_type, summary, detail)
     except Exception:
@@ -303,7 +372,7 @@ def handle_gemini_web_chat(
         logger.info({"event": "gemini_web_vision_request", "profile": profile,
                      "prompt_len": len(prompt), "image_kind": image_url[:30]})
         try:
-            text = _call_web_vision("gemini-web", profile, image_url, prompt, timeout=max(timeout, 180))
+            text, meta = _call_web_vision("gemini-web", profile, image_url, prompt, timeout=max(timeout, 180))
         except Exception as exc:
             _log_web_call(LOG_TYPE_WEB_CHAT, provider="gemini_web", profile=profile,
                           op="vision", started_at=started_at, prompt_len=len(prompt),
@@ -311,14 +380,14 @@ def handle_gemini_web_chat(
             raise
         _log_web_call(LOG_TYPE_WEB_CHAT, provider="gemini_web", profile=profile,
                       op="vision", started_at=started_at, prompt_len=len(prompt),
-                      extra={"text_len": len(text)})
+                      extra={"text_len": len(text), **meta})
         full_model = "gmw/vision"
     else:
         if not prompt:
             raise RuntimeError("Gemini Web chat requires a user message")
         logger.info({"event": "gemini_web_chat_request", "profile": profile, "prompt_len": len(prompt)})
         try:
-            text = _call_web_chat("gemini-web", profile, prompt, timeout=timeout)
+            text, meta = _call_web_chat("gemini-web", profile, prompt, timeout=timeout)
         except Exception as exc:
             _log_web_call(LOG_TYPE_WEB_CHAT, provider="gemini_web", profile=profile,
                           op="chat", started_at=started_at, prompt_len=len(prompt),
@@ -326,7 +395,7 @@ def handle_gemini_web_chat(
             raise
         _log_web_call(LOG_TYPE_WEB_CHAT, provider="gemini_web", profile=profile,
                       op="chat", started_at=started_at, prompt_len=len(prompt),
-                      extra={"text_len": len(text), "model": model})
+                      extra={"text_len": len(text), "model": model, **meta})
         full_model = f"gmw/{model.split('/', 1)[-1] if '/' in model else 'chat'}"
     if stream:
         return _stream_chunks(text, full_model)
@@ -353,7 +422,7 @@ def handle_chatgpt_web_chat(
         logger.info({"event": "chatgpt_web_vision_request", "profile": profile,
                      "prompt_len": len(prompt), "image_kind": image_url[:30]})
         try:
-            text = _call_web_vision("chatgpt-web", profile, image_url, prompt, timeout=max(timeout, 180))
+            text, meta = _call_web_vision("chatgpt-web", profile, image_url, prompt, timeout=max(timeout, 180))
         except Exception as exc:
             _log_web_call(LOG_TYPE_WEB_CHAT, provider="chatgpt_web", profile=profile,
                           op="vision", started_at=started_at, prompt_len=len(prompt),
@@ -361,14 +430,14 @@ def handle_chatgpt_web_chat(
             raise
         _log_web_call(LOG_TYPE_WEB_CHAT, provider="chatgpt_web", profile=profile,
                       op="vision", started_at=started_at, prompt_len=len(prompt),
-                      extra={"text_len": len(text)})
+                      extra={"text_len": len(text), **meta})
         full_model = "cgw/vision"
     else:
         if not prompt:
             raise RuntimeError("ChatGPT Web chat requires a user message")
         logger.info({"event": "chatgpt_web_chat_request", "profile": profile, "prompt_len": len(prompt)})
         try:
-            text = _call_web_chat("chatgpt-web", profile, prompt, timeout=timeout)
+            text, meta = _call_web_chat("chatgpt-web", profile, prompt, timeout=timeout)
         except Exception as exc:
             _log_web_call(LOG_TYPE_WEB_CHAT, provider="chatgpt_web", profile=profile,
                           op="chat", started_at=started_at, prompt_len=len(prompt),
@@ -376,7 +445,7 @@ def handle_chatgpt_web_chat(
             raise
         _log_web_call(LOG_TYPE_WEB_CHAT, provider="chatgpt_web", profile=profile,
                       op="chat", started_at=started_at, prompt_len=len(prompt),
-                      extra={"text_len": len(text), "model": model})
+                      extra={"text_len": len(text), "model": model, **meta})
         full_model = f"cgw/{model.split('/', 1)[-1] if '/' in model else 'chat'}"
     if stream:
         return _stream_chunks(text, full_model)
@@ -393,7 +462,7 @@ def handle_gemini_web_image_gen(prompt: str, n: int = 1) -> dict[str, Any]:
     logger.info({"event": "gemini_web_image_request", "profile": profile,
                  "prompt_len": len(prompt), "n": n})
     try:
-        urls = _call_web_image_gen("gemini-web", profile, prompt,
+        urls, meta = _call_web_image_gen("gemini-web", profile, prompt,
                                     count=max(1, n), timeout=timeout)
     except Exception as exc:
         _log_web_call(LOG_TYPE_WEB_IMAGE, provider="gemini_web", profile=profile,
@@ -402,7 +471,7 @@ def handle_gemini_web_image_gen(prompt: str, n: int = 1) -> dict[str, Any]:
         raise
     _log_web_call(LOG_TYPE_WEB_IMAGE, provider="gemini_web", profile=profile,
                   op="image_gen", started_at=started_at, prompt_len=len(prompt),
-                  extra={"n": n, "got": len(urls)})
+                  extra={"n": n, "got": len(urls), **meta})
     return {"created": int(time.time()), "data": [{"url": u} for u in urls]}
 
 
@@ -417,11 +486,13 @@ def handle_chatgpt_web_image_gen(prompt: str, n: int = 1) -> dict[str, Any]:
                  "prompt_len": len(prompt), "n": n})
     all_urls: list[str] = []
     last_error = ""
+    last_meta: dict[str, Any] = {}
     for i in range(max(1, n)):
         try:
-            urls = _call_web_image_gen("chatgpt-web", profile, prompt,
+            urls, meta = _call_web_image_gen("chatgpt-web", profile, prompt,
                                         count=1, timeout=timeout)
             all_urls.extend(urls)
+            last_meta = meta
         except Exception as exc:
             last_error = str(exc)
             if i == 0:
@@ -434,6 +505,6 @@ def handle_chatgpt_web_image_gen(prompt: str, n: int = 1) -> dict[str, Any]:
             break
     _log_web_call(LOG_TYPE_WEB_IMAGE, provider="chatgpt_web", profile=profile,
                   op="image_gen", started_at=started_at, prompt_len=len(prompt),
-                  extra={"n": n, "got": len(all_urls),
+                  extra={"n": n, "got": len(all_urls), **last_meta,
                           **({"partial_error": last_error[:200]} if last_error else {})})
     return {"created": int(time.time()), "data": [{"url": u} for u in all_urls]}
