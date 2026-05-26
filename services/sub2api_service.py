@@ -245,6 +245,19 @@ def _extract_access_token(credentials: object) -> str:
     return ""
 
 
+def _credentials_status(account: dict) -> dict:
+    status = account.get("credentials_status")
+    return status if isinstance(status, dict) else {}
+
+
+def _has_access_token(account: dict, credentials: dict) -> bool:
+    return bool(_extract_access_token(credentials) or _credentials_status(account).get("has_access_token"))
+
+
+def _has_refresh_token(account: dict, credentials: dict) -> bool:
+    return bool(_clean(credentials.get("refresh_token")) or _credentials_status(account).get("has_refresh_token"))
+
+
 def _unwrap_envelope(payload: object) -> object:
     """Peel sub2api's `{code, message, data}` envelope, returning the inner `data` field
     when present. Also handles unwrapped responses from older/alt versions."""
@@ -309,8 +322,7 @@ def list_remote_accounts(server: dict) -> list[dict]:
                 if not isinstance(account, dict):
                     continue
                 credentials = account.get("credentials") if isinstance(account.get("credentials"), dict) else {}
-                access_token = _extract_access_token(credentials)
-                if not access_token:
+                if not _has_access_token(account, credentials):
                     continue
                 account_id = account.get("id")
                 items.append({
@@ -320,7 +332,7 @@ def list_remote_accounts(server: dict) -> list[dict]:
                     "plan_type": _clean(credentials.get("plan_type")),
                     "status": _clean(account.get("status")),
                     "expires_at": _clean(credentials.get("expires_at")),
-                    "has_refresh_token": bool(_clean(credentials.get("refresh_token"))),
+                    "has_refresh_token": _has_refresh_token(account, credentials),
                 })
 
             if page * 200 >= total or len(data) < 200:
@@ -330,6 +342,15 @@ def list_remote_accounts(server: dict) -> list[dict]:
         session.close()
 
     return items
+
+
+def _extract_data_accounts(payload: object) -> list[dict]:
+    data = _unwrap_envelope(payload)
+    if isinstance(data, dict):
+        accounts = data.get("accounts")
+        if isinstance(accounts, list):
+            return [account for account in accounts if isinstance(account, dict)]
+    return []
 
 
 def list_remote_groups(server: dict) -> list[dict]:
@@ -387,8 +408,35 @@ def list_remote_groups(server: dict) -> list[dict]:
     return items
 
 
-def _fetch_access_token_for_account(server: dict, account_id: str) -> tuple[str, dict]:
-    """Return (access_token, account_meta) for a single sub2api account id."""
+def _fetch_account_from_data_export(server: dict, account_id: str) -> dict | None:
+    """Fetch raw account data from sub2api's admin data export endpoint.
+
+    The export may include refresh_token/id_token, but callers only consume access_token
+    to preserve chatgpt2api's access-token-only import behavior.
+    """
+    base_url = _clean(server.get("base_url"))
+    headers = _auth_headers(server)
+
+    session = Session(verify=True)
+    try:
+        response = session.get(
+            f"{base_url.rstrip('/')}/api/v1/admin/accounts/data",
+            headers=headers,
+            params={"ids": account_id, "include_proxies": "false"},
+            timeout=30,
+        )
+        if response.status_code == 404:
+            return None
+        if not response.ok:
+            raise RuntimeError(f"HTTP {response.status_code}")
+        accounts = _extract_data_accounts(response.json())
+    finally:
+        session.close()
+
+    return accounts[0] if accounts else None
+
+
+def _fetch_account_from_detail(server: dict, account_id: str) -> dict:
     base_url = _clean(server.get("base_url"))
     headers = _auth_headers(server)
 
@@ -408,6 +456,14 @@ def _fetch_access_token_for_account(server: dict, account_id: str) -> tuple[str,
     account = _unwrap_envelope(payload)
     if not isinstance(account, dict):
         account = payload if isinstance(payload, dict) else {}
+    return account
+
+
+def _fetch_access_token_for_account(server: dict, account_id: str) -> tuple[str, dict]:
+    """Return (access_token, account_meta) for a single sub2api account id."""
+    account = _fetch_account_from_data_export(server, account_id)
+    if account is None:
+        account = _fetch_account_from_detail(server, account_id)
     credentials = account.get("credentials") if isinstance(account.get("credentials"), dict) else {}
     access_token = _extract_access_token(credentials)
     if not access_token:
