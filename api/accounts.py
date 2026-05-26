@@ -235,49 +235,66 @@ def create_router() -> APIRouter:
                 "total": len(builtin_list),
             })
 
+        def _collect_web_accounts(cfg: dict) -> list[dict]:
+            """Build a Flow-style instances list from either the legacy
+            single-`profile` field or the new `accounts: [{profile,label}]`
+            array. Both shapes are accepted so existing deployments don't
+            break when the config gets migrated."""
+            out: list[dict] = []
+            ordered = []
+            accounts_field = cfg.get("accounts") if isinstance(cfg.get("accounts"), list) else []
+            for a in accounts_field:
+                if isinstance(a, dict) and a.get("profile"):
+                    ordered.append({
+                        "profile": str(a.get("profile") or ""),
+                        "label": str(a.get("label") or a.get("profile") or ""),
+                    })
+            legacy = str(cfg.get("profile") or "").strip()
+            if legacy and not any(x["profile"] == legacy for x in ordered):
+                ordered.insert(0, {"profile": legacy, "label": legacy})
+            for idx, item in enumerate(ordered):
+                out.append({
+                    "ordinal": idx + 1,
+                    "is_primary": idx == 0,
+                    "profile": item["profile"],
+                    "label": item["label"],
+                })
+            return out
+
         # ── Gemini Web profile branch ──
         # gemini.google.com lives behind a Google session in a captcha-solver
-        # profile. Surface it as a single-instance branch so the Accounts UI
-        # actually shows the profile the user just onboarded (otherwise the
-        # only feedback for a successful login is that the model dropdown
-        # gained `gmw/*` — confusing).
+        # profile. Multi-account: `providers.gemini_web.accounts = [{profile,
+        # label}]` lists every onboarded Google identity so the user can
+        # round-robin between them. Falls back to the legacy single
+        # `profile` field for backward compatibility.
         gw_cfg = providers_cfg.get("gemini_web") or {}
-        if gw_cfg.get("enabled") and gw_cfg.get("profile"):
-            tree.append({
-                "provider": "Gemini Web",
-                "icon": "gemini",
-                "type": "gemini_web",
-                "instances": [{
-                    "ordinal": 1,
-                    "is_primary": True,
-                    "profile": str(gw_cfg.get("profile") or ""),
-                    "label": str(gw_cfg.get("profile") or ""),
-                }],
-                "total": 1,
-                "captcha_solver_url": gw_cfg.get("captcha_solver_url") or "",
-            })
+        if gw_cfg.get("enabled"):
+            gw_items = _collect_web_accounts(gw_cfg)
+            if gw_items:
+                tree.append({
+                    "provider": "Gemini Web",
+                    "icon": "gemini",
+                    "type": "gemini_web",
+                    "instances": gw_items,
+                    "total": len(gw_items),
+                    "captcha_solver_url": gw_cfg.get("captcha_solver_url") or "",
+                })
 
         # ── ChatGPT Web profile branch ──
-        # chatgpt.com via captcha-solver browser scrape. The JWT free-pool
-        # branch is the primary ChatGPT entry; this one only shows up when
-        # the user opted into the cgw/* route (a fallback for OAuth tokens
-        # that aren't audience-chatgpt.com but the captcha-solver has the
-        # cookie session for).
+        # chatgpt.com via captcha-solver browser scrape. Multi-account too
+        # — same shape as gemini_web above.
         cgw_cfg = providers_cfg.get("chatgpt_web") or {}
-        if cgw_cfg.get("enabled") and cgw_cfg.get("profile"):
-            tree.append({
-                "provider": "ChatGPT Web",
-                "icon": "chatgpt",
-                "type": "chatgpt_web",
-                "instances": [{
-                    "ordinal": 1,
-                    "is_primary": True,
-                    "profile": str(cgw_cfg.get("profile") or ""),
-                    "label": str(cgw_cfg.get("profile") or ""),
-                }],
-                "total": 1,
-                "captcha_solver_url": cgw_cfg.get("captcha_solver_url") or "",
-            })
+        if cgw_cfg.get("enabled"):
+            cgw_items = _collect_web_accounts(cgw_cfg)
+            if cgw_items:
+                tree.append({
+                    "provider": "ChatGPT Web",
+                    "icon": "chatgpt",
+                    "type": "chatgpt_web",
+                    "instances": cgw_items,
+                    "total": len(cgw_items),
+                    "captcha_solver_url": cgw_cfg.get("captcha_solver_url") or "",
+                })
 
         # ── Google Labs Flow accounts branch ──
         flow_cfg = providers_cfg.get("flow") or {}
