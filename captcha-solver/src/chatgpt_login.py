@@ -117,10 +117,15 @@ async def refresh_jwt(profile: str, timeout: int = 30) -> dict:
         scraped = await _scrape_session(page)
         if not scraped or not scraped.get("accessToken"):
             raise RuntimeError("Profile not logged in or session expired")
+        user_obj = scraped.get("user") or {}
+        # Plan tier — chatgpt.com's `/api/auth/session` carries this directly
+        # on the root object; older endpoints embedded it under `user`.
+        plan = scraped.get("plan") or user_obj.get("subscription_plan") or user_obj.get("plan")
         return {
             "access_token": scraped["accessToken"],
             "expires": str(scraped.get("expires") or ""),
-            "email": (scraped.get("user") or {}).get("email"),
+            "email": user_obj.get("email"),
+            "plan": plan,
         }
     finally:
         # Don't close the page — pool keeps the context alive for reuse
