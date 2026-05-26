@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import re
+import time
 from typing import Any, Iterator
 
 from curl_cffi import requests as cffi_requests
