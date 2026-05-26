@@ -206,14 +206,14 @@ export function ImageComposer({
                     </div>
                   )}
                   {imageModels.length > 0 && (
-                    <div className="flex h-8 shrink-0 items-center gap-1 rounded-full border border-stone-200 bg-white px-2 sm:px-3">
+                    <div className="flex h-8 shrink-0 items-center gap-1 rounded-full border border-stone-200 bg-white px-2 sm:px-3 dark:border-stone-700 dark:bg-[#1a1a1a]">
                       <select
                         value={model}
                         onChange={(e) => onModelChange(e.target.value)}
-                        className="h-7 bg-transparent text-xs font-medium text-stone-700 focus:outline-none max-w-[130px] truncate"
+                        className="h-7 bg-transparent text-xs font-medium text-stone-700 focus:outline-none max-w-[130px] truncate dark:text-stone-300 dark:bg-[#1a1a1a]"
                       >
                         {imageModels.map(m => (
-                          <option key={m.id} value={m.id}>{m.label}</option>
+                          <option key={m.id} value={m.id} className="dark:bg-[#1a1a1a] dark:text-stone-300">{m.label}</option>
                         ))}
                       </select>
                     </div>

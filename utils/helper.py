@@ -47,6 +47,12 @@ _IMAGE_GEN_PROVIDER_PREFIXES = {
     "cloudflare/",   # Cloudflare AI
     "recraft/",      # Recraft
     "runwayml/",     # RunwayML
+    "flow/",         # Google Labs Flow
+    "gemini-",       # Gemini API / Gemini Web
+    "gpt-",          # ChatGPT models
+    "chatgpt-",      # ChatGPT models
+    "o1-",           # ChatGPT models
+    "o3-",           # ChatGPT models
 }
 # Providers where ALL models support vision (multimodal)
 _VISION_PROVIDER_PREFIXES: set[str] = {
