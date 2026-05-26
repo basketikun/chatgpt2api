@@ -92,8 +92,9 @@ async def _wait_for_ready(page, timeout: int = 30) -> None:
     while time.time() < deadline:
         ready = await page.evaluate(
             """() => {
+                if (document.getElementById('prompt-textarea')) return true;
                 const ces = Array.from(document.querySelectorAll('[contenteditable=true]'));
-                return ces.some(e => e.offsetWidth > 200 && e.offsetHeight > 0);
+                return ces.some(e => e.offsetWidth > 50 && e.offsetHeight > 0);
             }"""
         )
         if ready:
@@ -110,10 +111,15 @@ async def _inject_prompt(page, prompt: str) -> None:
     """
     ok = await page.evaluate(
         """() => {
+            const el = document.getElementById('prompt-textarea');
+            if (el) {
+                el.focus();
+                return true;
+            }
             const ces = Array.from(document.querySelectorAll('[contenteditable=true]'));
             const target = ces
                 .map(e => ({e, w: e.offsetWidth, h: e.offsetHeight}))
-                .filter(x => x.w > 200 && x.h > 0)
+                .filter(x => x.w > 50 && x.h > 0)
                 .sort((a, b) => (b.w * b.h) - (a.w * a.h))[0];
             if (!target) return false;
             target.e.focus();
@@ -140,7 +146,7 @@ async def _inject_prompt(page, prompt: str) -> None:
         logger.warning("chatgpt_web: prompt mouse click failed: %s", str(exc)[:100])
 
     try:
-        loc = page.locator('[contenteditable=true]').first
+        loc = page.locator('#prompt-textarea, [contenteditable=true]').first
         await loc.click(timeout=5000)
         await loc.clear()
         await loc.press_sequentially(prompt, delay=20)
@@ -152,24 +158,28 @@ async def _inject_prompt(page, prompt: str) -> None:
     await asyncio.sleep(0.5)
 
 async def _click_send(page) -> bool:
-    try:
-        await page.locator('button[data-testid="send-button"]').first.click(timeout=2000)
-        return True
-    except:
-        pass
-    
-    clicked = await page.evaluate(
-        """() => {
-            const btn = document.querySelector('button[data-testid="send-button"]');
-            if (btn) {
-                btn.removeAttribute('disabled');
-                btn.click();
-                return true;
-            }
-            return false;
-        }"""
-    )
-    return bool(clicked)
+    for sel in _SEND_SELECTORS:
+        try:
+            await page.locator(sel).first.click(timeout=1000)
+            return True
+        except:
+            pass
+        
+        # JS fallback
+        clicked = await page.evaluate(
+            f"""() => {{
+                const btn = document.querySelector('{sel}');
+                if (btn) {{
+                    btn.removeAttribute('disabled');
+                    btn.click();
+                    return true;
+                }}
+                return false;
+            }}"""
+        )
+        if clicked:
+            return True
+    return False
 
 
 async def _activate_tool(page, tool_name: str) -> bool:
