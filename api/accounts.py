@@ -290,22 +290,6 @@ def create_router() -> APIRouter:
                     "captcha_solver_url": gw_cfg.get("captcha_solver_url") or "",
                 })
 
-        # ── ChatGPT Web profile branch ──
-        # chatgpt.com via captcha-solver browser scrape. Multi-account too
-        # — same shape as gemini_web above.
-        cgw_cfg = providers_cfg.get("chatgpt_web") or {}
-        if cgw_cfg.get("enabled"):
-            cgw_items = _collect_web_accounts(cgw_cfg)
-            if cgw_items:
-                tree.append({
-                    "provider": "ChatGPT Web",
-                    "icon": "chatgpt",
-                    "type": "chatgpt_web",
-                    "instances": cgw_items,
-                    "total": len(cgw_items),
-                    "captcha_solver_url": cgw_cfg.get("captcha_solver_url") or "",
-                })
-
         # ── Google Labs Flow accounts branch ──
         flow_cfg = providers_cfg.get("flow") or {}
         flow_accounts = flow_cfg.get("accounts") if isinstance(flow_cfg.get("accounts"), list) else []

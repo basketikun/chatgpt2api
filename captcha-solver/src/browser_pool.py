@@ -23,16 +23,22 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import AsyncIterator
+from typing import AsyncIterator, Any
 
-from patchright.async_api import (
-    BrowserContext,
-    Playwright,
-    async_playwright,
-)
+from patchright.async_api import BrowserContext
+try:
+    from cloakbrowser import launch_persistent_context_async as _cloak_launch
+    _CLOAK_AVAILABLE = True
+except ImportError:
+    _CLOAK_AVAILABLE = False
+    from patchright.async_api import (
+        Playwright,
+        async_playwright,
+    )
 
 from .settings import settings
 
@@ -48,7 +54,9 @@ _CHROME_LOCK_FILES = ("SingletonLock", "SingletonSocket", "SingletonCookie")
 @dataclass
 class _PoolEntry:
     ctx: BrowserContext
+    page: Any
     headless: bool
+    last_used: float = 0.0
 
 
 class BrowserPool:
@@ -58,17 +66,28 @@ class BrowserPool:
     window after a login completes."""
 
     def __init__(self) -> None:
-        self._playwright: Playwright | None = None
+        self._playwright = None
         self._contexts: dict[str, _PoolEntry] = {}
         self._locks: dict[str, asyncio.Lock] = {}
         self._global_lock = asyncio.Lock()
+        self._evict_task: asyncio.Task | None = None
 
     async def start(self) -> None:
+        if _CLOAK_AVAILABLE:
+            # CloakBrowser doesn't need a playwright runtime — it manages its own binary
+            if self._evict_task is None:
+                self._evict_task = asyncio.create_task(self._eviction_loop())
+            logger.info("cloakbrowser ready (stealth mode, Cloudflare bypass enabled)")
+            return
         if self._playwright is None:
+            from patchright.async_api import async_playwright
             self._playwright = await async_playwright().start()
-            logger.info("playwright started")
+            self._evict_task = asyncio.create_task(self._eviction_loop())
+            logger.info("playwright started (fallback mode)")
 
     async def stop(self) -> None:
+        if self._evict_task:
+            self._evict_task.cancel()
         for name, entry in list(self._contexts.items()):
             try:
                 await entry.ctx.close()
@@ -78,6 +97,34 @@ class BrowserPool:
         if self._playwright is not None:
             await self._playwright.stop()
             self._playwright = None
+
+    async def _eviction_loop(self) -> None:
+        while True:
+            try:
+                await asyncio.sleep(60)
+                now = time.time()
+                to_evict = []
+                async with self._global_lock:
+                    for profile, entry in list(self._contexts.items()):
+                        # Warm-pool: keep tabs alive 30 min idle (was 10 min).
+                        # The prewarmer re-warms every 25 min so a healthy
+                        # warmed profile never sees this branch.
+                        if now - entry.last_used > 1800:
+                            lock = self._locks.get(profile)
+                            if lock and not lock.locked():
+                                to_evict.append(profile)
+                for profile in to_evict:
+                    lock = await self._lock_for(profile)
+                    if not lock.locked():
+                        async with lock:
+                            entry = self._contexts.get(profile)
+                            if entry and now - entry.last_used > 1800:
+                                logger.info("auto-evicting idle profile=%s", profile)
+                                await self._evict(profile)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error("eviction loop error: %s", e)
 
     def _profile_dir(self, profile: str) -> Path:
         path = settings.data_dir / "profiles" / profile
@@ -95,6 +142,28 @@ class BrowserPool:
                     logger.info("cleared stale chrome lock profile=%s file=%s", profile, name)
             except Exception as exc:
                 logger.debug("could not unlink %s: %s", name, exc)
+
+    def _clear_crash_flag(self, profile: str) -> None:
+        """Patch Default/Preferences to set exit_type=Normal so Chrome/Chromium
+        does NOT show the 'Restore pages?' dialog on next launch.
+        This is the most reliable way — the --disable-session-crashed-bubble flag
+        only works on real Chrome, not on Chromium-based builds like CloakBrowser.
+        """
+        import json as _json
+        prefs_file = self._profile_dir(profile) / "Default" / "Preferences"
+        if not prefs_file.exists():
+            return
+        try:
+            data = _json.loads(prefs_file.read_text(encoding="utf-8"))
+            profile_data = data.get("profile", {})
+            if profile_data.get("exit_type") not in ("Normal", "SessionEnded"):
+                profile_data["exit_type"] = "Normal"
+                profile_data["exited_cleanly"] = True
+                data["profile"] = profile_data
+                prefs_file.write_text(_json.dumps(data), encoding="utf-8")
+                logger.info("cleared crash flag profile=%s", profile)
+        except Exception as exc:
+            logger.debug("could not clear crash flag %s: %s", profile, exc)
 
     async def _lock_for(self, profile: str) -> asyncio.Lock:
         async with self._global_lock:
@@ -127,31 +196,65 @@ class BrowserPool:
         except Exception:
             pass
 
-    async def _open_context(self, profile: str, headless: bool) -> BrowserContext:
-        assert self._playwright is not None
+    async def _open_context(self, profile: str, headless: bool) -> tuple[BrowserContext, Any]:
         user_data_dir = self._profile_dir(profile)
         self._clear_singleton_locks(profile)
-        # Patchright maintainers strongly recommend NOT passing args like
-        # --disable-blink-features=AutomationControlled / --no-sandbox: the
-        # stealth patches handle those internally and Cloudflare specifically
-        # fingerprints those flags as bot indicators. We pass only DISPLAY
-        # for headful mode and nothing else.
+        self._clear_crash_flag(profile)  # Prevent "Restore pages?" dialog
         env = None
         if not headless:
             env = {"DISPLAY": settings.display}
-        context = await self._playwright.chromium.launch_persistent_context(
-            user_data_dir=str(user_data_dir),
-            channel="chrome",  # real Google Chrome — best stealth profile
-            headless=headless,
-            no_viewport=False,
-            viewport=_DEFAULT_VIEWPORT,
-            locale="vi-VN",
-            timezone_id="Asia/Ho_Chi_Minh",
-            env=env,
-        )
+        
+        if _CLOAK_AVAILABLE:
+            # CloakBrowser: source-level Chromium patches, passes Cloudflare Turnstile automatically
+            # Set DISPLAY before launch (env= param not supported by cloakbrowser API)
+            if env:
+                import os as _os
+                for k, v in env.items():
+                    _os.environ[k] = v
+            context = await _cloak_launch(
+                user_data_dir=str(user_data_dir),
+                headless=headless,
+                viewport=_DEFAULT_VIEWPORT,
+                locale="vi-VN",
+                timezone="Asia/Ho_Chi_Minh",
+                # backend='patchright' suppresses CDP signals → better Turnstile score
+                backend='patchright',
+                humanize=True,  # human-like mouse/keyboard behavior → passes 24/24 behavioral signals
+                human_preset='careful',  # extra-careful preset for max stealth
+                args=[
+                    "--no-first-run",
+                    "--disable-session-crashed-bubble",
+                    "--disable-infobars",
+                    "--no-default-browser-check",
+                ],
+            )
+        else:
+            # Fallback to patchright (Google Chrome channel)
+            assert self._playwright is not None
+            context = await self._playwright.chromium.launch_persistent_context(
+                user_data_dir=str(user_data_dir),
+                channel="chrome",
+                headless=headless,
+                no_viewport=False,
+                viewport=_DEFAULT_VIEWPORT,
+                locale="vi-VN",
+                timezone_id="Asia/Ho_Chi_Minh",
+                env=env,
+                args=[
+                    "--no-first-run",
+                    "--disable-session-crashed-bubble",
+                    "--disable-infobars",
+                    "--no-default-browser-check",
+                ],
+                ignore_default_args=["--enable-automation"],
+            )
+        
         self._attach_close_handler(profile, context)
-        logger.info("opened context profile=%s headless=%s", profile, headless)
-        return context
+        pages = context.pages
+        page = pages[0] if pages else await context.new_page()
+        mode = "cloakbrowser" if _CLOAK_AVAILABLE else "patchright"
+        logger.info("opened context profile=%s headless=%s engine=%s", profile, headless, mode)
+        return context, page
 
     async def _evict(self, profile: str) -> None:
         """Drop + close a cached context (called when stale or mode-mismatched)."""
@@ -184,6 +287,7 @@ class BrowserPool:
             if entry is not None and not force_recreate:
                 # Reuse only when the mode matches AND the context is still alive.
                 if entry.headless == headless and await self._is_alive(entry.ctx):
+                    entry.last_used = time.time()
                     return entry.ctx
                 logger.info(
                     "evicting stale context profile=%s reason=%s",
@@ -195,8 +299,8 @@ class BrowserPool:
                 logger.info("force-recreate profile=%s", profile)
                 await self._evict(profile)
 
-            ctx = await self._open_context(profile, headless=headless)
-            self._contexts[profile] = _PoolEntry(ctx=ctx, headless=headless)
+            ctx, page = await self._open_context(profile, headless=headless)
+            self._contexts[profile] = _PoolEntry(ctx=ctx, page=page, headless=headless, last_used=time.time())
             return ctx
 
     async def close_profile(self, profile: str) -> bool:
@@ -220,16 +324,36 @@ class BrowserPool:
 
     @asynccontextmanager
     async def page(self, profile: str = "default", headless: bool = True) -> AsyncIterator:
-        ctx = await self.get(profile=profile, headless=headless)
-        page = await ctx.new_page()
-        _attach_model_tracker(page, profile)
+        await self.start()
+        lock = await self._lock_for(profile)
+        # Fast Failover: if the profile is already busy, refuse immediately
+        # with HTTP 429 so the upstream chatgpt2api router rotates to the
+        # next account (web_proxy.AccountBusyError → next profile in loop).
+        # Queuing on a single account just stacks latency.
+        if lock.locked():
+            from fastapi import HTTPException
+            logger.info("fast-failover profile=%s already busy → 429", profile)
+            raise HTTPException(status_code=429, detail="Account Busy")
+        await lock.acquire()
         try:
-            yield page
-        finally:
+            entry = self._contexts.get(profile)
+            if entry is not None:
+                if entry.headless != headless or not await self._is_alive(entry.ctx):
+                    await self._evict(profile)
+                    entry = None
+            if entry is None:
+                ctx, p = await self._open_context(profile, headless=headless)
+                _attach_model_tracker(p, profile)
+                entry = _PoolEntry(ctx=ctx, page=p, headless=headless, last_used=time.time())
+                self._contexts[profile] = entry
+                
+            entry.last_used = time.time()
             try:
-                await page.close()
-            except Exception:
-                pass
+                yield entry.page
+            finally:
+                entry.last_used = time.time()
+        finally:
+            lock.release()
 
 
 def _attach_model_tracker(page, profile: str) -> None:
@@ -254,8 +378,6 @@ def _attach_model_tracker(page, profile: str) -> None:
             url = response.url
             if "BardChatUi" in url or "/_/BardChatUi" in url or "gemini.google.com" in url:
                 provider = "gemini_web"
-            elif "chatgpt.com" in url and "backend-api" in url:
-                provider = "chatgpt_web"
             else:
                 return
             # Only inspect text-like content — image binaries are noise.

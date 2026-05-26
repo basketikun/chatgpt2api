@@ -62,7 +62,8 @@
     "cloudflare_ai": {"enabled": false, "account_id": "", "api_token": ""},
     "serper": {"enabled": false, "api_key": ""},
     "searxng": {"enabled": false, "base_url": "http://localhost:8080"},
-    "brave": {"enabled": false, "api_key": ""}
+    "brave": {"enabled": false, "api_key": ""},
+    "gemini_web": {"enabled": true, "profile": "gemini-*"}
   },
   "custom_providers": {
     "openai": {

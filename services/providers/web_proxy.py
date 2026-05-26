@@ -1,20 +1,18 @@
 """OpenAI-compatible adapter for captcha-solver Web providers.
 
-Wraps the captcha-solver /v1/{gemini|chatgpt}-web/chat endpoints as
+Wraps the captcha-solver /v1/gemini-web/chat endpoints as
 OpenAI chat completion calls so any OpenAI-compatible client (HA,
-n8n, LiteLLM, etc) can route to gemini.google.com or chatgpt.com
-via chatgpt2api.
+n8n, LiteLLM, etc) can route to gemini.google.com via chatgpt2api.
 
 Usage from client:
     POST /v1/chat/completions
     {
-      "model": "gmw/chat" | "cgw/chat",
+      "model": "gmw/chat",
       "messages": [{"role": "user", "content": "Xin chào"}]
     }
 
 Profile selection: configured per-provider in
   config.providers.gemini_web.profile  (default "gemini-web-default")
-  config.providers.chatgpt_web.profile (default "chatgpt-default")
 
 Captcha-solver connection reused from providers.flow:
   captcha_solver_url, captcha_solver_api_key
@@ -31,7 +29,10 @@ import httpx
 from services.config import config
 from services.log_service import LOG_TYPE_WEB_CHAT, LOG_TYPE_WEB_IMAGE, log_service
 from utils.log import logger
+from fastapi import HTTPException
 
+class AccountBusyError(Exception):
+    pass
 
 def _captcha_solver_cfg() -> dict[str, str]:
     """Reuse the captcha-solver connection settings from providers.flow."""
@@ -170,6 +171,8 @@ def _call_web_chat(
     body = {"profile": profile, "prompt": prompt, "timeout": timeout, "headless": False}
     try:
         r = httpx.post(url, headers=headers, json=body, timeout=timeout + 30)
+        if r.status_code == 429:
+            raise AccountBusyError(f"ACCOUNT_BUSY:{profile}")
         r.raise_for_status()
     except httpx.HTTPStatusError as exc:
         raise RuntimeError(f"web chat HTTP {exc.response.status_code}: {exc.response.text[:300]}") from exc
@@ -212,6 +215,8 @@ def _call_web_vision(
     }
     try:
         r = httpx.post(url, headers=headers, json=body, timeout=timeout + 30)
+        if r.status_code == 429:
+            raise AccountBusyError(f"ACCOUNT_BUSY:{profile}")
         r.raise_for_status()
     except httpx.HTTPStatusError as exc:
         raise RuntimeError(f"web vision HTTP {exc.response.status_code}: {exc.response.text[:300]}") from exc
@@ -254,6 +259,8 @@ def _call_web_image_gen(
         body["count"] = count
     try:
         r = httpx.post(url, headers=headers, json=body, timeout=timeout + 30)
+        if r.status_code == 429:
+            raise AccountBusyError(f"ACCOUNT_BUSY:{profile}")
         r.raise_for_status()
     except httpx.HTTPStatusError as exc:
         raise RuntimeError(f"web image HTTP {exc.response.status_code}: {exc.response.text[:300]}") from exc
@@ -270,6 +277,41 @@ def _call_web_image_gen(
     if data.get("elapsed_ms") is not None:
         meta["solver_elapsed_ms"] = data["elapsed_ms"]
     return urls, meta
+    
+    
+def _expand_profiles(profile_str: str) -> list[str]:
+    """Expand comma-separated profiles, resolving wildcards like 'chatgpt-*'
+    by querying the captcha-solver for matching profile directories."""
+    cfg = _captcha_solver_cfg()
+    profiles = []
+    for p in profile_str.split(","):
+        p = p.strip()
+        if not p:
+            continue
+        if p.endswith("*"):
+            prefix = p[:-1]
+            try:
+                url = f"{cfg['url']}/v1/profiles?prefix={prefix}"
+                headers = {}
+                if cfg["api_key"]:
+                    headers["Authorization"] = f"Bearer {cfg['api_key']}"
+                r = httpx.get(url, headers=headers, timeout=5)
+                r.raise_for_status()
+                data = r.json()
+                fetched = data.get("profiles", [])
+                for f_p in fetched:
+                    if "*" not in f_p:
+                        profiles.append(f_p)
+                if not fetched:
+                    logger.warning("No profiles found matching prefix: %s", prefix)
+            except Exception as exc:
+                logger.warning("Failed to expand wildcard %s: %s", p, exc)
+                # DO NOT append literal wildcard, it creates broken directories
+        else:
+            profiles.append(p)
+    # Remove duplicates but preserve order
+    seen = set()
+    return [x for x in profiles if not (x in seen or seen.add(x))]
 
 
 def _diagnose_slow_call(meta: dict[str, Any], total_ms: int) -> str:
@@ -320,7 +362,7 @@ def _log_web_call(
     """Append a structured entry to logs.jsonl with provider + duration.
 
     Lets the Logs UI filter by surface (chat vs image) and provider
-    (gemini_web / chatgpt_web / flow) and see how long each call took.
+    (gemini_web / flow) and see how long each call took.
     """
     duration_ms = int((time.time() - started_at) * 1000)
     detail: dict[str, Any] = {
@@ -361,92 +403,60 @@ def handle_gemini_web_chat(
     """OpenAI chat completions handler routing to captcha-solver Gemini Web.
     Auto-detects multimodal image blocks → routes to vision endpoint."""
     cfg = _web_provider_cfg("gemini_web")
-    profile = str(cfg.get("profile") or "gemini-web-default")
+    profile_str = str(cfg.get("profile") or "gemini-web-default")
+    profiles = _expand_profiles(profile_str)
+    if not profiles:
+        profiles = ["gemini-web-default"]
     timeout = int(cfg.get("timeout") or 120)
     image_url = _last_user_image(messages)
     prompt = _last_user_text(messages)
     started_at = time.time()
-    if image_url:
-        if not prompt:
-            prompt = "Phân tích chi tiết nội dung ảnh này."
-        logger.info({"event": "gemini_web_vision_request", "profile": profile,
-                     "prompt_len": len(prompt), "image_kind": image_url[:30]})
+    
+    last_exc = None
+    for profile in profiles:
         try:
-            text, meta = _call_web_vision("gemini-web", profile, image_url, prompt, timeout=max(timeout, 180))
+            if image_url:
+                if not prompt:
+                    prompt = "Phân tích chi tiết nội dung ảnh này."
+                logger.info({"event": "gemini_web_vision_request", "profile": profile,
+                             "prompt_len": len(prompt), "image_kind": image_url[:30]})
+                text, meta = _call_web_vision("gemini-web", profile, image_url, prompt, timeout=max(timeout, 180))
+                _log_web_call(LOG_TYPE_WEB_CHAT, provider="gemini_web", profile=profile,
+                              op="vision", started_at=started_at, prompt_len=len(prompt),
+                              extra={"text_len": len(text), **meta})
+                full_model = "gmw/vision"
+            else:
+                if not prompt:
+                    raise RuntimeError("Gemini Web chat requires a user message")
+                logger.info({"event": "gemini_web_chat_request", "profile": profile, "prompt_len": len(prompt)})
+                text, meta = _call_web_chat("gemini-web", profile, prompt, timeout=timeout)
+                _log_web_call(LOG_TYPE_WEB_CHAT, provider="gemini_web", profile=profile,
+                              op="chat", started_at=started_at, prompt_len=len(prompt),
+                              extra={"text_len": len(text), "model": model, **meta})
+                full_model = f"gmw/{model.split('/', 1)[-1] if '/' in model else 'chat'}"
+            
+            # Quota limit detection
+            lower_text = text.lower()
+            if any(k in lower_text for k in ("reached your limit", "giới hạn", "usage cap", "hết lượt")):
+                raise AccountBusyError(f"Quota Hit: {text[:50]}")
+                
+            # Success, exit loop
+            break
+        except AccountBusyError as exc:
+            last_exc = exc
+            logger.info({"event": "gemini_web_failover", "profile": profile, "reason": "busy_or_quota"})
+            continue
         except Exception as exc:
+            last_exc = exc
+            logger.warning({"event": "gemini_web_failover", "profile": profile, "reason": "error", "error": str(exc)[:100]})
             _log_web_call(LOG_TYPE_WEB_CHAT, provider="gemini_web", profile=profile,
-                          op="vision", started_at=started_at, prompt_len=len(prompt),
+                          op="vision" if image_url else "chat", started_at=started_at, prompt_len=len(prompt),
                           ok=False, error=str(exc))
-            raise
-        _log_web_call(LOG_TYPE_WEB_CHAT, provider="gemini_web", profile=profile,
-                      op="vision", started_at=started_at, prompt_len=len(prompt),
-                      extra={"text_len": len(text), **meta})
-        full_model = "gmw/vision"
+            continue
     else:
-        if not prompt:
-            raise RuntimeError("Gemini Web chat requires a user message")
-        logger.info({"event": "gemini_web_chat_request", "profile": profile, "prompt_len": len(prompt)})
-        try:
-            text, meta = _call_web_chat("gemini-web", profile, prompt, timeout=timeout)
-        except Exception as exc:
-            _log_web_call(LOG_TYPE_WEB_CHAT, provider="gemini_web", profile=profile,
-                          op="chat", started_at=started_at, prompt_len=len(prompt),
-                          ok=False, error=str(exc))
-            raise
-        _log_web_call(LOG_TYPE_WEB_CHAT, provider="gemini_web", profile=profile,
-                      op="chat", started_at=started_at, prompt_len=len(prompt),
-                      extra={"text_len": len(text), "model": model, **meta})
-        full_model = f"gmw/{model.split('/', 1)[-1] if '/' in model else 'chat'}"
-    if stream:
-        return _stream_chunks(text, full_model)
-    return _build_openai_response(text, full_model)
-
-
-def handle_chatgpt_web_chat(
-    model: str,
-    messages: list[dict[str, Any]],
-    stream: bool,
-    body: dict[str, Any],
-) -> dict[str, Any] | Iterator[dict[str, Any]]:
-    """OpenAI chat completions handler routing to captcha-solver ChatGPT Web.
-    Auto-detects multimodal image blocks → routes to vision endpoint."""
-    cfg = _web_provider_cfg("chatgpt_web")
-    profile = str(cfg.get("profile") or "chatgpt-default")
-    timeout = int(cfg.get("timeout") or 120)
-    image_url = _last_user_image(messages)
-    prompt = _last_user_text(messages)
-    started_at = time.time()
-    if image_url:
-        if not prompt:
-            prompt = "Phân tích chi tiết nội dung ảnh này."
-        logger.info({"event": "chatgpt_web_vision_request", "profile": profile,
-                     "prompt_len": len(prompt), "image_kind": image_url[:30]})
-        try:
-            text, meta = _call_web_vision("chatgpt-web", profile, image_url, prompt, timeout=max(timeout, 180))
-        except Exception as exc:
-            _log_web_call(LOG_TYPE_WEB_CHAT, provider="chatgpt_web", profile=profile,
-                          op="vision", started_at=started_at, prompt_len=len(prompt),
-                          ok=False, error=str(exc))
-            raise
-        _log_web_call(LOG_TYPE_WEB_CHAT, provider="chatgpt_web", profile=profile,
-                      op="vision", started_at=started_at, prompt_len=len(prompt),
-                      extra={"text_len": len(text), **meta})
-        full_model = "cgw/vision"
-    else:
-        if not prompt:
-            raise RuntimeError("ChatGPT Web chat requires a user message")
-        logger.info({"event": "chatgpt_web_chat_request", "profile": profile, "prompt_len": len(prompt)})
-        try:
-            text, meta = _call_web_chat("chatgpt-web", profile, prompt, timeout=timeout)
-        except Exception as exc:
-            _log_web_call(LOG_TYPE_WEB_CHAT, provider="chatgpt_web", profile=profile,
-                          op="chat", started_at=started_at, prompt_len=len(prompt),
-                          ok=False, error=str(exc))
-            raise
-        _log_web_call(LOG_TYPE_WEB_CHAT, provider="chatgpt_web", profile=profile,
-                      op="chat", started_at=started_at, prompt_len=len(prompt),
-                      extra={"text_len": len(text), "model": model, **meta})
-        full_model = f"cgw/{model.split('/', 1)[-1] if '/' in model else 'chat'}"
+        # All profiles failed (or busy)
+        if last_exc:
+            raise RuntimeError(f"All Gemini Web profiles busy or failed: {last_exc}")
     if stream:
         return _stream_chunks(text, full_model)
     return _build_openai_response(text, full_model)
@@ -473,38 +483,3 @@ def handle_gemini_web_image_gen(prompt: str, n: int = 1) -> dict[str, Any]:
                   op="image_gen", started_at=started_at, prompt_len=len(prompt),
                   extra={"n": n, "got": len(urls), **meta})
     return {"created": int(time.time()), "data": [{"url": u} for u in urls]}
-
-
-def handle_chatgpt_web_image_gen(prompt: str, n: int = 1) -> dict[str, Any]:
-    """OpenAI /v1/images/generations handler for ChatGPT Web (DALL-E).
-    Free tier returns 1 image per call; n>1 calls the endpoint multiple times."""
-    cfg = _web_provider_cfg("chatgpt_web")
-    profile = str(cfg.get("profile") or "chatgpt-default")
-    timeout = int(cfg.get("timeout") or 240)
-    started_at = time.time()
-    logger.info({"event": "chatgpt_web_image_request", "profile": profile,
-                 "prompt_len": len(prompt), "n": n})
-    all_urls: list[str] = []
-    last_error = ""
-    last_meta: dict[str, Any] = {}
-    for i in range(max(1, n)):
-        try:
-            urls, meta = _call_web_image_gen("chatgpt-web", profile, prompt,
-                                        count=1, timeout=timeout)
-            all_urls.extend(urls)
-            last_meta = meta
-        except Exception as exc:
-            last_error = str(exc)
-            if i == 0:
-                _log_web_call(LOG_TYPE_WEB_IMAGE, provider="chatgpt_web", profile=profile,
-                              op="image_gen", started_at=started_at, prompt_len=len(prompt),
-                              ok=False, error=last_error, extra={"n": n})
-                raise
-            logger.warning({"event": "chatgpt_web_image_partial",
-                            "got": len(all_urls), "error": str(exc)[:120]})
-            break
-    _log_web_call(LOG_TYPE_WEB_IMAGE, provider="chatgpt_web", profile=profile,
-                  op="image_gen", started_at=started_at, prompt_len=len(prompt),
-                  extra={"n": n, "got": len(all_urls), **last_meta,
-                          **({"partial_error": last_error[:200]} if last_error else {})})
-    return {"created": int(time.time()), "data": [{"url": u} for u in all_urls]}

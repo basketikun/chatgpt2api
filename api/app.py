@@ -59,6 +59,12 @@ def create_app() -> FastAPI:
             prewarm_tools_cache()
         except Exception:
             pass
+        # Prewarm web browser contexts (ChatGPT, Gemini, Flow)
+        try:
+            from services.web_prewarmer import start as start_web_prewarm
+            start_web_prewarm()
+        except Exception:
+            pass
         # Start Cloudflare Tunnel if token configured
         try:
             from services.cloudflare_tunnel import start_tunnel, start_monitor

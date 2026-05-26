@@ -31,12 +31,6 @@ from .auto_login import (
     start_auto_login,
     submit_2fa_code,
 )
-from .chatgpt_login import (
-    get_session as get_chatgpt_session,
-    start_chatgpt_login,
-    submit_2fa_code as submit_chatgpt_2fa_code,
-    refresh_jwt as refresh_chatgpt_jwt,
-)
 from .gemini_web_login import (
     get_session as get_gemini_web_session,
     start_gemini_web_login,
@@ -49,12 +43,6 @@ from .solvers.gemini_web import (
     generate_music as gemini_web_generate_music,
     list_models as gemini_web_list_models,
     get_plan as gemini_web_get_plan,
-)
-from .solvers.chatgpt_web import (
-    analyze_image as chatgpt_web_analyze_image,
-    chat as chatgpt_web_chat,
-    generate_image as chatgpt_web_generate_image,
-    list_models as chatgpt_web_list_models,
 )
 from .browser_pool import pool
 from .settings import settings
@@ -171,7 +159,7 @@ class MultiOnboardReq(BaseModel):
     password: str
     # Same as AutoLoginReq.prefer_method but applied across all services.
     prefer_method: str = "auth"
-    # Subset of {"gemini_web", "flow", "chatgpt"}. Order matters — we
+    # Subset of {"gemini_web", "flow"}. Order matters — we
     # trigger them sequentially after the shared Google login succeeds.
     services: list[str] = Field(default_factory=lambda: ["gemini_web", "flow"])
 
@@ -184,12 +172,6 @@ class GetOrCreateProjectReq(BaseModel):
     profile: str = "google-fx"
     headless: bool = False
     timeout: int = Field(default=90, ge=20, le=300)
-
-
-class ChatGPTOnboardReq(BaseModel):
-    profile: str = "chatgpt-default"
-    email: str
-    password: str
 
 
 class GeminiWebOnboardReq(BaseModel):
@@ -224,28 +206,6 @@ class GeminiWebVisionReq(BaseModel):
     profile: str = "gemini-web-default"
     image: str  # data:image/...;base64,... OR https URL
     prompt: str = "Phân tích nội dung ảnh này một cách chi tiết."
-    timeout: int = Field(default=120, ge=30, le=300)
-    headless: bool = False
-
-
-class ChatGPTWebChatReq(BaseModel):
-    profile: str = "chatgpt-default"
-    prompt: str
-    timeout: int = Field(default=90, ge=20, le=300)
-    headless: bool = False
-
-
-class ChatGPTWebImageReq(BaseModel):
-    profile: str = "chatgpt-default"
-    prompt: str
-    timeout: int = Field(default=180, ge=30, le=300)
-    headless: bool = False
-
-
-class ChatGPTWebVisionReq(BaseModel):
-    profile: str = "chatgpt-default"
-    image: str
-    prompt: str = "Phân tích chi tiết nội dung ảnh này."
     timeout: int = Field(default=120, ge=30, le=300)
     headless: bool = False
 
@@ -292,6 +252,8 @@ async def api_solve_turnstile(req: TurnstileReq) -> dict[str, Any]:
             headless=req.headless,
             timeout=req.timeout,
         )
+    except HTTPException:
+        raise
     except TimeoutError as exc:
         raise HTTPException(status_code=504, detail=str(exc)) from exc
     except Exception as exc:
@@ -310,6 +272,8 @@ async def api_solve_recaptcha3(req: Recaptcha3Req) -> dict[str, Any]:
             headless=req.headless,
             timeout=req.timeout,
         )
+    except HTTPException:
+        raise
     except TimeoutError as exc:
         raise HTTPException(status_code=504, detail=str(exc)) from exc
     except Exception as exc:
@@ -326,6 +290,8 @@ async def api_solve_recaptcha2(req: Recaptcha2Req) -> dict[str, Any]:
             headless=req.headless,
             timeout=req.timeout,
         )
+    except HTTPException:
+        raise
     except TimeoutError as exc:
         raise HTTPException(status_code=504, detail=str(exc)) from exc
     except Exception as exc:
@@ -384,6 +350,8 @@ async def api_flow_generate(req: FlowImageReq):
             if failures:
                 logger.warning("flow_partial_failure ok=%d failed=%d first_error=%s",
                                 len(ok_results), len(failures), failures[0])
+    except HTTPException:
+        raise
     except TimeoutError as exc:
         raise HTTPException(status_code=504, detail=str(exc)) from exc
     except Exception as exc:
@@ -404,6 +372,8 @@ async def api_flow_generate(req: FlowImageReq):
         async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
             r = await client.get(url)
             r.raise_for_status()
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception("download flow image failed")
         raise HTTPException(status_code=502, detail=f"download failed: {exc}") from exc
@@ -446,6 +416,8 @@ async def api_flow_get_or_create_project(req: GetOrCreateProjectReq) -> dict[str
             headless=req.headless,
             timeout=req.timeout,
         )
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception("flow get_or_create_project failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
@@ -461,6 +433,8 @@ async def api_phatnguoi(req: PhatNguoiReq) -> dict[str, Any]:
             headless=req.headless,
             timeout=req.timeout,
         )
+    except HTTPException:
+        raise
     except TimeoutError as exc:
         raise HTTPException(status_code=504, detail=str(exc)) from exc
     except Exception as exc:
@@ -479,6 +453,8 @@ async def api_browser_run(req: BrowserRunReq) -> dict[str, Any]:
             headless=req.headless,
             timeout=req.timeout,
         )
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception("browser run failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
@@ -622,10 +598,6 @@ async def _run_multi(req: MultiOnboardReq) -> None:
                     s = await start_gemini_web_login(
                         profile=req.profile, email=req.email, password=req.password,
                     )
-                elif svc == "chatgpt":
-                    s = await start_chatgpt_login(
-                        profile=req.profile, email=req.email, password=req.password,
-                    )
                 elif svc == "flow":
                     # Flow login = Google session + open labs.google. The
                     # existing Google session is enough; we just record success.
@@ -638,7 +610,7 @@ async def _run_multi(req: MultiOnboardReq) -> None:
                 svc_deadline = time.time() + 240
                 while time.time() < svc_deadline:
                     await _asyncio.sleep(2)
-                    cur = get_chatgpt_session(req.profile) if svc == "chatgpt" else get_gemini_web_session(req.profile)
+                    cur = get_gemini_web_session(req.profile)
                     if cur is None:
                         continue
                     if cur.state == "success":
@@ -756,67 +728,47 @@ async def api_auto_login_sessions() -> dict[str, Any]:
     return {"sessions": list_login_sessions()}
 
 
-# ── ChatGPT login via Google OAuth ──────────────────────────────────────
-
-@app.post("/v1/chatgpt/onboard", dependencies=[Depends(require_api_key)])
-async def api_chatgpt_onboard(req: ChatGPTOnboardReq) -> dict[str, Any]:
-    """Start a ChatGPT-via-Google login on the given profile. Returns the
-    initial session state — poll /v1/chatgpt/{profile}/onboard-status for
-    progress and feed 2FA codes via /v1/chatgpt/{profile}/onboard-2fa-code.
-
-    On success the response includes a JWT `access_token` ready to add
-    into chatgpt2api's account pool (it's a chatgpt.com-audience JWT).
-    """
-    session = await start_chatgpt_login(
-        profile=req.profile,
-        email=req.email,
-        password=req.password,
-    )
-    return {
-        **session.to_dict(),
-        "novnc": settings.novnc_external_url,
-        "note": "Theo dõi tiến trình ở /v1/chatgpt/{profile}/onboard-status. "
-                "Khi state=success, lấy access_token để add vào chatgpt2api.",
-    }
-
-
-@app.get("/v1/chatgpt/{profile}/onboard-status", dependencies=[Depends(require_api_key)])
-async def api_chatgpt_onboard_status(profile: str) -> dict[str, Any]:
-    session = get_chatgpt_session(profile)
-    if session is None:
-        return {"profile": profile, "state": "none", "message": "Chưa có phiên onboard"}
-    return session.to_dict()
-
-
-@app.post("/v1/chatgpt/{profile}/onboard-2fa-code", dependencies=[Depends(require_api_key)])
-async def api_chatgpt_onboard_2fa_code(profile: str, req: TwoFactorCodeReq) -> dict[str, Any]:
-    ok = submit_chatgpt_2fa_code(profile, req.code)
-    if not ok:
-        raise HTTPException(
-            status_code=409,
-            detail="Phiên không ở state=need_code (chỉ submit được khi đang cần mã)",
-        )
-    return {"profile": profile, "submitted": True}
-
-
-@app.post("/v1/chatgpt/{profile}/refresh-jwt", dependencies=[Depends(require_api_key)])
-async def api_chatgpt_refresh_jwt(profile: str) -> dict[str, Any]:
-    """Refresh JWT for an already-logged-in profile.
-
-    No password / Google OAuth dance — just opens chatgpt.com using the
-    profile's persistent cookies and scrapes /api/auth/session for a
-    fresh accessToken (28-day rolling expiry).
-
-    Returns 401 if profile is logged out (caller must re-onboard).
-    """
+@app.get("/v1/session/{profile}/warmup", dependencies=[Depends(require_api_key)])
+async def api_session_warmup(profile: str, provider: str = "gemini_web") -> dict[str, Any]:
+    """Khởi động ngầm trình duyệt (warm up) để giảm độ trễ cho câu hỏi đầu tiên."""
     try:
-        result = await refresh_chatgpt_jwt(profile)
-        return {"profile": profile, "ok": True, **result}
-    except RuntimeError as exc:
-        raise HTTPException(status_code=401, detail=str(exc)) from exc
+        url_map = {
+            "gemini_web": "https://gemini.google.com/app",
+            "flow": "https://aistudio.google.com/"
+        }
+        target_url = url_map.get(provider, "")
+        
+        async with pool.page(profile=profile, headless=False) as page:
+            if target_url and not page.url.startswith(target_url):
+                await page.goto(target_url, wait_until="domcontentloaded", timeout=30_000)
+        return {"profile": profile, "status": "warmed_up"}
+    except HTTPException:
+        raise
     except Exception as exc:
-        logger.exception("chatgpt refresh_jwt failed profile=%s", profile)
+        logger.exception("warmup failed profile=%s", profile)
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/v1/profiles", dependencies=[Depends(require_api_key)])
+async def api_list_profiles(prefix: str = "") -> dict[str, Any]:
+    """List all available browser profiles matching a prefix."""
+    try:
+        from src.settings import settings
+        import os
+        profiles_dir = settings.data_dir / "profiles"
+        if not profiles_dir.exists():
+            return {"profiles": []}
+        profiles = []
+        for d in profiles_dir.iterdir():
+            if d.is_dir() and d.name.startswith(prefix):
+                profiles.append(d.name)
+        return {"profiles": sorted(profiles)}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Failed to list profiles")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
 
 
 # ── Gemini Web (gemini.google.com) ──────────────────────────────────────
@@ -832,6 +784,8 @@ async def api_gemini_web_plan(profile: str, headless: bool = True, timeout: int 
     """
     try:
         return await gemini_web_get_plan(profile=profile, headless=headless, timeout=timeout)
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception("gemini_web get_plan failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
@@ -848,24 +802,10 @@ async def api_gemini_web_models(profile: str, headless: bool = True, timeout: in
     try:
         models = await gemini_web_list_models(profile=profile, headless=headless, timeout=timeout)
         return {"profile": profile, "count": len(models), "models": models}
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception("gemini_web list_models failed")
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-
-
-@app.get("/v1/chatgpt-web/{profile}/models", dependencies=[Depends(require_api_key)])
-async def api_chatgpt_web_models(profile: str, headless: bool = True, timeout: int = 30) -> dict[str, Any]:
-    """Live model list pulled from chatgpt.com /backend-api/models.
-
-    Same wire shape as the gemini-web equivalent. Each item carries
-    `id: "cgw/<slug>"` so /v1/models can splice them in without
-    knowing about the underlying scrape.
-    """
-    try:
-        models = await chatgpt_web_list_models(profile=profile, headless=headless, timeout=timeout)
-        return {"profile": profile, "count": len(models), "models": models}
-    except Exception as exc:
-        logger.exception("chatgpt_web list_models failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
@@ -919,6 +859,8 @@ async def api_gemini_web_chat(req: GeminiWebChatReq) -> dict[str, Any]:
             profile=req.profile, prompt=req.prompt,
             timeout=req.timeout, headless=req.headless,
         )
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception("gemini_web chat failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
@@ -933,6 +875,8 @@ async def api_gemini_web_generate_image(req: GeminiWebImageReq) -> dict[str, Any
             profile=req.profile, prompt=req.prompt, count=req.count,
             timeout=req.timeout, headless=req.headless,
         )
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception("gemini_web generate_image failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
@@ -947,6 +891,8 @@ async def api_gemini_web_generate_music(req: GeminiWebMusicReq) -> dict[str, Any
             profile=req.profile, prompt=req.prompt,
             timeout=req.timeout, headless=req.headless,
         )
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception("gemini_web generate_music failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
@@ -961,50 +907,10 @@ async def api_gemini_web_analyze_image(req: GeminiWebVisionReq) -> dict[str, Any
             profile=req.profile, image=req.image, prompt=req.prompt,
             timeout=req.timeout, headless=req.headless,
         )
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception("gemini_web analyze_image failed")
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-
-
-# ── ChatGPT Web (chatgpt.com) ───────────────────────────────────────────
-
-@app.post("/v1/chatgpt-web/chat", dependencies=[Depends(require_api_key)])
-async def api_chatgpt_web_chat(req: ChatGPTWebChatReq) -> dict[str, Any]:
-    """Plain chat with chatgpt.com (DOM scrape). Profile must be logged in."""
-    try:
-        return await chatgpt_web_chat(
-            profile=req.profile, prompt=req.prompt,
-            timeout=req.timeout, headless=req.headless,
-        )
-    except Exception as exc:
-        logger.exception("chatgpt_web chat failed")
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-
-
-@app.post("/v1/chatgpt-web/generate-image", dependencies=[Depends(require_api_key)])
-async def api_chatgpt_web_generate_image(req: ChatGPTWebImageReq) -> dict[str, Any]:
-    """Generate image via DALL-E — activates 'Tạo hình ảnh' tool in + menu."""
-    try:
-        return await chatgpt_web_generate_image(
-            profile=req.profile, prompt=req.prompt,
-            timeout=req.timeout, headless=req.headless,
-        )
-    except Exception as exc:
-        logger.exception("chatgpt_web generate_image failed")
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-
-
-@app.post("/v1/chatgpt-web/analyze-image", dependencies=[Depends(require_api_key)])
-async def api_chatgpt_web_analyze_image(req: ChatGPTWebVisionReq) -> dict[str, Any]:
-    """Upload image + ask via chatgpt.com (GPT vision). Profile must be
-    logged in. Image accepts data: URL or https URL."""
-    try:
-        return await chatgpt_web_analyze_image(
-            profile=req.profile, image=req.image, prompt=req.prompt,
-            timeout=req.timeout, headless=req.headless,
-        )
-    except Exception as exc:
-        logger.exception("chatgpt_web analyze_image failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 

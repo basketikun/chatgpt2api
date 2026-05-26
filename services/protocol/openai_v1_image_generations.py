@@ -116,7 +116,7 @@ def _handle_adapter_image(route, body: dict[str, Any]) -> dict[str, Any] | Itera
         raise RuntimeError(f"Provider '{route.provider}' does not support image generation")
 
     # Per-call structured log for the Logs UI. Mirrors web_proxy._log_web_call
-    # so flow / gemini_web / chatgpt_web rows appear in the same image-gen
+    # so flow / gemini_web rows appear in the same image-gen
     # bucket regardless of which code path executes them.
     _img_log_started_at = time.time()
     _img_log_provider = route.provider
@@ -247,7 +247,7 @@ def _handle_adapter_image(route, body: dict[str, Any]) -> dict[str, Any] | Itera
                 if key_try < max_keys - 1:
                     continue  # try next key
                 # Structured log entry — surfaces in the Logs UI under
-                # web_image bucket alongside gemini_web / chatgpt_web.
+                # web_image bucket alongside gemini_web.
                 try:
                     from services.log_service import LOG_TYPE_WEB_IMAGE, log_service
                     log_service.add(LOG_TYPE_WEB_IMAGE,
@@ -364,19 +364,16 @@ def _handle_single_image(route, body: dict[str, Any]) -> dict[str, Any] | Iterat
             })
             raise  # Re-raise to trigger combo fallback
 
-    # Web-scrape providers: gemini_web (Imagen) / chatgpt_web (DALL-E)
-    if route.provider in ("gemini_web", "chatgpt_web"):
+    # Web-scrape providers: gemini_web (Imagen)
+    if route.provider == "gemini_web":
         prompt = _translate_prompt(prompt) if prompt else prompt
         logger.info({
             "event": "image_routed_to_web",
             "provider": route.provider,
             "n": n,
         })
-        if route.provider == "gemini_web":
-            from services.providers.web_proxy import handle_gemini_web_image_gen
-            return handle_gemini_web_image_gen(prompt, n=n)
-        from services.providers.web_proxy import handle_chatgpt_web_image_gen
-        return handle_chatgpt_web_image_gen(prompt, n=n)
+        from services.providers.web_proxy import handle_gemini_web_image_gen
+        return handle_gemini_web_image_gen(prompt, n=n)
 
     # For chatgpt/ DALL-E: use original chatgpt.com backend flow (same as upstream)
     # Let combo fallback handle failures if token can't access chatgpt.com

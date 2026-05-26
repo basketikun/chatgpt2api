@@ -27,6 +27,10 @@ def upload_file(local_path, remote_path):
 
 if __name__ == "__main__":
     upload_file(
-        "D:\\Chatgpt\\chatgpt2api\\captcha-solver\\src\\solvers\\chatgpt_web.py",
-        "/root/chatgpt_web.py"
+        "D:\\Chatgpt\\chatgpt2api\\captcha-solver\\src\\auto_login.py",
+        "/root/auto_login.py"
+    )
+    upload_file(
+        "D:\\Chatgpt\\chatgpt2api\\captcha-solver\\src\\chatgpt_login.py",
+        "/root/chatgpt_login.py"
     )

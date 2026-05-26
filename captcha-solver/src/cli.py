@@ -45,11 +45,6 @@ from .auto_login import (
     submit_2fa_code,
 )
 from .browser_pool import pool
-from .chatgpt_login import (
-    get_session as get_chatgpt_session,
-    start_chatgpt_login,
-    submit_2fa_code as submit_chatgpt_2fa_code,
-)
 from .gemini_web_login import (
     get_session as get_gemini_web_session,
     start_gemini_web_login,
@@ -62,11 +57,6 @@ from .solvers.gemini_web import (
     chat as gemini_web_chat,
     generate_image as gemini_web_generate_image,
     generate_music as gemini_web_generate_music,
-)
-from .solvers.chatgpt_web import (
-    analyze_image as chatgpt_web_analyze_image,
-    chat as chatgpt_web_chat,
-    generate_image as chatgpt_web_generate_image,
 )
 
 
@@ -142,57 +132,6 @@ async def cmd_onboard(args: list[str]) -> int:
         },
     }, ensure_ascii=False, indent=2))
     return 0
-
-
-async def cmd_chatgpt_onboard(args: list[str]) -> int:
-    """ChatGPT login via Google → scrape /api/auth/session → print JWT."""
-    if len(args) < 3:
-        _eprint("Usage: chatgpt-onboard <profile> <email> <google-password>")
-        return 2
-    profile, email, password = args[0], args[1], args[2]
-    _eprint(f"▶ ChatGPT-via-Google login {email} → profile {profile}")
-    await start_chatgpt_login(profile=profile, email=email, password=password)
-    deadline = time.time() + 240
-    last_state = ""
-    while time.time() < deadline:
-        s = get_chatgpt_session(profile)
-        if s is None:
-            await asyncio.sleep(0.5)
-            continue
-        if s.state != last_state:
-            _eprint(f"  [{s.state}] {s.message}")
-            last_state = s.state
-        if s.state == "success":
-            _eprint(f"✓ Got access_token (expires={s.expires})")
-            print(json.dumps({
-                "ok": True,
-                "profile": profile,
-                "email": s.captured_email or email,
-                "access_token": s.access_token,
-                "expires": s.expires,
-                "config_entry": {
-                    "access_token": s.access_token,
-                    "type": "free",
-                    "label": "ChatGPT-Google",
-                },
-            }, ensure_ascii=False, indent=2))
-            return 0
-        if s.state == "failed":
-            print(json.dumps({"ok": False, "step": s.message, "error": s.error}, ensure_ascii=False))
-            return 1
-        if s.state == "need_tap":
-            if s.tap_number:
-                _eprint(f"  → TAP {s.tap_number} on phone")
-        if s.state == "need_code":
-            if sys.stdin.isatty():
-                code = input("  Nhập mã 2FA (SMS / TOTP): ").strip()
-                if code:
-                    submit_chatgpt_2fa_code(profile, code)
-            else:
-                _eprint("  ⚠ Cần 2FA — POST /v1/chatgpt/{profile}/onboard-2fa-code")
-        await asyncio.sleep(2)
-    print(json.dumps({"ok": False, "error": "timeout after 4 minutes"}, ensure_ascii=False))
-    return 1
 
 
 async def cmd_gemini_web_onboard(args: list[str]) -> int:
@@ -312,54 +251,6 @@ async def cmd_gemini_web_vision(args: list[str]) -> int:
         return 1
 
 
-async def cmd_chatgpt_web_chat(args: list[str]) -> int:
-    """Plain chat via chatgpt.com (DOM scrape)."""
-    if len(args) < 2:
-        _eprint("Usage: chatgpt-web-chat <profile> \"<prompt>\"")
-        return 2
-    profile, prompt = args[0], args[1]
-    _eprint(f"▶ ChatGPT Web chat (profile={profile})")
-    try:
-        result = await chatgpt_web_chat(profile=profile, prompt=prompt, timeout=120, headless=False)
-        print(json.dumps({"ok": True, **result}, ensure_ascii=False, indent=2))
-        return 0
-    except Exception as exc:
-        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
-        return 1
-
-
-async def cmd_chatgpt_web_image(args: list[str]) -> int:
-    """Image gen via DALL-E (Tạo hình ảnh tool)."""
-    if len(args) < 2:
-        _eprint("Usage: chatgpt-web-image <profile> \"<prompt>\"")
-        return 2
-    profile, prompt = args[0], args[1]
-    _eprint(f"▶ ChatGPT Web image (profile={profile})")
-    try:
-        result = await chatgpt_web_generate_image(profile=profile, prompt=prompt, timeout=240, headless=False)
-        print(json.dumps({"ok": True, **result}, ensure_ascii=False, indent=2))
-        return 0
-    except Exception as exc:
-        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
-        return 1
-
-
-async def cmd_chatgpt_web_vision(args: list[str]) -> int:
-    """Vision via chatgpt.com — upload image + ask."""
-    if len(args) < 2:
-        _eprint("Usage: chatgpt-web-vision <profile> <image-url-or-data> [\"<prompt>\"]")
-        return 2
-    profile, image = args[0], args[1]
-    prompt = args[2] if len(args) > 2 else "Phân tích chi tiết nội dung ảnh này."
-    _eprint(f"▶ ChatGPT Web vision (profile={profile})")
-    try:
-        result = await chatgpt_web_analyze_image(profile=profile, image=image, prompt=prompt, timeout=180, headless=False)
-        print(json.dumps({"ok": True, **result}, ensure_ascii=False, indent=2))
-        return 0
-    except Exception as exc:
-        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
-        return 1
-
 
 async def cmd_login(args: list[str]) -> int:
     if len(args) < 3:
@@ -471,15 +362,11 @@ async def cmd_close(args: list[str]) -> int:
 
 _COMMANDS = {
     "onboard": cmd_onboard,
-    "chatgpt-onboard": cmd_chatgpt_onboard,
     "gemini-web-onboard": cmd_gemini_web_onboard,
     "gemini-web-chat": cmd_gemini_web_chat,
     "gemini-web-image": cmd_gemini_web_image,
     "gemini-web-music": cmd_gemini_web_music,
     "gemini-web-vision": cmd_gemini_web_vision,
-    "chatgpt-web-chat": cmd_chatgpt_web_chat,
-    "chatgpt-web-image": cmd_chatgpt_web_image,
-    "chatgpt-web-vision": cmd_chatgpt_web_vision,
     "login": cmd_login,
     "gen": cmd_gen,
     "list": cmd_list,

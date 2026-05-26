@@ -30,7 +30,6 @@ PROVIDER_PREFIXES: dict[str, str] = {
     "gw/": "grok_web",
     "pw/": "perplexity_web",
     "gmw/": "gemini_web",     # gemini.google.com via captcha-solver DOM scrape
-    "cgw/": "chatgpt_web",    # chatgpt.com via captcha-solver DOM scrape
     "gc/": "gemini_cli",
     "kr/": "kiro",
     "qw/": "qwen",

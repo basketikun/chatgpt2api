@@ -182,6 +182,15 @@ _RTK_TOOL_RESULT_MAX = 600   # Keep first+last chars of tool results
 _RTK_ASSISTANT_DEDUP = True   # Collapse repeated assistant content
 _RTK_SYSTEM_ENTITY_TRIM = 0.7  # Keep 70% of system entity list when truncating
 
+# File upload for large text content (bypasses payload limit via /backend-api/files).
+# When a user message exceeds this byte threshold, the full content is preserved
+# in _file_upload_store and replaced with a short marker. The marker is later
+# resolved by OpenAIBackendAPI._api_messages_to_conversation_messages() which
+# uploads the content as a .txt file and references it via asset_pointer.
+_FILE_UPLOAD_THRESHOLD = 80_000
+_FILE_UPLOAD_MARKER = "[FILE_UPLOAD:"
+_file_upload_store: dict[str, str] = {}
+
 
 def _rtk_compress_tool_result(content: str) -> str:
     """RTK-style: compress large tool call results (keep head + tail)."""
@@ -202,7 +211,7 @@ def _has_image_content(msg: dict[str, Any]) -> bool:
     return False
 
 
-def _rtk_compress_messages(messages: list[dict[str, Any]], max_bytes: int = _MAX_PAYLOAD_BYTES) -> list[dict[str, Any]]:
+def _rtk_compress_messages(messages: list[dict[str, Any]], max_bytes: int = _MAX_PAYLOAD_BYTES, file_upload_threshold: int = 0) -> list[dict[str, Any]]:
     """RTK-inspired smart message compression.
 
     Strategies (ordered by priority):
@@ -211,9 +220,10 @@ def _rtk_compress_messages(messages: list[dict[str, Any]], max_bytes: int = _MAX
     2. Deduplicate repeated assistant messages
     3. Drop oldest non-system messages
     4. Truncate system message (keep structure)
-    5. Compress last user message (head+tail)
+    5. Compress large user messages (head+tail, or file-upload marker if threshold set)
     """
     import copy
+    import hashlib
 
     # Step 0: Deduplicate consecutive tool messages by tool_call_id (HA sends twice)
     seen_tool_ids = set()
@@ -235,13 +245,19 @@ def _rtk_compress_messages(messages: list[dict[str, Any]], max_bytes: int = _MAX
     msgs = copy.deepcopy(messages)
 
     # Step 1: Compress large tool results (RTK-style: keep head+tail)
+    # For user messages > file_upload_threshold, use file-upload marker
+    # (preserves full content for later upload via /backend-api/files).
     for msg in msgs:
         if msg.get("role") == "tool" and isinstance(msg.get("content"), str):
             msg["content"] = _rtk_compress_tool_result(msg["content"])
-        # Also compress large user messages with data dumps
         if msg.get("role") == "user" and isinstance(msg.get("content"), str):
             content = msg["content"]
-            if len(content) > 3000:
+            if file_upload_threshold > 0 and len(content.encode("utf-8")) > file_upload_threshold:
+                key = hashlib.md5(content.encode()).hexdigest()[:16]
+                _file_upload_store[key] = content
+                preview = content[:500]
+                msg["content"] = f"{_FILE_UPLOAD_MARKER}{key}]\n{preview}\n...[full content uploaded as file]..."
+            elif len(content) > 3000:
                 head = content[:1000]
                 tail = content[-1000:]
                 msg["content"] = f"{head}\n\n[... {len(content) - 2000} chars compressed ...]\n\n{tail}"

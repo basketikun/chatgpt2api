@@ -57,6 +57,48 @@ _RESPONSE_SELECTORS = (
 )
 
 
+async def _start_new_chat(page) -> None:
+    """Click 'New chat' on gemini.google.com to clear conversation state
+    without paying for a full page.goto round-trip (~5-15s on cold network).
+
+    Strategy (best-effort, never raises):
+      1. aria-label match in Vietnamese / English — Gemini A/B-tests labels.
+      2. Fallback: client-side replaceState back to /app so the React router
+         clears the conversation without an HTTP navigation.
+    """
+    try:
+        clicked = await page.evaluate(
+            """() => {
+                const clean = s => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+                const btn = Array.from(document.querySelectorAll('button, a[role=button]')).find(b => {
+                    const al = clean(b.getAttribute('aria-label') || '');
+                    const tx = clean(b.innerText || '');
+                    return al.includes('new chat') || al.includes('cuoc tro chuyen moi')
+                        || al.includes('tro chuyen moi') || tx.includes('cuoc tro chuyen moi')
+                        || tx.includes('new chat');
+                });
+                if (!btn) return false;
+                btn.click();
+                return true;
+            }"""
+        )
+        if clicked:
+            await asyncio.sleep(0.8)
+            return
+        # SPA fallback: rewrite URL + dispatch popstate so Angular router rebuilds /app.
+        await page.evaluate(
+            """() => {
+                if (location.pathname !== '/app') {
+                    history.replaceState(null, '', '/app');
+                    window.dispatchEvent(new PopStateEvent('popstate'));
+                }
+            }"""
+        )
+        await asyncio.sleep(0.5)
+    except Exception as exc:
+        logger.debug("gemini_web: _start_new_chat best-effort failed: %s", exc)
+
+
 async def _wait_for_ready(page, timeout: int = 30) -> None:
     """Wait for the Gemini app to hydrate (prompt input visible)."""
     deadline = time.time() + timeout
@@ -453,7 +495,8 @@ async def generate_image(
 
     started = time.time()
     async with pool.page(profile=profile, headless=headless) as page:
-        await page.goto(_GEMINI_HOME, wait_until="domcontentloaded", timeout=30_000)
+        if not page.url.endswith("gemini.google.com/app"):
+            await page.goto(_GEMINI_HOME, wait_until="domcontentloaded", timeout=30_000)
         await _wait_for_ready(page, timeout=30)
 
         # 1. Activate the image tool from the + menu.
@@ -586,7 +629,8 @@ async def analyze_image(
     started = time.time()
     try:
         async with pool.page(profile=profile, headless=headless) as page:
-            await page.goto(_GEMINI_HOME, wait_until="domcontentloaded", timeout=30_000)
+            if not page.url.endswith("gemini.google.com/app"):
+                await page.goto(_GEMINI_HOME, wait_until="domcontentloaded", timeout=30_000)
             await _wait_for_ready(page, timeout=30)
 
             # 2. Gemini's file input is created LAZILY by the + menu's
@@ -696,7 +740,8 @@ async def generate_music(
     """
     started = time.time()
     async with pool.page(profile=profile, headless=headless) as page:
-        await page.goto(_GEMINI_HOME, wait_until="domcontentloaded", timeout=30_000)
+        if not page.url.endswith("gemini.google.com/app"):
+            await page.goto(_GEMINI_HOME, wait_until="domcontentloaded", timeout=30_000)
         await _wait_for_ready(page, timeout=30)
 
         activated = await _activate_tool(page, "Tạo nhạc")
@@ -763,7 +808,8 @@ async def list_models(profile: str, headless: bool = True, timeout: int = 30) ->
         return s or "unknown"
 
     async with pool.page(profile=profile, headless=headless) as page:
-        await page.goto(_GEMINI_HOME, wait_until="domcontentloaded", timeout=timeout * 1000)
+        if not page.url.endswith("gemini.google.com/app"):
+            await page.goto(_GEMINI_HOME, wait_until="domcontentloaded", timeout=timeout * 1000)
         try:
             await _wait_for_ready(page, timeout=15)
         except Exception:
@@ -895,7 +941,8 @@ async def get_plan(profile: str, headless: bool = True, timeout: int = 30) -> di
     """
     import re
     async with pool.page(profile=profile, headless=headless) as page:
-        await page.goto(_GEMINI_HOME, wait_until="domcontentloaded", timeout=timeout * 1000)
+        if not page.url.endswith("gemini.google.com/app"):
+            await page.goto(_GEMINI_HOME, wait_until="domcontentloaded", timeout=timeout * 1000)
         try:
             await _wait_for_ready(page, timeout=15)
         except Exception:
@@ -948,7 +995,13 @@ async def chat(profile: str, prompt: str, timeout: int = 90, headless: bool = Fa
         return time.time()
     async with pool.page(profile=profile, headless=headless) as page:
         t0 = time.time()
-        await page.goto(_GEMINI_HOME, wait_until="domcontentloaded", timeout=30_000)
+        # Warm-pool: only cold-load if Chrome isn't already on gemini.google.com.
+        # When the tab is alive on /app or /app/c/<convo>, click "New chat" — ~200ms
+        # vs the 5-15s of a full page.goto + hydrate cycle.
+        if "gemini.google.com" not in (page.url or ""):
+            await page.goto(_GEMINI_HOME, wait_until="domcontentloaded", timeout=30_000)
+        else:
+            await _start_new_chat(page)
         t1 = _mark("goto_ms", t0)
         await _wait_for_ready(page, timeout=30)
         t2 = _mark("ready_ms", t1)

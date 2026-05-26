@@ -292,11 +292,48 @@ class OpenAIBackendAPI:
 
     def _api_messages_to_conversation_messages(self, messages: list[Dict[str, Any]]) -> list[Dict[str, Any]]:
         """把标准 chat messages 转成 web conversation 所需的 messages。"""
+        from services.protocol.conversation import _file_upload_store, _FILE_UPLOAD_MARKER
+
         conversation_messages = []
         for item in messages:
             role = item.get("role", "user")
             content = item.get("content", "")
             if isinstance(content, str):
+                # Resolve file-upload markers: upload the preserved full text
+                # and reference it via asset_pointer (1 msg quota instead of N chunks).
+                if content.startswith(_FILE_UPLOAD_MARKER) and self.access_token:
+                    try:
+                        key = content.split("]", 1)[0].split(":", 1)[1].strip()
+                        full_text = _file_upload_store.pop(key, None)
+                    except (IndexError, ValueError):
+                        full_text = None
+                    if full_text:
+                        ref = self._upload_text_file(full_text)
+                        conversation_messages.append({
+                            "id": new_uuid(),
+                            "author": {"role": role},
+                            "content": {
+                                "content_type": "multimodal_text",
+                                "parts": [
+                                    {
+                                        "content_type": "asset_pointer",
+                                        "asset_pointer": f"file-service://{ref['file_id']}",
+                                        "size_bytes": ref["file_size"],
+                                    },
+                                    "[Context attached as file. Read the attached file for full details.]",
+                                ],
+                            },
+                            "metadata": {
+                                "attachments": [{
+                                    "id": ref["file_id"],
+                                    "mimeType": ref["mime_type"],
+                                    "name": ref["file_name"],
+                                    "size": ref["file_size"],
+                                }],
+                            },
+                        })
+                        continue
+                # No marker or no access_token — normal text message
                 conversation_messages.append({
                     "id": new_uuid(),
                     "author": {"role": role},
@@ -574,6 +611,54 @@ class OpenAIBackendAPI:
             "mime_type": mime_type,
             "width": width,
             "height": height,
+        }
+
+    def _upload_text_file(self, content: str, file_name: str = "context.txt") -> Dict[str, Any]:
+        """Upload text content as a .txt file to ChatGPT's file storage.
+
+        Mirrors _upload_image() but for text/plain — same /backend-api/files
+        endpoint, same multipart flow, no image parsing needed.
+        """
+        data = content.encode("utf-8")
+        path = "/backend-api/files"
+        response = self.session.post(
+            self.base_url + path,
+            headers=self._headers(path, {"Content-Type": "application/json", "Accept": "application/json"}),
+            json={"file_name": file_name, "file_size": len(data), "use_case": "multimodal"},
+            timeout=60,
+        )
+        ensure_ok(response, path)
+        upload_meta = response.json()
+        time.sleep(0.5)
+        response = self.session.put(
+            upload_meta["upload_url"],
+            headers={
+                "Content-Type": "text/plain; charset=utf-8",
+                "x-ms-blob-type": "BlockBlob",
+                "x-ms-version": "2020-04-08",
+                "Origin": self.base_url,
+                "Referer": self.base_url + "/",
+                "User-Agent": self.user_agent,
+                "Accept": "application/json, text/plain, */*",
+                "Accept-Language": "en-US,en;q=0.8",
+            },
+            data=data,
+            timeout=120,
+        )
+        ensure_ok(response, "text_upload")
+        path = f"/backend-api/files/{upload_meta['file_id']}/uploaded"
+        response = self.session.post(
+            self.base_url + path,
+            headers=self._headers(path, {"Content-Type": "application/json", "Accept": "application/json"}),
+            data="{}",
+            timeout=60,
+        )
+        ensure_ok(response, path)
+        return {
+            "file_id": upload_meta["file_id"],
+            "file_name": file_name,
+            "file_size": len(data),
+            "mime_type": "text/plain",
         }
 
     def _start_image_generation(self, prompt: str, requirements: ChatRequirements, conduit_token: str, model: str,

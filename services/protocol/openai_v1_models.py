@@ -90,16 +90,6 @@ FALLBACK_MODELS = {
         "gmw/imagen-4",
         "gmw/lyria",
     ],
-    "chatgpt_web": [
-        "cgw/auto",
-        "cgw/gpt-5",
-        "cgw/gpt-5-mini",
-        # Image generation goes through chatgpt.com's "Tạo hình ảnh" tool
-        # which the picker doesn't surface as a separate model entry —
-        # but it IS a distinct routable capability behind the same
-        # session, served by DALL-E (free) / gpt-image-1 (paid).
-        "cgw/dall-e",
-    ],
     "nvidia_nim": [
         "nv/auto",
         "nv-image/black-forest-labs/flux.2-klein-4b",
@@ -181,7 +171,7 @@ def _fetch_gemini_models() -> set[str]:
 
 def _fetch_web_models(provider_key: str, endpoint_path: str) -> set[str]:
     """Shared helper for the captcha-solver-backed providers (gemini_web,
-    chatgpt_web). Reads the profile + captcha-solver URL from
+    gemini_web). Reads the profile + captcha-solver URL from
     `config.providers.<provider_key>`, hits the live-list endpoint,
     and returns the prefixed model IDs. Empty set when the provider
     isn't enabled / has no profile / the captcha-solver is unreachable —
@@ -230,10 +220,6 @@ def _fetch_web_models(provider_key: str, endpoint_path: str) -> set[str]:
 
 def _fetch_gemini_web_models() -> set[str]:
     return _fetch_web_models("gemini_web", "/v1/gemini-web")
-
-
-def _fetch_chatgpt_web_models() -> set[str]:
-    return _fetch_web_models("chatgpt_web", "/v1/chatgpt-web")
 
 
 def _fetch_opencode_models() -> set[str]:
@@ -491,7 +477,7 @@ _CACHE_FILE = DATA_DIR / "models_cache.json"
 _models_cache: dict[str, Any] | None = None
 _cache_config_hash: str = ""
 _cache_loaded_at: float = 0.0
-# Auto-refresh cadence. The web-scraped catalogues (gmw/*, cgw/*) and the
+# Auto-refresh cadence. The web-scraped catalogues (gmw/*) and the
 # Codex / OpenAI live lists can change between deploys without any config
 # edit on our side, so the cache deliberately expires even when the config
 # hash is stable. 24h is the same cadence Google / OpenAI use for their
@@ -553,14 +539,14 @@ def invalidate_models_cache():
         pass
 
 
-_DYNAMIC_PREFIXES = ("gmw/", "cgw/")
+_DYNAMIC_PREFIXES = ("gmw/",)
 
 
 def _apply_enabled_filter(data: list[dict]) -> list[dict]:
     """Filter model list by model_settings.enabled_models. Used for HA /v1/models.
 
     Models whose IDs start with one of the dynamic web-provider prefixes
-    (`gmw/`, `cgw/`) bypass the filter entirely — the captcha-solver
+    (`gmw/`) bypass the filter entirely — the captcha-solver
     discovers their slugs at runtime so the user has no way to add them
     to `enabled_models` ahead of time, and the prefix already implies
     the source. Static providers (chatgpt/, cx/, gemini_free/, ...)
@@ -584,7 +570,6 @@ def _apply_enabled_filter(data: list[dict]) -> list[dict]:
         "cx/auto", "oc/auto", "chatgpt/auto",
         "gemini_free/auto", "ag/auto",
         "gmw/auto", "gmw/vision",
-        "cgw/auto", "cgw/vision",
     }
     all_enabled |= always_allow
 
@@ -660,7 +645,6 @@ def list_models(force_refresh: bool = False, apply_filter: bool = False) -> dict
         "openrouter": _fetch_openrouter_models,
         "nvidia_nim": _fetch_nvidia_models,
         "gemini_web": _fetch_gemini_web_models,
-        "chatgpt_web": _fetch_chatgpt_web_models,
     }
 
     # Add custom providers dynamically
@@ -712,7 +696,7 @@ def list_models(force_refresh: bool = False, apply_filter: bool = False) -> dict
                 })
 
     # Apply fallbacks for providers that returned nothing
-    for provider_name in ["opencode", "gemini_free", "chatgpt", "openai_oauth", "nvidia_nim", "chatgpt2api", "antigravity", "gemini_web", "chatgpt_web"]:
+    for provider_name in ["opencode", "gemini_free", "chatgpt", "openai_oauth", "nvidia_nim", "chatgpt2api", "antigravity", "gemini_web"]:
         if provider_name not in all_models:
             for model_id in sorted(_apply_fallback(provider_name)):
                 if model_id not in seen:
