@@ -145,9 +145,16 @@ export function FlowCard() {
   async function save(next: FlowConfig) {
     setSaving(true);
     try {
-      await request.post("/api/settings", {
-        config: { providers: { flow: next } },
-      });
+      // /api/settings does a shallow merge at the top level — wrapping
+      // the payload as `{ config: { providers: { flow: next } } }` would
+      // create a literal `config` key in settings and leave `providers`
+      // untouched (so deletes/edits silently no-op). Send `providers` at
+      // the top level, and merge into the existing providers dict so we
+      // don't wipe sibling providers (gemini_web, chatgpt_web, ...).
+      const cur = await request.get("/api/settings");
+      const providers = { ...(((cur.data as any)?.config?.providers) || {}) };
+      providers.flow = next;
+      await request.post("/api/settings", { providers });
       toast.success("Đã lưu cấu hình Flow");
       setCfg(next);
     } catch (e: any) {
