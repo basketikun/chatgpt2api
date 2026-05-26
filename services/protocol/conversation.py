@@ -245,12 +245,13 @@ def _rtk_compress_messages(messages: list[dict[str, Any]], max_bytes: int = _MAX
     msgs = copy.deepcopy(messages)
 
     # Step 1: Compress large tool results (RTK-style: keep head+tail)
-    # For user messages > file_upload_threshold, use file-upload marker
+    # For user/system messages > file_upload_threshold, use file-upload marker
     # (preserves full content for later upload via /backend-api/files).
+    # System messages carry HA entity context — can be 100KB+ easily.
     for msg in msgs:
         if msg.get("role") == "tool" and isinstance(msg.get("content"), str):
             msg["content"] = _rtk_compress_tool_result(msg["content"])
-        if msg.get("role") == "user" and isinstance(msg.get("content"), str):
+        if msg.get("role") in ("user", "system") and isinstance(msg.get("content"), str):
             content = msg["content"]
             if file_upload_threshold > 0 and len(content.encode("utf-8")) > file_upload_threshold:
                 key = hashlib.md5(content.encode()).hexdigest()[:16]
