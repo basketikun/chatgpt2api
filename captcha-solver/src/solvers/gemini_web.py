@@ -20,6 +20,7 @@ candidate selectors.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from typing import Any
@@ -113,8 +114,30 @@ async def _inject_prompt(page, prompt: str) -> None:
     except Exception as exc:
         logger.warning("gemini_web: mouse click into prompt failed: %s — keys may go to wrong target", str(exc)[:120])
 
-    # Type via real keyboard events (Quill listens to these).
-    await page.keyboard.type(prompt, delay=10)
+    # Inject the prompt via native insertText command.
+    # This is instant and triggers Quill's document listeners properly.
+    injected = await page.evaluate(
+        """(text) => {
+            const ces = Array.from(document.querySelectorAll('[contenteditable=true]'));
+            const target = ces
+                .map(e => ({e, w: e.offsetWidth, h: e.offsetHeight}))
+                .filter(x => x.w > 200 && x.h > 0)
+                .sort((a, b) => (b.w * b.h) - (a.w * a.h))[0];
+            if (!target) return false;
+            target.e.focus();
+            
+            // Clear existing text first
+            document.execCommand('selectAll', false, null);
+            document.execCommand('delete', false, null);
+            
+            // Use execCommand to insert the entire text instantly
+            return document.execCommand('insertText', false, text);
+        }""",
+        prompt,
+    )
+    if not injected:
+        logger.warning("gemini_web: execCommand('insertText') failed, falling back to keyboard.type")
+        await page.keyboard.type(prompt, delay=0)
     await asyncio.sleep(0.4)
 
 
@@ -247,16 +270,46 @@ async def _activate_tool(page, tool_name: str) -> bool:
         'button[aria-label*="Tools"]',
     ]
     plus_opened = False
-    for sel in plus_selectors:
-        try:
-            await page.locator(sel).first.click(timeout=3000)
-            logger.info("gemini_web: opened + menu via %s", sel)
+    try:
+        opened = await page.evaluate(
+            """() => {
+                const clean = (str) => (str || '').normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+                const btn = Array.from(document.querySelectorAll('button')).find(b => {
+                    const al = clean(b.getAttribute('aria-label') || '');
+                    return al.includes('tai len') || al.includes('cong cu') || al.includes('them tep') 
+                        || al.includes('add file') || al.includes('upload') || al.includes('attach') 
+                        || al.includes('tools') || al.includes('plus');
+                });
+                if (!btn) return false;
+                btn.click();
+                return true;
+            }"""
+        )
+        if opened:
+            logger.info("gemini_web: opened + menu via JS click")
             plus_opened = True
-            break
-        except Exception:
-            continue
+    except Exception as exc:
+        logger.warning("gemini_web: plus menu JS click failed: %s", exc)
+
     if not plus_opened:
-        logger.warning("gemini_web: open + menu — no selector matched. Try probing button[aria-label] values.")
+        for sel in plus_selectors:
+            try:
+                await page.locator(sel).first.click(timeout=3000)
+                logger.info("gemini_web: opened + menu via %s", sel)
+                plus_opened = True
+                break
+            except Exception as e:
+                logger.warning("gemini_web: plus selector %s failed: %s", sel, str(e)[:150])
+                continue
+    if not plus_opened:
+        labels = await page.evaluate(
+            """() => {
+                return Array.from(document.querySelectorAll('button'))
+                    .map(b => `aria-label: "${b.getAttribute('aria-label') || ''}", text: "${(b.innerText || '').trim()}"`)
+                    .filter(t => t);
+            }"""
+        )
+        logger.warning("gemini_web: open + menu — no selector matched. Available buttons: %s", json.dumps(labels, ensure_ascii=False))
         return False
 
     # 2. Wait for Angular Material menu to render (cdk-overlay-pane).
@@ -293,7 +346,8 @@ async def _activate_tool(page, tool_name: str) -> bool:
     # 4. JS fallback with full mouse event sequence.
     clicked = await page.evaluate(
         """(name) => {
-            const t = name.toLowerCase();
+            const clean = (str) => (str || '').normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+            const t = clean(name);
             const items = Array.from(document.querySelectorAll(
                 '.cdk-overlay-pane button, .cdk-overlay-pane [role=menuitem], '
                 + '[role=menu] button, [role=menu] [role=menuitem], '
@@ -301,7 +355,7 @@ async def _activate_tool(page, tool_name: str) -> bool:
             ));
             for (const el of items) {
                 if (el.offsetWidth === 0) continue;
-                if ((el.innerText || '').toLowerCase().includes(t)) {
+                if (clean(el.innerText || '').includes(t)) {
                     const r = el.getBoundingClientRect();
                     const opts = {bubbles:true, cancelable:true, clientX: r.left+r.width/2, clientY: r.top+r.height/2, button:0};
                     el.dispatchEvent(new PointerEvent('pointerdown', opts));
@@ -345,8 +399,11 @@ async def _wait_for_image(page, timeout: int = 120) -> list[str]:
                 // Find the LAST assistant response container.
                 const candidates = [
                     'message-content',
-                    'model-response',
                     '.model-response-text',
+                    '.markdown',
+                    '[data-test-id="response-content"]',
+                    'model-response',
+                    '.conversation-container .response',
                 ];
                 let lastResponse = null;
                 for (const sel of candidates) {
@@ -356,9 +413,14 @@ async def _wait_for_image(page, timeout: int = 120) -> list[str]:
                 if (!lastResponse) return [];
                 // Extract <img> URLs, filtering out tiny icons (< 100px).
                 return Array.from(lastResponse.querySelectorAll('img'))
-                    .filter(img => img.naturalWidth >= 100 && img.naturalHeight >= 100)
+                    .filter(img => {
+                        const src = img.src || '';
+                        const isIcon = src.includes('google.com/maps') || src.includes('favicon') || img.closest('.avatar') || img.closest('user-avatar') || img.classList.contains('avatar') || img.className.includes('icon');
+                        if (isIcon) return false;
+                        return img.naturalWidth >= 100 || img.naturalHeight >= 100 || img.width >= 100 || src.includes('googleusercontent.com') || src.startsWith('data:image/');
+                    })
                     .map(img => img.src)
-                    .filter(src => src && (src.startsWith('http') || src.startsWith('data:image/')));
+                    .filter(src => src && (src.startsWith('http') || src.startsWith('data:image/') || src.startsWith('blob:')));
             }"""
         )
         if urls and len(urls) > 0:
@@ -410,6 +472,17 @@ async def generate_image(
 
         urls = await _wait_for_image(page, timeout=timeout)
         if not urls:
+            try:
+                import os
+                os.makedirs("/data/debug", exist_ok=True)
+                await page.screenshot(path="/data/debug/gemini_error.png")
+                html = await page.content()
+                with open("/data/debug/gemini_error.html", "w", encoding="utf-8") as f:
+                    f.write(html)
+                logger.info("gemini_web: saved debug screenshot and HTML to /data/debug/")
+            except Exception as e:
+                logger.warning("gemini_web: failed to take error debug info: %s", e)
+
             text = await page.evaluate(
                 """() => {
                     const n = document.querySelectorAll('message-content');
@@ -421,9 +494,30 @@ async def generate_image(
                 f"Không có ảnh sinh trong {timeout}s. Gemini có thể từ chối: {text!r}"
             )
 
+        converted_urls = []
+        for url in urls:
+            if url.startswith("blob:"):
+                try:
+                    data_uri = await page.evaluate(f"""async () => {{
+                        const img = document.querySelector(`img[src="{url}"]`);
+                        if (!img) throw new Error("Img element not found");
+                        const canvas = document.createElement('canvas');
+                        canvas.width = img.naturalWidth || img.width || 1024;
+                        canvas.height = img.naturalHeight || img.height || 1024;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        return canvas.toDataURL('image/jpeg', 0.95);
+                    }}""")
+                    converted_urls.append(data_uri)
+                except Exception as e:
+                    logger.warning("gemini_web: failed to convert blob URL: %s", e)
+                    converted_urls.append(url)
+            else:
+                converted_urls.append(url)
+        
         # Detect mime from URL prefix.
         images = []
-        for url in urls:
+        for url in converted_urls:
             if url.startswith("data:image/"):
                 mime = url.split(";", 1)[0].replace("data:", "")
             else:

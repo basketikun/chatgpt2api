@@ -139,27 +139,34 @@ async def _inject_prompt(page, prompt: str) -> None:
     except Exception as exc:
         logger.warning("chatgpt_web: prompt mouse click failed: %s", str(exc)[:100])
 
-    await page.keyboard.type(prompt, delay=10)
-    await asyncio.sleep(0.4)
-
+    try:
+        loc = page.locator('[contenteditable=true]').first
+        await loc.click(timeout=5000)
+        await loc.clear()
+        await loc.press_sequentially(prompt, delay=20)
+        await asyncio.sleep(0.5)
+        await page.keyboard.press("Enter")
+        await asyncio.sleep(0.5)
+    except Exception as e:
+        logger.warning("chatgpt_web: press_sequentially failed: %s", e)
+    await asyncio.sleep(0.5)
 
 async def _click_send(page) -> bool:
-    for sel in _SEND_SELECTORS:
-        try:
-            await page.locator(sel).first.click(timeout=4000)
-            logger.info("chatgpt_web: clicked send via %s", sel)
-            return True
-        except Exception:
-            continue
+    try:
+        await page.locator('button[data-testid="send-button"]').first.click(timeout=2000)
+        return True
+    except:
+        pass
+    
     clicked = await page.evaluate(
         """() => {
-            const btn = Array.from(document.querySelectorAll('button')).find(b => {
-                const al = (b.getAttribute('aria-label') || '').toLowerCase();
-                return /send|gửi|submit/.test(al);
-            });
-            if (!btn) return false;
-            btn.click();
-            return true;
+            const btn = document.querySelector('button[data-testid="send-button"]');
+            if (btn) {
+                btn.removeAttribute('disabled');
+                btn.click();
+                return true;
+            }
+            return false;
         }"""
     )
     return bool(clicked)
@@ -210,7 +217,7 @@ async def _activate_tool(page, tool_name: str) -> bool:
     ]
     for sel in selectors:
         try:
-            await page.locator(sel).first.click(timeout=2500)
+            await page.locator(sel).first.click(timeout=500)
             logger.info("chatgpt_web: activated tool '%s' via %s", tool_name, sel)
             await asyncio.sleep(0.8)
             return True
@@ -305,17 +312,15 @@ async def _wait_for_image(page, timeout: int = 180) -> list[str]:
         await asyncio.sleep(2.0)
         urls = await page.evaluate(
             """() => {
-                const candidates = ['[data-message-author-role="assistant"]', '.markdown.prose'];
-                let last = null;
-                for (const sel of candidates) {
-                    const nodes = document.querySelectorAll(sel);
-                    if (nodes.length > 0) { last = nodes[nodes.length - 1]; break; }
-                }
-                if (!last) return [];
-                return Array.from(last.querySelectorAll('img'))
-                    .filter(img => img.naturalWidth >= 200 && img.naturalHeight >= 200)
+                const allImages = Array.from(document.querySelectorAll('img'));
+                return allImages
+                    .filter(img => {
+                        const src = img.src || '';
+                        if (src.includes('avatar') || src.includes('favicon')) return false;
+                        return src.includes('oaiusercontent.com') || src.includes('chatgpt.com/backend-api/estuary/content') || src.startsWith('blob:');
+                    })
                     .map(img => img.src)
-                    .filter(src => src && (src.startsWith('http') || src.startsWith('data:image/')));
+                    .filter(src => src && (src.startsWith('http') || src.startsWith('data:image/') || src.startsWith('blob:')));
             }"""
         )
         if urls:
@@ -389,9 +394,9 @@ async def chat(profile: str, prompt: str, timeout: int = 90, headless: bool = Fa
         sent = await _click_send(page)
         if not sent:
             raise RuntimeError("Could not click ChatGPT Send button")
-        stages["send_ms"] = int((time.time() - t3) * 1000); t4 = time.time()
+        
         text = await _wait_for_response_complete(page, timeout=timeout)
-        stages["response_ms"] = int((time.time() - t4) * 1000)
+        stages["response_ms"] = int((time.time() - t3) * 1000)
         return {
             "text": text,
             "elapsed_ms": int((time.time() - started) * 1000),
@@ -411,18 +416,32 @@ async def generate_image(
         activated = await _activate_tool(page, "Tạo hình ảnh")
         if not activated:
             activated = await _activate_tool(page, "Tạo ảnh")
+        
+        full_prompt = prompt
         if not activated:
-            raise RuntimeError(
-                "Không bật được tool 'Tạo hình ảnh' (account ChatGPT có thể chưa có DALL-E)"
-            )
+            logger.warning("chatgpt_web: could not activate image tool, proceeding with natural language fallback")
+            lower_prompt = prompt.lower()
+            if not any(k in lower_prompt for k in ("vẽ", "tạo ảnh", "tạo hình ảnh", "generate an image", "draw", "create an image", "dall-e")):
+                full_prompt = f"Vui lòng tạo hình ảnh (generate an image): {prompt}"
 
-        await _inject_prompt(page, prompt)
+        await _inject_prompt(page, full_prompt)
         sent = await _click_send(page)
         if not sent:
             raise RuntimeError("Could not click Send")
-
+        
         urls = await _wait_for_image(page, timeout=timeout)
         if not urls:
+            try:
+                import os
+                os.makedirs("/data/debug", exist_ok=True)
+                await page.screenshot(path="/data/debug/chatgpt_error.png")
+                html = await page.content()
+                with open("/data/debug/chatgpt_error.html", "w", encoding="utf-8") as f:
+                    f.write(html)
+                logger.info("chatgpt_web: saved debug screenshot and HTML to /data/debug/")
+            except Exception as e:
+                logger.warning("chatgpt_web: failed to take error debug info: %s", e)
+
             text = await page.evaluate(
                 """() => {
                     const n = document.querySelectorAll('[data-message-author-role="assistant"]');
@@ -432,8 +451,29 @@ async def generate_image(
             )
             raise RuntimeError(f"Không có ảnh sinh trong {timeout}s. ChatGPT: {text!r}")
 
-        images = []
+        converted_urls = []
         for url in urls:
+            if url.startswith("blob:") or "backend-api" in url:
+                try:
+                    data_uri = await page.evaluate(f"""async () => {{
+                        const img = document.querySelector(`img[src="{url}"]`);
+                        if (!img) throw new Error("Img element not found");
+                        const canvas = document.createElement('canvas');
+                        canvas.width = img.naturalWidth || img.width || 1024;
+                        canvas.height = img.naturalHeight || img.height || 1024;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        return canvas.toDataURL('image/jpeg', 0.95);
+                    }}""")
+                    converted_urls.append(data_uri)
+                except Exception as e:
+                    logger.warning("chatgpt_web: failed to convert blob URL: %s", e)
+                    converted_urls.append(url)
+            else:
+                converted_urls.append(url)
+
+        images = []
+        for url in converted_urls:
             mime = url.split(";", 1)[0].replace("data:", "") if url.startswith("data:") else "image/png"
             images.append({"url": url, "mime": mime})
         return {
