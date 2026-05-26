@@ -309,18 +309,18 @@ class OpenAIBackendAPI:
                         full_text = None
                     if full_text:
                         ref = self._upload_text_file(full_text)
+                        # Attach the uploaded file as metadata — ChatGPT reads
+                        # text files from attachments automatically (same as
+                        # uploading a .txt file in the web UI).
                         conversation_messages.append({
                             "id": new_uuid(),
                             "author": {"role": role},
                             "content": {
-                                "content_type": "multimodal_text",
+                                "content_type": "text",
                                 "parts": [
-                                    {
-                                        "content_type": "asset_pointer",
-                                        "asset_pointer": f"file-service://{ref['file_id']}",
-                                        "size_bytes": ref["file_size"],
-                                    },
-                                    "[Context attached as file. Read the attached file for full details.]",
+                                    content.split("\n...[full content uploaded as file]...", 1)[0]
+                                    + "\n\n[Toàn bộ context hệ thống đã được đính kèm file. "
+                                    "Hãy đọc file đính kèm để có đầy đủ thông tin.]",
                                 ],
                             },
                             "metadata": {
