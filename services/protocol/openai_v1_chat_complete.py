@@ -674,16 +674,19 @@ def _dispatch(route, messages, tools, tool_choice, body):
     # RTK compression thresholds — 24KB → 80KB → 100KB. We sit at the
     # chatgpt.com hard-limit cap; over-cap payloads still get compressed
     # by _rtk_compress_messages so requests never 413.
+    # File upload bypass runs independently of RTK — when enabled for chatgpt
+    # provider, large user messages (>80KB) are uploaded to /backend-api/files
+    # and referenced via asset_pointer instead of being head+tail compressed.
+    file_upload_enabled = (route.provider == "chatgpt")
     if route.provider == "chatgpt":
         rtk_on = config.rtk_enabled
         rtk_threshold = 100_000
-        file_upload_threshold = 80_000
     else:
         rtk_on = config.rtk_other_enabled
         rtk_threshold = 100_000
-        file_upload_threshold = 0
-    if rtk_on:
+    if rtk_on or file_upload_enabled:
         from services.protocol.conversation import _rtk_compress_messages
+        file_upload_threshold = 80_000 if file_upload_enabled else 0
         messages = _rtk_compress_messages(messages, rtk_threshold, file_upload_threshold=file_upload_threshold)
 
     if route.provider == "opencode":
