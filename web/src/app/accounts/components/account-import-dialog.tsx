@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import {
   ArrowLeft,
   ExternalLink,
@@ -26,10 +26,21 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { request } from "@/lib/request";
 import { createAccounts, createOAuthAccounts, type Account } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-type ImportMethod = "menu" | "token" | "session" | "cpa" | "oauth" | "oauth_flow" | "antigravity_flow";
+type ImportMethod =
+  | "menu"
+  | "token"
+  | "session"
+  | "cpa"
+  | "oauth"
+  | "oauth_flow"
+  | "antigravity_flow"
+  | "multi_tap"
+  | "multi_auth";
 
 type AccountImportDialogProps = {
   disabled?: boolean;
@@ -112,6 +123,39 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pendingCpaImport, setPendingCpaImport] = useState<PendingCpaImport | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+
+  // Multi-onboard state (shared between multi_tap and multi_auth)
+  const [multiDraft, setMultiDraft] = useState({ email: "", password: "", code: "" });
+  const [multiRunning, setMultiRunning] = useState(false);
+  const [multiStage, setMultiStage] = useState<string>("");
+  const [multiNeedCode, setMultiNeedCode] = useState(false);
+  const [multiResults, setMultiResults] = useState<Record<string, any>>({});
+  const [csCfg, setCsCfg] = useState<{ url: string; apiKey: string }>({
+    url: "http://172.16.10.38:8010",
+    apiKey: "AnhNhi@0610",
+  });
+  const multiPollRef = useRef<number | null>(null);
+
+  // Pick up the captcha-solver URL + API key from providers.flow (the
+  // existing onboard cards already store them there). Falls back to
+  // the deployment default if Settings hasn't been initialized yet.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const data = await request.get("/api/settings");
+        const flow = ((data.data as any)?.config?.providers || {}).flow || {};
+        if (flow.captcha_solver_url || flow.captcha_solver_api_key) {
+          setCsCfg({
+            url: flow.captcha_solver_url || "http://172.16.10.38:8010",
+            apiKey: flow.captcha_solver_api_key || "AnhNhi@0610",
+          });
+        }
+      } catch {/* keep defaults */}
+    })();
+    return () => {
+      if (multiPollRef.current) window.clearInterval(multiPollRef.current);
+    };
+  }, []);
 
   const txtInputRef = useRef<HTMLInputElement | null>(null);
   const cpaInputRef = useRef<HTMLInputElement | null>(null);
@@ -543,6 +587,237 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
       );
     }
 
+    if (method === "multi_tap" || method === "multi_auth") {
+      const preferMethod: "tap" | "auth" = method === "multi_auth" ? "auth" : "tap";
+      const isAuth = preferMethod === "auth";
+      const profileFor = (email: string) => {
+        const local = (email.split("@")[0] || "default").replace(/[^a-z0-9-]/gi, "-");
+        return `google-${local}`;
+      };
+      const stopMultiPoll = () => {
+        if (multiPollRef.current) {
+          window.clearInterval(multiPollRef.current);
+          multiPollRef.current = null;
+        }
+      };
+      const startMultiOnboard = async () => {
+        if (!multiDraft.email.trim() || !multiDraft.password) {
+          toast.error("Cần email + mật khẩu Google");
+          return;
+        }
+        const profile = profileFor(multiDraft.email);
+        stopMultiPoll();
+        setMultiRunning(true);
+        setMultiStage("starting");
+        setMultiResults({});
+        setMultiNeedCode(false);
+        try {
+          const res = await fetch(`${csCfg.url}/v1/multi-onboard`, {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${csCfg.apiKey}`, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              profile,
+              email: multiDraft.email.trim(),
+              password: multiDraft.password,
+              prefer_method: preferMethod,
+              services: ["gemini_web", "flow", "chatgpt"],
+            }),
+          });
+          if (!res.ok) throw new Error(`multi-onboard HTTP ${res.status}`);
+        } catch (e: any) {
+          toast.error(`Onboard error: ${e?.message || e}`);
+          setMultiRunning(false);
+          return;
+        }
+        // Poll the multi-onboard status. When the embedded Google session
+        // reports state=need_code, light the code input. When stage=done,
+        // collect tokens and push them into the chatgpt2api accounts pool.
+        const handleDone = async (state: any) => {
+          stopMultiPoll();
+          const results = state.results || {};
+          setMultiResults(results);
+          const chatgptToken = results.chatgpt?.token;
+          let added = 0;
+          if (chatgptToken) {
+            try {
+              await request.post("/api/accounts", { tokens: [chatgptToken] });
+              added += 1;
+            } catch (e) {
+              // best-effort
+            }
+          }
+          // Update gemini_web + chatgpt_web + flow with this profile so
+          // it appears in the Settings list.
+          try {
+            const cur = (await request.get("/api/settings")).data as any;
+            const providers = (cur?.config?.providers || {}) as Record<string, any>;
+            const ensureProfile = (key: string) => {
+              const cfg = providers[key] || {};
+              const accounts = Array.isArray(cfg.accounts) ? cfg.accounts.slice() : [];
+              if (!accounts.some((a: any) => a?.profile === profile)) {
+                accounts.push({ profile, label: multiDraft.email });
+              }
+              providers[key] = { ...cfg, enabled: true, accounts };
+            };
+            if (results.gemini_web?.state === "success") ensureProfile("gemini_web");
+            if (results.flow?.state === "success") ensureProfile("flow");
+            if (results.chatgpt?.state === "success") ensureProfile("chatgpt_web");
+            await request.post("/api/settings", { providers });
+          } catch (e) {
+            console.error("merge providers config failed", e);
+          }
+          toast.success(`Multi onboard xong — ChatGPT pool +${added}, các service đã ghi vào Settings`);
+          setMultiRunning(false);
+          setMultiDraft({ email: "", password: "", code: "" });
+          setOpen(false);
+          resetState();
+          onImported([]);
+        };
+        multiPollRef.current = window.setInterval(async () => {
+          try {
+            const r = await fetch(
+              `${csCfg.url}/v1/multi-onboard/${encodeURIComponent(profile)}/status`,
+              { headers: { "Authorization": `Bearer ${csCfg.apiKey}` } },
+            );
+            if (!r.ok) return;
+            const data = await r.json();
+            setMultiStage(data.stage || "");
+            const gState = data.google?.state || "";
+            if (isAuth && gState === "need_code") setMultiNeedCode(true);
+            else if (gState !== "need_code") setMultiNeedCode(false);
+            if (data.stage === "done") void handleDone(data);
+            if (data.stage === "failed") {
+              stopMultiPoll();
+              setMultiRunning(false);
+              toast.error(`Multi onboard fail: ${data.error || ""}`);
+            }
+          } catch {/* ignore poll errors */}
+        }, 1500) as unknown as number;
+      };
+      const submitCode = async () => {
+        if (multiDraft.code.length < 4) return;
+        const profile = profileFor(multiDraft.email);
+        try {
+          await fetch(
+            `${csCfg.url}/v1/session/${encodeURIComponent(profile)}/auto-login-2fa-code`,
+            {
+              method: "POST",
+              headers: { "Authorization": `Bearer ${csCfg.apiKey}`, "Content-Type": "application/json" },
+              body: JSON.stringify({ code: multiDraft.code }),
+            },
+          );
+          setMultiNeedCode(false);
+          setMultiDraft({ ...multiDraft, code: "" });
+        } catch (e: any) {
+          toast.error(`Submit code fail: ${e?.message || e}`);
+        }
+      };
+      return (
+        <div className="space-y-4">
+          <button type="button" onClick={() => { stopMultiPoll(); setMethod("menu"); }}
+            className="inline-flex items-center gap-1 text-sm text-stone-500 transition hover:text-stone-800">
+            <ArrowLeft className="size-4" /> Quay lại
+          </button>
+
+          <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 text-sm text-stone-600">
+            <p className="mb-1 font-medium text-stone-900">
+              {isAuth
+                ? "1-click đăng nhập Google + onboard ChatGPT/Gemini Web/Flow. Xác thực 2FA bằng mã 6 số từ Google Authenticator."
+                : "1-click đăng nhập Google + onboard ChatGPT/Gemini Web/Flow. Xác thực 2FA bằng cách bấm 'Có' trên điện thoại đã đăng nhập sẵn."}
+            </p>
+            <p className="text-xs text-stone-500">
+              Profile sẽ tạo dưới tên <code>google-&lt;localpart-of-email&gt;</code>.
+              Sau khi xong: ChatGPT JWT → pool, Gemini Web + ChatGPT Web + Flow → Settings.
+            </p>
+          </div>
+
+          <div className="grid gap-3">
+            <Input
+              type="email"
+              placeholder="email Google"
+              value={multiDraft.email}
+              onChange={(e) => setMultiDraft({ ...multiDraft, email: e.target.value })}
+              disabled={multiRunning}
+            />
+            <Input
+              type="password"
+              placeholder="mật khẩu Google"
+              value={multiDraft.password}
+              onChange={(e) => setMultiDraft({ ...multiDraft, password: e.target.value })}
+              disabled={multiRunning}
+            />
+            {isAuth && (
+              <div className={cn(
+                "rounded-xl border-2 p-3 transition",
+                multiNeedCode
+                  ? "border-amber-400 bg-amber-50 shadow-[0_0_0_4px_rgba(251,191,36,0.2)] animate-pulse"
+                  : "border-stone-200 bg-white",
+              )}>
+                <div className="mb-2 text-xs font-semibold text-stone-700">
+                  {multiNeedCode
+                    ? "⚡ Hệ thống đang cần mã Authenticator — nhập ngay (mã đổi mỗi 30s)"
+                    : "Mã Google Authenticator (sẽ sáng đèn khi cần)"}
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    inputMode="numeric"
+                    maxLength={8}
+                    placeholder="123456"
+                    value={multiDraft.code}
+                    onChange={(e) => setMultiDraft({ ...multiDraft, code: e.target.value.replace(/[^0-9]/g, "") })}
+                    disabled={!multiNeedCode}
+                    className="font-mono tracking-widest"
+                  />
+                  <Button
+                    onClick={submitCode}
+                    disabled={!multiNeedCode || multiDraft.code.length < 4}
+                    className="bg-stone-900 text-white hover:bg-stone-800"
+                  >
+                    Gửi mã
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {multiRunning && (
+            <div className="rounded-xl bg-stone-100 p-3 text-sm text-stone-700">
+              <LoaderCircle className="mr-2 inline size-4 animate-spin" />
+              Đang chạy — stage: <span className="font-mono">{multiStage}</span>
+              {Object.keys(multiResults).length > 0 && (
+                <ul className="mt-2 list-disc pl-5 text-xs">
+                  {Object.entries(multiResults).map(([svc, r]: [string, any]) => (
+                    <li key={svc}>
+                      {svc}: {r?.state || "?"}
+                      {r?.error ? ` — ${r.error}` : ""}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => { stopMultiPoll(); setMethod("menu"); }}
+              disabled={multiRunning}
+            >
+              Đóng
+            </Button>
+            <Button
+              onClick={startMultiOnboard}
+              disabled={multiRunning || !multiDraft.email || !multiDraft.password}
+              className="bg-stone-900 text-white hover:bg-stone-800"
+            >
+              {multiRunning ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : null}
+              {isAuth ? "Bắt đầu (Auth)" : "Bắt đầu (thiết bị)"}
+            </Button>
+          </div>
+        </div>
+      );
+    }
+
     if (method === "antigravity_flow") {
       return (
         <div className="space-y-4">
@@ -647,6 +922,18 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
           description="Đăng nhập bằng tài khoản Google để lấy token Antigravity (hỗ trợ Docker/Server)."
           icon={KeyRound}
           onClick={() => setMethod("antigravity_flow")}
+        />
+        <MethodCard
+          title="Multi qua thiết bị"
+          description="1-click Google login + onboard ChatGPT + Gemini Web + Flow. Xác thực 2FA bằng cách bấm 'Có' trên điện thoại đã đăng nhập."
+          icon={KeyRound}
+          onClick={() => setMethod("multi_tap")}
+        />
+        <MethodCard
+          title="Multi qua Auth"
+          description="Tương tự nhưng dùng mã 6 số từ Google Authenticator. Khi cần mã, ô nhập sẽ sáng đèn."
+          icon={KeyRound}
+          onClick={() => setMethod("multi_auth")}
         />
         <MethodCard
           title="Lấy token tạo ảnh"
