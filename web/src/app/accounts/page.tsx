@@ -612,6 +612,40 @@ function AccountsPageContent() {
     setSelectedIds((prev) => prev.filter((id) => !currentRows.some((row) => row.access_token === id)));
   };
 
+  // Edit/toggle/delete a profile-style account row (flow, gemini_web,
+  // chatgpt_web). Mirrors the ChatGPT pool's per-row actions: each row
+  // can be removed entirely or flipped enabled/disabled in the rotation.
+  const mutateProviderAccounts = async (
+    providerKey: "flow" | "gemini_web" | "chatgpt_web",
+    profile: string,
+    op: "delete" | "toggle",
+  ) => {
+    try {
+      const cur = (await request.get("/api/settings")).data as any;
+      const providers = { ...((cur?.config?.providers) || {}) };
+      const cfg = { ...((providers[providerKey] as any) || {}) };
+      const accounts = Array.isArray(cfg.accounts) ? cfg.accounts.slice() : [];
+      const idx = accounts.findIndex((a: any) => a?.profile === profile);
+      if (idx < 0) {
+        toast.error(`Không tìm thấy profile ${profile}`);
+        return;
+      }
+      if (op === "delete") {
+        accounts.splice(idx, 1);
+      } else {
+        const cur = accounts[idx] || {};
+        accounts[idx] = { ...cur, enabled: cur.enabled === false };
+      }
+      cfg.accounts = accounts;
+      providers[providerKey] = cfg;
+      await request.post("/api/settings", { providers });
+      toast.success(op === "delete" ? "Đã xóa tài khoản" : "Đã đổi trạng thái");
+      void fetchProviderTree();
+    } catch (e: any) {
+      toast.error(e?.message || "Thao tác thất bại");
+    }
+  };
+
   return (
     <>
       {/* ── Header: multi-row layout ── */}
@@ -1131,7 +1165,12 @@ function AccountsPageContent() {
                             >
                               #{flow.ordinal}
                             </span>
-                            <div className="size-8 shrink-0 rounded-full flex items-center justify-center bg-gradient-to-br from-emerald-500 to-teal-600">
+                            <div className={cn(
+                              "size-8 shrink-0 rounded-full flex items-center justify-center",
+                              flow.enabled === false
+                                ? "bg-slate-300"
+                                : "bg-gradient-to-br from-emerald-500 to-teal-600"
+                            )}>
                               <span className="text-[10px] font-bold text-white">FL</span>
                             </div>
                             <div className="flex-1 min-w-0">
@@ -1140,6 +1179,11 @@ function AccountsPageContent() {
                                 <Badge variant="secondary" className="rounded text-[10px] px-1 py-0 bg-emerald-50 text-emerald-700 border border-emerald-200">
                                   Flow
                                 </Badge>
+                                {flow.enabled === false && (
+                                  <Badge variant="secondary" className="rounded text-[10px] px-1 py-0 bg-slate-100 text-slate-500 border border-slate-200">
+                                    disabled
+                                  </Badge>
+                                )}
                               </div>
                               <div className="flex items-center gap-2 mt-0.5">
                                 <code className="text-[10px] text-slate-400">profile: {flow.profile}</code>
@@ -1147,9 +1191,96 @@ function AccountsPageContent() {
                                 <code className="text-[10px] text-slate-400">project: {flow.project_preview}</code>
                               </div>
                             </div>
+                            <div className="flex items-center gap-1 text-slate-400" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                className="rounded p-0.5 hover:bg-amber-50 hover:text-amber-600"
+                                onClick={() => void mutateProviderAccounts("flow", flow.profile, "toggle")}
+                                title={flow.enabled === false ? "Kích hoạt" : "Vô hiệu hóa"}
+                              >
+                                {flow.enabled === false ? <Power className="size-3" /> : <PowerOff className="size-3" />}
+                              </button>
+                              <button
+                                className="rounded p-0.5 hover:bg-rose-50 hover:text-rose-500"
+                                onClick={() => void mutateProviderAccounts("flow", flow.profile, "delete")}
+                                title="Xóa"
+                              >
+                                <Trash2 className="size-3" />
+                              </button>
+                            </div>
                           </div>
                         </div>
                       ))}
+
+                      {/* Gemini Web / ChatGPT Web profile rows — same shape as
+                          flow rows. Each row maps 1:1 to a `providers.<key>.accounts[]`
+                          entry, with toggle/delete actions that mutate the config. */}
+                      {(provider.type === "gemini_web" || provider.type === "chatgpt_web") && provider.instances?.map((inst: any) => {
+                        const providerKey = provider.type as "gemini_web" | "chatgpt_web";
+                        const tagLabel = providerKey === "gemini_web" ? "Gemini Web" : "ChatGPT Web";
+                        const initials = providerKey === "gemini_web" ? "GM" : "CG";
+                        return (
+                        <div key={`${providerKey}:${inst.profile}`}>
+                          <div className="flex items-center gap-3 px-5 py-3 hover:bg-slate-50/60 transition-colors">
+                            <span
+                              className={cn(
+                                "shrink-0 inline-flex items-center justify-center min-w-[28px] h-5 px-1.5 rounded-md text-[11px] font-mono font-bold tabular-nums",
+                                inst.is_primary
+                                  ? "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-300"
+                                  : "bg-slate-100 text-slate-500"
+                              )}
+                              title={inst.is_primary ? `${tagLabel} ưu tiên #1` : `Vị trí #${inst.ordinal}`}
+                            >
+                              #{inst.ordinal}
+                            </span>
+                            <div className={cn(
+                              "size-8 shrink-0 rounded-full flex items-center justify-center",
+                              inst.enabled === false
+                                ? "bg-slate-300"
+                                : "bg-gradient-to-br from-indigo-500 to-blue-600"
+                            )}>
+                              <span className="text-[10px] font-bold text-white">{initials}</span>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[13px] font-semibold text-slate-800 truncate">{inst.label || inst.profile}</span>
+                                <Badge variant="secondary" className="rounded text-[10px] px-1 py-0 bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                  {tagLabel}
+                                </Badge>
+                                {inst.plan && (
+                                  <Badge variant="secondary" className="rounded text-[10px] px-1 py-0 bg-amber-50 text-amber-700 border border-amber-200">
+                                    {inst.plan}
+                                  </Badge>
+                                )}
+                                {inst.enabled === false && (
+                                  <Badge variant="secondary" className="rounded text-[10px] px-1 py-0 bg-slate-100 text-slate-500 border border-slate-200">
+                                    disabled
+                                  </Badge>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <code className="text-[10px] text-slate-400">profile: {inst.profile}</code>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1 text-slate-400" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                className="rounded p-0.5 hover:bg-amber-50 hover:text-amber-600"
+                                onClick={() => void mutateProviderAccounts(providerKey, inst.profile, "toggle")}
+                                title={inst.enabled === false ? "Kích hoạt" : "Vô hiệu hóa"}
+                              >
+                                {inst.enabled === false ? <Power className="size-3" /> : <PowerOff className="size-3" />}
+                              </button>
+                              <button
+                                className="rounded p-0.5 hover:bg-rose-50 hover:text-rose-500"
+                                onClick={() => void mutateProviderAccounts(providerKey, inst.profile, "delete")}
+                                title="Xóa"
+                              >
+                                <Trash2 className="size-3" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                        );
+                      })}
 
                       {/* Providers / Custom APIs: rows like ChatGPT accounts */}
                       {(provider.type === "providers" || provider.type === "custom") && provider.instances?.map((inst: any) => {
