@@ -118,9 +118,18 @@ async def refresh_jwt(profile: str, timeout: int = 30) -> dict:
         if not scraped or not scraped.get("accessToken"):
             raise RuntimeError("Profile not logged in or session expired")
         user_obj = scraped.get("user") or {}
-        # Plan tier — chatgpt.com's `/api/auth/session` carries this directly
-        # on the root object; older endpoints embedded it under `user`.
-        plan = scraped.get("plan") or user_obj.get("subscription_plan") or user_obj.get("plan")
+        account_obj = scraped.get("account") or {}
+        # Plan tier — chatgpt.com's `/api/auth/session` currently puts the
+        # active subscription at `account.planType`. Older schemas used
+        # root `plan` or `user.subscription_plan`; check all three so we
+        # don't have to chase another schema change next year.
+        plan = (
+            account_obj.get("planType")
+            or account_obj.get("plan")
+            or scraped.get("plan")
+            or user_obj.get("subscription_plan")
+            or user_obj.get("plan")
+        )
         return {
             "access_token": scraped["accessToken"],
             "expires": str(scraped.get("expires") or ""),
