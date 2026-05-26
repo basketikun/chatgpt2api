@@ -114,6 +114,101 @@ async def _pick_authenticator_method(page) -> bool:
     return False
 
 
+# Phrases that mark a Google OAuth consent / account-confirm page.
+# Match against the body text (lowercased). Any one of these means we
+# should look for an affirmative button to click.
+_CONSENT_SCREEN_HINTS = (
+    "continue as", "tiếp tục với tư cách", "tiep tuc voi tu cach",
+    "wants access", "muốn truy cập", "muon truy cap",
+    "to continue to", "để tiếp tục với", "de tiep tuc voi",
+    "by continuing, google will share", "khi tiếp tục, google sẽ chia sẻ",
+    "review the permissions", "xem lại quyền", "xem lai quyen",
+    "google sẽ chia sẻ", "google se chia se",
+    "allow this app", "cho phép ứng dụng này", "cho phep ung dung nay",
+    "confirm your identity", "xác nhận danh tính", "xac nhan danh tinh",
+    "verify it's you", "xác minh là bạn", "xac minh la ban",
+)
+
+# Affirmative button text — matched against innerText / aria-label
+# (lowercased, trimmed). Includes both EN and VI variants. We match by
+# equality OR startswith because Google often nests extra spans inside
+# the button (e.g. "Continue\n>").
+_CONSENT_AFFIRMATIVE_VOCAB = (
+    "continue",
+    "tiếp tục", "tiep tuc",
+    "allow", "allow access",
+    "cho phép", "cho phep",
+    "confirm", "xác nhận", "xac nhan",
+    "i agree", "đồng ý", "dong y",
+    "next", "tiếp theo", "tiep theo",
+    "yes, continue", "có, tiếp tục",
+    "accept", "chấp nhận", "chap nhan",
+)
+
+
+async def click_google_oauth_consent(page, timeout: float = 8.0) -> bool:
+    """Auto-click Google's OAuth consent / "Continue as <email>" / "Allow"
+    pages that appear after a service (ChatGPT, Gemini, ...) redirects to
+    accounts.google.com and the user has cookies for the Google account
+    but the target app needs explicit consent.
+
+    Safe to call multiple times — it no-ops unless body text contains
+    one of `_CONSENT_SCREEN_HINTS`, so it won't fire on the email or
+    password steps (which have their own dedicated handlers).
+
+    Returns True if a click was performed.
+    """
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            url = page.url
+        except Exception:
+            url = ""
+        if "accounts.google.com" not in url:
+            return False
+        try:
+            body_text = (await page.locator("body").inner_text(timeout=800)).lower()
+        except Exception:
+            await asyncio.sleep(0.5)
+            continue
+        if not any(h in body_text for h in _CONSENT_SCREEN_HINTS):
+            await asyncio.sleep(0.7)
+            continue
+        try:
+            clicked_label = await page.evaluate(
+                """
+                (vocab) => {
+                    const sel = 'button, a, div[role="button"], input[type="submit"]';
+                    const btns = Array.from(document.querySelectorAll(sel));
+                    for (const b of btns) {
+                        if (!b.offsetParent) continue;
+                        let text = (b.innerText || b.getAttribute('aria-label') || b.value || '').trim().toLowerCase();
+                        if (!text) continue;
+                        // Strip surrounding whitespace and trailing punctuation.
+                        text = text.replace(/\\s+/g, ' ');
+                        for (const v of vocab) {
+                            if (text === v || text.startsWith(v + ' ') || text.startsWith(v + ',') || text.startsWith(v + '.')) {
+                                b.click();
+                                return text;
+                            }
+                        }
+                    }
+                    return null;
+                }
+                """,
+                list(_CONSENT_AFFIRMATIVE_VOCAB),
+            )
+            if clicked_label:
+                logger.info("auto_login: clicked OAuth consent button text=%r url=%s",
+                            clicked_label[:60], url)
+                await asyncio.sleep(1.5)
+                return True
+        except Exception as exc:
+            logger.debug("auto_login: consent click eval failed: %s", str(exc)[:120])
+        await asyncio.sleep(0.7)
+    return False
+
+
 @dataclass
 class LoginSession:
     profile: str

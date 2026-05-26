@@ -23,6 +23,7 @@ from typing import Optional
 from .auto_login import (
     LoginSession,
     _already_logged_in,
+    click_google_oauth_consent,
     do_google_login_steps,
 )
 from .browser_pool import pool
@@ -186,16 +187,44 @@ async def _run(session: GeminiWebLoginSession, password: str) -> None:
         except Exception:
             on_google = False
 
-        if on_google:
+        # Pre-consent: when Google has a session cookie for the profile,
+        # it skips the email/password form and shows a one-button confirm
+        # page. Click it first so do_google_login_steps doesn't fail on
+        # the missing email input.
+        try:
+            pre_consent = await click_google_oauth_consent(page, timeout=6.0)
+            if pre_consent:
+                session.message = "Đã bấm OAuth consent..."
+                await asyncio.sleep(2.0)
+        except Exception:
+            pre_consent = False
+
+        if on_google and not pre_consent:
             ok = await do_google_login_steps(session, page, ctx, password)
             if not ok:
                 return
+
+            # Post-login consent — appears after fresh email/password too.
+            try:
+                if await click_google_oauth_consent(page, timeout=8.0):
+                    session.message = "Đã bấm OAuth consent..."
+                    await asyncio.sleep(2.0)
+            except Exception as exc:
+                logger.debug("gemini_login: consent click skipped: %s", str(exc)[:120])
 
             # After Google login, wait for redirect back to gemini.google.com.
             try:
                 await page.wait_for_url("**/gemini.google.com/**", timeout=30_000)
             except Exception:
                 logger.warning("gemini_login: no return to gemini (url=%s)",
+                                getattr(page, "url", "?"))
+            await asyncio.sleep(3.0)
+        elif pre_consent:
+            # Consent path: wait for redirect back to gemini.google.com.
+            try:
+                await page.wait_for_url("**/gemini.google.com/**", timeout=30_000)
+            except Exception:
+                logger.warning("gemini_login: consent path no return (url=%s)",
                                 getattr(page, "url", "?"))
             await asyncio.sleep(3.0)
 

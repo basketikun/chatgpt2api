@@ -33,6 +33,7 @@ from .auto_login import (
     LoginSession,
     _already_logged_in,
     _safe_click,
+    click_google_oauth_consent,
     do_google_login_steps,
     submit_2fa_code as _submit_2fa_code,
 )
@@ -320,15 +321,35 @@ async def _run(session: ChatGPTLoginSession, password: str) -> None:
         except Exception:
             pass
 
+        # OAuth consent / "Continue as <email>" — when Google already has
+        # a session cookie for this profile, it skips the email/password
+        # form and goes straight to a one-button confirm page. Try this
+        # FIRST so we don't fail the email step looking for an input that
+        # isn't there.
+        try:
+            consent_clicked = await click_google_oauth_consent(page, timeout=6.0)
+            if consent_clicked:
+                session.message = "Đã bấm OAuth consent..."
+                await asyncio.sleep(2.0)
+        except Exception as exc:
+            consent_clicked = False
+            logger.debug("chatgpt_login: pre-consent skipped: %s", str(exc)[:120])
+
         # If still on Google's email step (no existing session), drive it.
         try:
             on_google = "accounts.google.com" in page.url
         except Exception:
             on_google = False
-        if on_google:
+        if on_google and not consent_clicked:
             ok = await do_google_login_steps(session, page, ctx, password)
             if not ok:
                 return  # state/error already set
+
+        # Post-login consent — appears after fresh email/password too.
+        try:
+            await click_google_oauth_consent(page, timeout=8.0)
+        except Exception as exc:
+            logger.debug("chatgpt_login: post-consent skipped: %s", str(exc)[:120])
 
         # Wait for redirect back to chatgpt.com.
         try:
