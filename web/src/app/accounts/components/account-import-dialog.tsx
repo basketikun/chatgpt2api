@@ -674,6 +674,8 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
           onImported([]);
         };
         multiPollRef.current = window.setInterval(async () => {
+          // Guard: another in-flight poll may have already handled terminal state.
+          if (!multiPollRef.current) return;
           try {
             const r = await fetch(
               `${csCfg.url}/v1/multi-onboard/${encodeURIComponent(profile)}/status`,
@@ -681,12 +683,16 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
             );
             if (!r.ok) return;
             const data = await r.json();
+            // Re-check after await — stopMultiPoll may have nulled the ref.
+            if (!multiPollRef.current) return;
             setMultiStage(data.stage || "");
             const gState = data.google?.state || "";
             if (isAuth && gState === "need_code") setMultiNeedCode(true);
             else if (gState !== "need_code") setMultiNeedCode(false);
-            if (data.stage === "done") void handleDone(data);
-            if (data.stage === "failed") {
+            if (data.stage === "done") {
+              stopMultiPoll();
+              void handleDone(data);
+            } else if (data.stage === "failed") {
               stopMultiPoll();
               setMultiRunning(false);
               toast.error(`Multi onboard fail: ${data.error || ""}`);
