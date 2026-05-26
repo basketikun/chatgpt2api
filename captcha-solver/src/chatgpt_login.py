@@ -176,14 +176,22 @@ async def start_chatgpt_login(profile: str, email: str, password: str) -> ChatGP
 
 
 async def _click_one(page, selectors, *, timeout: int = 5000) -> bool:
-    """Click the first matching selector. Don't pre-check count() — let
-    Playwright's wait-for-actionable timeout handle the not-yet-mounted
-    case so we don't bail early on slow page loads."""
+    """Click the first matching selector. Tries Playwright click, falls back to JS click."""
     for sel in selectors:
         try:
-            await page.locator(sel).first.click(timeout=timeout)
-            logger.info("chatgpt_login: clicked selector=%s", sel)
-            return True
+            loc = page.locator(sel).first
+            # Wait for it to exist in DOM first (avoid failing immediately)
+            await loc.wait_for(state="attached", timeout=timeout)
+            try:
+                await loc.click(timeout=2000)
+                logger.info("chatgpt_login: clicked selector=%s", sel)
+                return True
+            except Exception as exc:
+                logger.debug("chatgpt_login: Playwright click failed %s: %s", sel, str(exc)[:80])
+                # Fallback to JS click for obstructed or un-actionable elements
+                await loc.evaluate("el => el.click()")
+                logger.info("chatgpt_login: JS clicked selector=%s", sel)
+                return True
         except Exception as exc:
             logger.debug("chatgpt_login: selector miss %s: %s", sel, str(exc)[:80])
             continue
@@ -236,16 +244,9 @@ async def _run(session: ChatGPTLoginSession, password: str) -> None:
         session.state = "running"
         session.message = "Mở chatgpt.com..."
         await page.goto(_CHATGPT_HOME, wait_until="domcontentloaded", timeout=30_000)
-        await asyncio.sleep(2.0)  # let any client-side redirect settle
+        await asyncio.sleep(4.0)  # let any client-side redirect settle
 
         # ── Cloudflare challenge wait ──
-        # chatgpt.com puts an interactive Cloudflare challenge in front of
-        # automated clients. The URL stays at .../?__cf_chl_rt_tk=... while
-        # the JS verifier runs, then redirects to the clean URL once it
-        # passes. Manual click via noVNC works; locator.click() during the
-        # challenge does not because the DOM hasn't rendered the real page
-        # yet. Wait up to 60s for the cf_chl_rt_tk parameter to drop before
-        # searching for the Log in button.
         session.message = "Chờ Cloudflare verify..."
         cf_deadline = time.time() + 60
         while time.time() < cf_deadline:
@@ -273,24 +274,23 @@ async def _run(session: ChatGPTLoginSession, password: str) -> None:
 
         # Not authenticated — click "Log in" then "Continue with Google".
         session.message = "Click 'Đăng nhập'..."
-        if not await _click_one(page, _LOGIN_BUTTON_SELECTORS, timeout=8000):
-            logger.info("chatgpt_login: no Log in button — maybe already on picker")
-        else:
-            # Login button click triggers redirect to auth.openai.com.
-            # Wait for the redirect to complete before searching for Google.
-            try:
-                await page.wait_for_url("**/auth.openai.com/**", timeout=15_000)
-                logger.info("chatgpt_login: redirected to %s", page.url)
-            except Exception:
-                logger.info("chatgpt_login: no auth.openai.com redirect (url=%s)",
-                            page.url)
+        
+        # We might need to try clicking Log in multiple times if React is hydrating
+        for _ in range(3):
+            if await _click_one(page, _LOGIN_BUTTON_SELECTORS, timeout=5000):
+                # Check if Google button appears
+                try:
+                    google_loc = page.locator('button[data-provider="google"], button:has-text("Continue with Google")').first
+                    await google_loc.wait_for(state="visible", timeout=8000)
+                    logger.info("chatgpt_login: Google button became visible!")
+                    break
+                except Exception:
+                    logger.info("chatgpt_login: Google button not visible yet, clicking Log in again...")
             await asyncio.sleep(2.0)
-
-        # The Auth0 page may take a few more seconds to render the provider
-        # picker. _click_one's per-selector 12s timeout gives us up to
-        # 12*N seconds of total wait for the Google button to appear.
+        else:
+            logger.info("chatgpt_login: Failed to open login modal after multiple tries.")
         session.message = "Click 'Continue with Google'..."
-        if not await _click_one(page, _CONTINUE_WITH_GOOGLE_SELECTORS, timeout=12_000):
+        if not await _click_one(page, _CONTINUE_WITH_GOOGLE_SELECTORS, timeout=8000):
             session.state = "failed"
             session.error = (
                 f"Không tìm thấy nút 'Continue with Google' (cur_url={page.url})"
