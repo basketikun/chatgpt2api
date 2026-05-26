@@ -201,7 +201,7 @@ async def _wait_for_response_complete(page, timeout: int = 90) -> str:
     last_text = ""
     stable_count = 0
     while time.time() < deadline:
-        await asyncio.sleep(1.0)
+        await asyncio.sleep(0.4)
         text = await page.evaluate(
             """() => {
                 const candidates = [
@@ -230,7 +230,7 @@ async def _wait_for_response_complete(page, timeout: int = 90) -> str:
             continue
         if text and text == last_text:
             stable_count += 1
-            if stable_count >= 2:
+            if stable_count >= 3:
                 return text
         else:
             stable_count = 0
