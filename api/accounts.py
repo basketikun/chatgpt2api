@@ -267,6 +267,7 @@ def create_router() -> APIRouter:
                     "profile": item["profile"],
                     "label": item["label"],
                     "plan": item.get("plan"),
+                    "enabled": item.get("enabled") is not False,
                 })
             return out
 
@@ -321,6 +322,7 @@ def create_router() -> APIRouter:
                     "label": str(acc.get("label") or acc.get("name") or acc.get("profile") or "—"),
                     "project_id": project_id,
                     "project_preview": (project_id[:8] + "..." + project_id[-4:]) if len(project_id) > 12 else project_id,
+                    "enabled": acc.get("enabled") is not False,
                 })
             tree.append({
                 "provider": "Google Labs Flow",
