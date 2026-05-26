@@ -554,7 +554,25 @@ def _execute_mcp_tools_in_response(
     for iteration in range(max_iterations):
         choice = (current_result.get("choices") or [{}])[0]
         msg = choice.get("message") or {}
-        tool_calls = msg.get("tool_calls") or []
+        tool_calls = list(msg.get("tool_calls") or [])
+
+        # ChatGPT web backend returns XML tool calls in text content,
+        # not native function-call objects. Parse them so server-side
+        # tools (GetLiveContext, ha_*) are executed here instead of
+        # being passed through as text to HA pipeline.
+        if not tool_calls:
+            content_text = msg.get("content") or ""
+            xml_calls = _extract_xml_tool_calls_from_text(content_text)
+            if xml_calls:
+                for i, xc in enumerate(xml_calls):
+                    tool_calls.append({
+                        "id": f"xml_{iteration}_{i}",
+                        "type": "function",
+                        "function": {
+                            "name": xc.get("name", ""),
+                            "arguments": json.dumps(xc.get("arguments", {}), ensure_ascii=False),
+                        },
+                    })
 
         if not tool_calls:
             return current_result  # No more tool calls → final answer
@@ -578,10 +596,20 @@ def _execute_mcp_tools_in_response(
         if not mcp_calls:
             return current_result  # Only native HA tools → pass through
 
+        # Strip XML tool-call fence from content so the model doesn't
+        # see duplicate calls when we re-query with native tool_calls.
+        assistant_content = msg.get("content") or ""
+        if xml_calls:
+            import re
+            assistant_content = re.sub(
+                r"```xml\s*<tool_call[^`]*```", "", assistant_content,
+                flags=re.DOTALL,
+            ).strip()
+
         # Append assistant message with all server-side tool calls
         current_messages.append({
             "role": "assistant",
-            "content": msg.get("content") or "",
+            "content": assistant_content,
             "tool_calls": mcp_calls,
         })
 
@@ -616,7 +644,7 @@ def _execute_mcp_tools_in_response(
                         mcp_result = f"Tool '{tool_name}' returned no result."
                     current_messages.append({
                         "role": "tool", "tool_call_id": tool_id,
-                        "name": tool_name, "content": mcp_result[:3000],
+                        "name": tool_name, "content": mcp_result,
                     })
         else:
             # Single tool call — sequential is fine
@@ -634,7 +662,7 @@ def _execute_mcp_tools_in_response(
                     mcp_result = f"Tool '{tool_name}' returned no result."
                 current_messages.append({
                     "role": "tool", "tool_call_id": tool_id,
-                    "name": tool_name, "content": mcp_result[:3000],
+                    "name": tool_name, "content": mcp_result,
                 })
 
         if is_action_only:
