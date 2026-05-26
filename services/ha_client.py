@@ -406,6 +406,14 @@ def get_ha_tools() -> list[dict[str, Any]]:
         {
             "type": "function",
             "function": {
+                "name": "GetLiveContext",
+                "description": "Lấy TOÀN BỘ trạng thái hiện tại của tất cả thiết bị trong nhà (đèn, cảm biến, công tắc, khóa...). GỌI ĐẦU TIÊN khi user hỏi 'chi tiết', 'toàn bộ', 'tổng quan', 'trạng thái hiện tại'. Không cần tham số — trả về danh sách đầy đủ tên + entity_id + state + unit.",
+                "parameters": {"type": "object", "properties": {}, "required": []},
+            },
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "ha_get_state",
                 "description": "Lấy TRẠNG THÁI HIỆN TẠI của 1 thiết bị (đang bật/tắt, nhiệt độ, độ ẩm...). CHỈ DÙNG khi user hỏi về trạng thái cụ thể (ví dụ: 'đèn bếp đang bật không', 'nhiệt độ phòng ngủ'). KHÔNG dùng cho câu hỏi liệt kê.",
                 "parameters": {
@@ -452,7 +460,23 @@ def get_ha_tools() -> list[dict[str, Any]]:
 
 def execute_ha_tool(tool_name: str, arguments: dict[str, Any]) -> str | None:
     """Execute an HA tool and return result text."""
-    if tool_name == "ha_get_state":
+    if tool_name == "GetLiveContext":
+        states = get_states()
+        if not states:
+            return "Không lấy được dữ liệu thiết bị từ HA"
+        lines = []
+        for s in states:
+            eid = s.get("entity_id", "")
+            state = s.get("state", "unknown")
+            attrs = s.get("attributes", {})
+            friendly = attrs.get("friendly_name", eid)
+            unit = attrs.get("unit_of_measurement", "")
+            line = f"{friendly} ({eid}): {state}"
+            if unit:
+                line += f" {unit}"
+            lines.append(line)
+        return "\n".join(lines)
+    elif tool_name == "ha_get_state":
         eid = arguments.get("entity_id", "")
         state = get_state(eid)
         if state is None:

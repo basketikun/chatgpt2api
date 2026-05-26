@@ -1993,9 +1993,11 @@ def _inject_mcp_tools(
         if client_is_ha:
             mcp_tools = []
 
-        # When HA context is in the prompt, strip every read-only HA tool so the
-        # LLM answers from context in 1 round instead of 2-3. Keep ha_call_service
-        # / HassTurn* — control still needs a round-trip.
+        # When HA context is in the prompt, strip read-only HA tools so the
+        # LLM answers from context in 1 round. However, when the context was
+        # file-uploaded (entity registry >80KB), the model may not see full
+        # state data inline — keep GetLiveContext so it can fetch live data.
+        # Control tools (ha_call_service, HassTurn*) are always kept.
         if skip_ha_search:
             drop_ha_tool_names = {"ha_search_entities", "ha_get_state"}
             if ha_tools:
@@ -2003,15 +2005,9 @@ def _inject_mcp_tools(
                     t for t in ha_tools
                     if t.get("function", {}).get("name", "") not in drop_ha_tool_names
                 ]
-            # Strip HA-native GetLiveContext from the incoming tools array too
-            # (HA's auto_ai_agent always sends it; without this the LLM still
-            # calls it even though state is in context).
-            if "GetLiveContext" in existing_names:
-                tools = [
-                    t for t in tools
-                    if t.get("function", {}).get("name", "") != "GetLiveContext"
-                ]
-            logger.info({"event": "ha_read_tools_stripped", "reason": "registry_in_context"})
+            # Keep GetLiveContext in tools — model only calls it when
+            # context lacks the data it needs (e.g. after RTK compression).
+            logger.info({"event": "ha_read_tools_stripped", "reason": "registry_in_context", "keep_getlivecontext": True})
 
         all_new_tools = mcp_tools + ha_tools
         if not all_new_tools:
