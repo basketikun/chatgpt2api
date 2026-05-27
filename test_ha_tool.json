@@ -1,0 +1,1 @@
+{"model":"chatgpt/gpt-5-mini","messages":[{"role":"user","content":"chi tiết trạng thái toàn bộ thiết bị trong nhà"}],"tools":[{"type":"function","function":{"name":"GetLiveContext","description":"Get all device states","parameters":{"type":"object","properties":{}}}}],"max_tokens":300}

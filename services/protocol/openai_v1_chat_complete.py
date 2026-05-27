@@ -805,6 +805,20 @@ def _dispatch(route, messages, tools, tool_choice, body):
                 logger.info({"event": "vision_fallback_to_gemini",
                              "reason": "no_active_chatgpt_account"})
                 return _handle_gemini_chat("auto", messages, body.get("stream"), body)
+        # chatgpt.com native backend does NOT support role="tool" messages.
+        # Convert tool results to user messages so re-dispatch after agentic
+        # tool execution doesn't get 400 Bad Request.
+        normalized = []
+        for m in messages:
+            if m.get("role") == "tool":
+                tool_name = m.get("name", "UnknownTool")
+                normalized.append({
+                    "role": "user",
+                    "content": f"[KẾT QUẢ TỪ HỆ THỐNG - TOOL {tool_name}]:\n{m.get('content', '')}",
+                })
+            else:
+                normalized.append(m)
+        messages = normalized
         return _handle_chatgpt_chat(route.model, messages, tools, tool_choice, body.get("stream"), body, route)
     else:
         logger.warning({"event": "unknown_provider", "provider": route.provider, "fallback": "chatgpt"})
