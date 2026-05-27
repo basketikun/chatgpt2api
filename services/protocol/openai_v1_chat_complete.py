@@ -1113,18 +1113,16 @@ def _try_chatgpt_with_token(
             return _stream_chatgpt_addon(backend, messages, model, tools, tool_choice)
         return _chatgpt_addon_completion(model, messages, tools, tool_choice)
 
-    # Docker: wrap stream with XML tool-call parser so GetLiveContext and other
-    # server-side tools are intercepted and executed, not passed through as raw text.
+    # Docker + chatgpt.com free: HA only waits for ONE HTTP response, so we
+    # cannot use an agentic loop (2nd LLM call arrives after HA has closed the
+    # connection). Instead: pre-fetch HA context BEFORE calling the LLM, inject
+    # it as a system message, then call the LLM exactly once.
+    messages = _prefetch_ha_context_if_needed(messages, tools, token)
+
     if stream:
-        raw_stream = stream_text_chat_completion(backend, messages, model, tools, tool_choice)
-        if route is None:
-            # Fallback: build a minimal route for re-dispatch
-            from services.backend_router import BackendRoute
-            route = BackendRoute(provider="chatgpt", model=model)
-        return _wrap_mcp_stream(raw_stream, messages, route, body)
+        return stream_text_chat_completion(backend, messages, model, tools, tool_choice)
     request = ConversationRequest(model=model, messages=messages, tools=tools, tool_choice=tool_choice)
     return completion_response(model, collect_text(backend, request), messages=messages)
-
 
 # Device keywords that should trigger tool call forcing
 _FORCE_TOOL_KEYWORDS = [
@@ -1135,7 +1133,75 @@ _FORCE_TOOL_KEYWORDS = [
     "phòng khách", "phòng ngủ", "phòng học", "phòng bếp",
     "ban công", "nhà tắm", "nhà vệ sinh", "hành lang", "sân",
     "tầng", "cầu thang", "garage", "cổng",
+    "thiết bị", "toàn bộ", "tất cả",
 ]
+
+
+def _prefetch_ha_context_if_needed(
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]] | None,
+    token: str,
+) -> list[dict[str, Any]]:
+    """Pre-fetch HA device context BEFORE calling the LLM (chatgpt free path).
+
+    HA sends a single HTTP request and reads a single streaming response.
+    There is no way to do a 2nd LLM call inside the same connection.
+    So for chatgpt.com free accounts: if the user asks about device state,
+    we proactively call GetLiveContext, inject the result into a system
+    message, then call the LLM once with full context already loaded.
+    """
+    if not tools:
+        return messages
+
+    # Only pre-fetch if GetLiveContext is in the tool list
+    tool_names = {(t.get("function") or {}).get("name", "") for t in tools}
+    if "GetLiveContext" not in tool_names:
+        return messages
+
+    # Only pre-fetch if user query is about device state
+    user_text = ""
+    for m in reversed(messages):
+        if m.get("role") == "user":
+            c = m.get("content", "")
+            user_text = c if isinstance(c, str) else " ".join(
+                str(p.get("text", "")) for p in c if isinstance(p, dict)
+            )
+            break
+
+    if not _has_device_keyword(user_text):
+        return messages
+
+    # Already has tool result injected from a previous turn?
+    for m in messages:
+        if m.get("role") == "user" and "KẾT QUẢ TỪ HỆ THỐNG" in str(m.get("content", "")):
+            return messages
+
+    # Pre-fetch GetLiveContext
+    try:
+        context_result = _execute_mcp_tool("GetLiveContext", {})
+        if not context_result:
+            return messages
+        logger.info({"event": "ha_prefetch_ok", "context_len": len(str(context_result))})
+    except Exception as exc:
+        logger.warning({"event": "ha_prefetch_failed", "error": str(exc)[:100]})
+        return messages
+
+    # Inject as a system message right before the user message
+    injected = []
+    injected_flag = False
+    for m in messages:
+        if m.get("role") == "user" and not injected_flag:
+            injected.append({
+                "role": "system",
+                "content": (
+                    f"[DỮ LIỆU THỜI GIAN THỰC TỪ HOME ASSISTANT]:\n"
+                    f"{context_result}\n\n"
+                    "Hãy dựa vào dữ liệu trên để trả lời câu hỏi của người dùng."
+                ),
+            })
+            injected_flag = True
+        injected.append(m)
+    return injected
 
 
 def _has_device_keyword(text: str) -> bool:
