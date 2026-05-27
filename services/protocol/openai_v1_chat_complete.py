@@ -1186,6 +1186,26 @@ def _prefetch_ha_context_if_needed(
         logger.warning({"event": "ha_prefetch_failed", "error": str(exc)[:100]})
         return messages
 
+    full_text = str(context_result)
+    if len(full_text.encode("utf-8")) > 10_000:
+        import hashlib
+        from services.protocol.conversation import _file_upload_store, _FILE_UPLOAD_MARKER
+        key = hashlib.md5(full_text.encode("utf-8")).hexdigest()[:16]
+        _file_upload_store[key] = full_text
+        msg_content = (
+            f"{_FILE_UPLOAD_MARKER}{key}]\n"
+            f"[DỮ LIỆU THỜI GIAN THỰC TỪ HOME ASSISTANT]: "
+            f"Dữ liệu thiết bị quá dài đã được tự động đính kèm thành file. "
+            f"Hãy đọc file đính kèm để trả lời người dùng.\n"
+            "...[full content uploaded as file]..."
+        )
+    else:
+        msg_content = (
+            f"[DỮ LIỆU THỜI GIAN THỰC TỪ HOME ASSISTANT]:\n"
+            f"{full_text}\n\n"
+            "Hãy dựa vào dữ liệu trên để trả lời câu hỏi của người dùng."
+        )
+
     # Inject as a system message right before the user message
     injected = []
     injected_flag = False
@@ -1193,11 +1213,7 @@ def _prefetch_ha_context_if_needed(
         if m.get("role") == "user" and not injected_flag:
             injected.append({
                 "role": "system",
-                "content": (
-                    f"[DỮ LIỆU THỜI GIAN THỰC TỪ HOME ASSISTANT]:\n"
-                    f"{context_result}\n\n"
-                    "Hãy dựa vào dữ liệu trên để trả lời câu hỏi của người dùng."
-                ),
+                "content": msg_content,
             })
             injected_flag = True
         injected.append(m)
