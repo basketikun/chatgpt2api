@@ -334,11 +334,11 @@ export default function ModelsPage() {
                           .replace("gemini_free/", "")
                           .replace("openrouter/", "");
 
-                        // Position in enabled list (1-based) — shows which order /auto tries.
-                        // Filter out core "auto" placeholders since provider code skips them.
-                        const enabledList = settings.enabled_models[provider] || [];
-                        const triedOrder = enabledList.filter(m => !CORE_MODELS.includes(m));
-                        const orderIdx = enabled ? triedOrder.indexOf(modelId) : -1;
+                        // Position among enabled regular models within THIS provider.
+                        // Compute from regularModels (already scoped to provider) so
+                        // numbering resets per section even if backend data is cross-contaminated.
+                        const enabledRegularModels = regularModels.filter(m => isEnabled(provider, m));
+                        const orderIdx = enabled ? enabledRegularModels.indexOf(modelId) : -1;
                         const orderNum = orderIdx >= 0 ? orderIdx + 1 : null;
 
                         return (
