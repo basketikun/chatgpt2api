@@ -255,6 +255,13 @@ def _build_context(states: list[dict]) -> str:
         "- Khi user yêu cầu điều khiển (bật/tắt/mở/đóng/đặt) → tìm entity trong "
         "registry bằng tên, rồi gọi `ha_call_service` MỘT LẦN với entity_id chính xác.",
         "",
+        "--- HƯỚNG DẪN HÀNH ĐỘNG BẮT BUỘC (SYSTEM OVERRIDE) ---",
+        "Khi người dùng hỏi chung chung về trạng thái nhà (VD: 'trạng thái nhà', 'chi tiết toàn bộ thiết bị'):",
+        "1. KHÔNG ĐƯỢC chỉ trả lời về 1-2 thiết bị.",
+        "2. PHẢI TỔNG HỢP VÀ BÁO CÁO các nhóm thiết bị ĐIỀU KHIỂN ĐƯỢC: Đèn, Quạt, Điều hoà, Cửa, Công tắc, Khóa.",
+        "3. Liệt kê rõ: 'Hiện tại có [X] đèn đang bật: (kể tên)', 'Có [Y] điều hoà đang bật: (kể tên)'.",
+        "4. BỎ QUA hoàn toàn cảm biến (thời tiết, nhiệt độ, độ ẩm, contact) trừ khi được hỏi ĐÍCH DANH.",
+        "",
     ]
 
     for domain in sorted(by_domain.keys()):

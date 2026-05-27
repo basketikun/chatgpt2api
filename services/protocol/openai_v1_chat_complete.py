@@ -1175,6 +1175,10 @@ def _prefetch_ha_context_if_needed(
     for m in messages:
         if m.get("role") == "user" and "KẾT QUẢ TỪ HỆ THỐNG" in str(m.get("content", "")):
             return messages
+        # inject_ha_context() already inserted the registry as a system message —
+        # don't duplicate it (double context overwhelms the LLM).
+        if m.get("role") == "system" and "Device Registry" in str(m.get("content", "")):
+            return messages
 
     # Pre-fetch GetLiveContext
     try:
