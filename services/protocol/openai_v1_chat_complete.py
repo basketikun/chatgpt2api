@@ -2174,7 +2174,15 @@ def _inject_mcp_tools(
         existing_names = {t.get("function", {}).get("name", "") for t in tools}
 
         client_is_ha = any(name.startswith("Hass") or name == "GetLiveContext" for name in existing_names)
-        ha_tools = [] if client_is_ha else get_ha_tools()
+        # HA clients bring their own control tools (HassTurnOn, etc.) but
+        # we keep read-only query tools so the LLM can call GetLiveContext
+        # to fetch live device state, matching how Gemini pipeline works.
+        if client_is_ha:
+            ha_tools = get_ha_tools()
+            _keep_readonly = {"GetLiveContext", "ha_search_entities", "ha_get_state"}
+            ha_tools = [t for t in ha_tools if t.get("function", {}).get("name", "") in _keep_readonly]
+        else:
+            ha_tools = get_ha_tools()
 
         # Only skip MCP for HA-native clients (Hass* tools already in context)
         # For normal chat: include all tools, let the model decide
