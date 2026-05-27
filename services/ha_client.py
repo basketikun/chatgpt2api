@@ -236,14 +236,18 @@ def _build_context(states: list[dict]) -> str:
     `Nhiệt độ phòng học | sensor.nhiet_am_phong_hoc_temperature | 28.5 °C`.
     """
     by_domain: dict[str, list[dict]] = {}
+    valid_count = 0
     for s in states:
         eid = s.get("entity_id", "")
         domain = eid.split(".")[0] if "." in eid else ""
+        if domain not in _CONTEXT_DOMAINS:
+            continue
+        valid_count += 1
         by_domain.setdefault(domain, []).append(s)
 
     lines = [
         "## Smart Home — Device Registry (DỮ LIỆU ĐÃ ĐẦY ĐỦ Ở DƯỚI)",
-        f"{len(states)} thiết bị. Mỗi dòng: `tên | entity_id | trạng thái`.",
+        f"{valid_count} thiết bị. Mỗi dòng: `tên | entity_id | trạng thái`.",
         "**QUAN TRỌNG:**",
         "- Khi user hỏi trạng thái / liệt kê / có những X nào → TRẢ LỜI TRỰC TIẾP "
         "từ registry. KHÔNG gọi `ha_get_state` / `ha_search_entities` — dữ liệu đã "
