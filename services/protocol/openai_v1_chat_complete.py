@@ -483,12 +483,13 @@ def _wrap_mcp_stream(
             was_xml = True
             final_tool_calls = []
             for i, xc in enumerate(xml_calls):
+                fn = xc.get("function", {})
                 final_tool_calls.append({
                     "id": f"xml_stream_{i}",
                     "type": "function",
                     "function": {
-                        "name": xc.get("name", ""),
-                        "arguments": json.dumps(xc.get("arguments", {}), ensure_ascii=False),
+                        "name": fn.get("name", ""),
+                        "arguments": fn.get("arguments", "{}"),
                     },
                 })
 
