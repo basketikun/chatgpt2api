@@ -6,12 +6,17 @@ FROM --platform=$BUILDPLATFORM node:22-alpine AS web-build
 
 WORKDIR /app/web
 
+# bun is the canonical package manager for this project (bun.lock).
+# npm install does not read bun.lock without --lockfile-format=bun,
+# which can cause sporadic failures when a dependency is yanked.
+RUN npm install -g bun
+
 COPY web/package.json web/bun.lock ./
-RUN npm install
+RUN bun install --frozen-lockfile
 
 COPY VERSION /app/VERSION
 COPY web ./
-RUN NEXT_PUBLIC_APP_VERSION="$(cat /app/VERSION)" npm run build
+RUN NEXT_PUBLIC_APP_VERSION="$(cat /app/VERSION)" bun run build
 
 
 FROM --platform=$TARGETPLATFORM python:3.13-slim AS app
