@@ -1195,29 +1195,31 @@ def _prefetch_ha_context_if_needed(
     if len(full_text) > 70_000:
         full_text = full_text[:70_000] + "\n\n...[Đã cắt bớt do giới hạn độ dài]..."
 
-    msg_content = (
-        f"[DỮ LIỆU THỜI GIAN THỰC TỪ HOME ASSISTANT]:\n"
+    msg_context = (
+        f"\n\n[DỮ LIỆU THỜI GIAN THỰC TỪ HOME ASSISTANT]:\n"
         f"{full_text}\n\n"
-        "--- HƯỚNG DẪN BẮT BUỘC DÀNH CHO AI ---\n"
-        "Khi người dùng yêu cầu 'chi tiết trạng thái toàn bộ thiết bị', BẠN PHẢI TUÂN THỦ NGHIÊM NGẶT các quy tắc sau:\n"
-        "1. KHÔNG ĐƯỢC chỉ bốc 1 hoặc 2 thiết bị ra để nói (như chỉ nói về khóa cửa hay thời tiết).\n"
-        "2. PHẢI TỔNG HỢP TẤT CẢ các thiết bị điện chính trong nhà (gom nhóm theo Đèn, Cửa, Điều hoà/Quạt, Các thiết bị khác).\n"
-        "3. Lọc ra và liệt kê NHỮNG THIẾT BỊ ĐANG BẬT/MỞ. Đối với những nhóm đã tắt hết thì chỉ cần nói 'Tất cả [loại] đều đang tắt'.\n"
-        "4. Tuyệt đối không giải thích lan man, chỉ báo cáo trạng thái thực tế."
+        "--- HƯỚNG DẪN HÀNH ĐỘNG BẮT BUỘC (SYSTEM OVERRIDE) ---\n"
+        "Người dùng vừa hỏi về trạng thái thiết bị. Bạn đang có danh sách RẤT DÀI hàng trăm thiết bị ở trên.\n"
+        "YÊU CẦU BẮT BUỘC:\n"
+        "1. Nếu người dùng hỏi chung 'chi tiết trạng thái toàn bộ thiết bị', BẠN KHÔNG ĐƯỢC chỉ trả lời về 1-2 thiết bị (như thời tiết hay nhiệt độ).\n"
+        "2. BẠN PHẢI TỔNG HỢP VÀ BÁO CÁO các nhóm thiết bị ĐIỀU KHIỂN ĐƯỢC: Đèn, Quạt, Điều hoà, Cửa, Công tắc, Khóa.\n"
+        "3. Hãy liệt kê rõ: 'Hiện tại có [X] đèn đang bật: (kể tên)', 'Có [Y] điều hoà đang bật: (kể tên)'. Nếu tất cả tắt thì nói 'Tất cả đều tắt'.\n"
+        "4. BỎ QUA hoàn toàn các cảm biến (thời tiết, nhiệt độ, độ ẩm) trừ khi người dùng ĐÍCH DANH hỏi về chúng."
     )
 
-    # Inject as a system message right before the user message
+    # Inject into the LAST user message to prevent prompt drowning
     injected = []
     injected_flag = False
-    for m in messages:
+    for m in reversed(messages):
         if m.get("role") == "user" and not injected_flag:
-            injected.append({
-                "role": "system",
-                "content": msg_content,
-            })
+            new_content = str(m.get("content", "")) + msg_context
+            injected.append({**m, "content": new_content})
             injected_flag = True
-        injected.append(m)
-    return injected
+        else:
+            injected.append(m)
+    
+    messages = list(reversed(injected))
+    return messages
 
 
 def _has_device_keyword(text: str) -> bool:
