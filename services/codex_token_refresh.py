@@ -161,7 +161,17 @@ def refresh_codex_token(refresh_token: str, device_id: str | None = None) -> dic
             existing = None
         if existing:
             cached_access = str(existing.get("access_token") or "")
-            cached_exp = float(existing.get("expires_at") or 0.0)
+            cached_exp_raw = existing.get("expires_at")
+            cached_exp = 0.0
+            if cached_exp_raw:
+                try:
+                    cached_exp = float(cached_exp_raw)
+                except ValueError:
+                    try:
+                        from datetime import datetime
+                        cached_exp = datetime.fromisoformat(str(cached_exp_raw).replace('Z', '+00:00')).timestamp()
+                    except Exception:
+                        pass
             if cached_access and cached_exp - time.time() > 3600:
                 return {
                     "access_token": cached_access,
