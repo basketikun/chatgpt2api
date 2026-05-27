@@ -252,6 +252,12 @@ class AccountService:
                     continue
                 if account_type and account_type not in types:
                     continue
+                # When requesting free accounts, strictly exclude any account
+                # that also carries a codex token — the "free,codex" hybrid
+                # created by add_accounts_with_type merging leaks Codex quota
+                # into chatgpt/auto traffic (HA ai_task, n8n, voice pipelines).
+                if account_type == "free" and "codex" in types:
+                    continue
                 token = account.get("access_token") or ""
                 if not token or token in excluded:
                     continue
@@ -403,9 +409,15 @@ class AccountService:
             for access_token in tokens:
                 current = self._accounts.get(access_token)
                 if current is not None:
-                    # Merge type: add new type to existing (e.g. existing "free" + new "codex" → "free,codex")
+                    # Never merge "free" and "codex" types — chatgpt/auto
+                    # hard-pins to the free pool and a "free,codex" hybrid
+                    # leaks paid Codex quota into free-tier traffic.
                     existing_types = set(str(current.get("type") or "").split(","))
                     new_types = set(str(account_type).split(","))
+                    if ("free" in existing_types and "codex" in new_types) or \
+                       ("codex" in existing_types and "free" in new_types):
+                        skipped += 1
+                        continue
                     merged = ",".join(sorted(existing_types | new_types))
                     if merged != str(current.get("type") or ""):
                         current["type"] = merged
