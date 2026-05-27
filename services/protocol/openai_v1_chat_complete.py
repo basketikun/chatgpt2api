@@ -603,6 +603,7 @@ def _execute_mcp_tools_in_response(
         choice = (current_result.get("choices") or [{}])[0]
         msg = choice.get("message") or {}
         tool_calls = list(msg.get("tool_calls") or [])
+        xml_calls = None
 
         # ChatGPT web backend returns XML tool calls in text content,
         # not native function-call objects. Parse them so server-side
