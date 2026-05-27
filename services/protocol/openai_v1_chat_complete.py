@@ -1187,24 +1187,19 @@ def _prefetch_ha_context_if_needed(
         return messages
 
     full_text = str(context_result)
-    if len(full_text.encode("utf-8")) > 10_000:
-        import hashlib
-        from services.protocol.conversation import _file_upload_store, _FILE_UPLOAD_MARKER
-        key = hashlib.md5(full_text.encode("utf-8")).hexdigest()[:16]
-        _file_upload_store[key] = full_text
-        msg_content = (
-            f"{_FILE_UPLOAD_MARKER}{key}]\n"
-            f"[DỮ LIỆU THỜI GIAN THỰC TỪ HOME ASSISTANT]: "
-            f"Dữ liệu thiết bị quá dài đã được tự động đính kèm thành file. "
-            f"Hãy đọc file đính kèm để trả lời người dùng.\n"
-            "...[full content uploaded as file]..."
-        )
-    else:
-        msg_content = (
-            f"[DỮ LIỆU THỜI GIAN THỰC TỪ HOME ASSISTANT]:\n"
-            f"{full_text}\n\n"
-            "Hãy dựa vào dữ liệu trên để trả lời câu hỏi của người dùng."
-        )
+    
+    # ChatGPT free lacks Advanced Data Analysis by default, so uploading as a file
+    # causes it to hallucinate "file expired" or "cannot read". Instead, we inject
+    # directly into the prompt. To avoid 400 Bad Request (chatgpt.com 100KB body limit),
+    # we truncate to 70,000 characters.
+    if len(full_text) > 70_000:
+        full_text = full_text[:70_000] + "\n\n...[Đã cắt bớt do giới hạn độ dài]..."
+
+    msg_content = (
+        f"[DỮ LIỆU THỜI GIAN THỰC TỪ HOME ASSISTANT]:\n"
+        f"{full_text}\n\n"
+        "Hãy dựa vào dữ liệu trên để trả lời câu hỏi của người dùng."
+    )
 
     # Inject as a system message right before the user message
     injected = []
