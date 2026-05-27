@@ -56,6 +56,16 @@ def _last_user_text(messages: list[dict[str, Any]]) -> str:
     parts: list[str] = []
     for m in messages:
         role = m.get("role", "user")
+        if role == "tool":
+            tool_name = m.get("name", "UnknownTool")
+            content = m.get("content", "")
+            parts.append(f"[KẾT QUẢ TỪ HỆ THỐNG - TOOL {tool_name}]:\n{content}")
+            continue
+        if role == "assistant":
+            content = m.get("content", "")
+            if isinstance(content, str) and content.strip():
+                parts.append(f"[Assistant]: {content}")
+            continue
         if role not in ("user", "system"):
             continue
         content = m.get("content")
