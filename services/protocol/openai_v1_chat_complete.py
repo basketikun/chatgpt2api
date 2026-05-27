@@ -476,9 +476,11 @@ def _wrap_mcp_stream(
     # ChatGPT web backend models output ```xml <tool_call> instead of
     # native function-call objects. Parse them so server-side tools
     # (GetLiveContext, ha_*) are executed here.
+    was_xml = False
     if not final_tool_calls:
         xml_calls = _extract_xml_tool_calls_from_text(full_content)
         if xml_calls:
+            was_xml = True
             final_tool_calls = []
             for i, xc in enumerate(xml_calls):
                 final_tool_calls.append({
@@ -508,6 +510,21 @@ def _wrap_mcp_stream(
                  if tc.get("function", {}).get("name", "") in known_server_tools]
 
     if not mcp_calls:
+        if was_xml:
+            import re
+            clean_content = re.sub(
+                r"```xml\s*<tool_call[^`]*```", "", full_content,
+                flags=re.DOTALL,
+            ).strip()
+            completion_id = f"chatcmpl-{uuid.uuid4().hex}"
+            created = int(time.time())
+            if clean_content:
+                yield completion_chunk(model, {"role": "assistant", "content": clean_content}, None, completion_id, created)
+            tool_calls_delta = [{"index": i, "id": tc["id"], "type": "function", "function": tc["function"]} for i, tc in enumerate(final_tool_calls)]
+            yield completion_chunk(model, {"role": "assistant", "tool_calls": tool_calls_delta}, None, completion_id, created)
+            yield completion_chunk(model, {}, "tool_calls", completion_id, created)
+            return
+
         for c in chunks:
             yield c
         return
@@ -529,7 +546,7 @@ def _wrap_mcp_stream(
             "message": {
                 "role": "assistant",
                 "content": clean_content,
-                "tool_calls": mcp_calls,
+                "tool_calls": final_tool_calls,
             },
             "finish_reason": "tool_calls",
         }],
@@ -553,8 +570,14 @@ def _wrap_mcp_stream(
         created = int(time.time())
         choice = (final_result.get("choices") or [{}])[0]
         content = (choice.get("message") or {}).get("content") or ""
+        tool_calls = (choice.get("message") or {}).get("tool_calls")
         yield completion_chunk(model, {"role": "assistant", "content": content}, None, completion_id, created)
-        yield completion_chunk(model, {}, "stop", completion_id, created)
+        if tool_calls:
+            tool_calls_delta = [{"index": i, "id": tc.get("id"), "type": "function", "function": tc.get("function")} for i, tc in enumerate(tool_calls)]
+            yield completion_chunk(model, {"tool_calls": tool_calls_delta}, None, completion_id, created)
+            yield completion_chunk(model, {}, "tool_calls", completion_id, created)
+        else:
+            yield completion_chunk(model, {}, "stop", completion_id, created)
     else:
         for c in chunks:
             yield c
