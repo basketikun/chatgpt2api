@@ -152,7 +152,7 @@ def call_service(domain: str, service: str, data: dict[str, Any] | None = None) 
 _CONTEXT_DOMAINS = [
     "light", "switch", "climate", "cover", "lock", "fan", "media_player",
     "sensor", "binary_sensor", "input_boolean", "input_number", "input_select",
-    "scene", "script", "automation", "vacuum", "camera",
+    "scene", "script", "automation", "vacuum", "camera", "weather",
 ]
 # Max entities per domain shown in context (keep token count low, but user requested all devices)
 _MAX_PER_DOMAIN = 9999
