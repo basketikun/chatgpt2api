@@ -298,6 +298,21 @@ class OpenAIBackendAPI:
         for item in messages:
             role = item.get("role", "user")
             content = item.get("content", "")
+            
+            if role == "tool":
+                role = "user"
+                tool_name = item.get("name", "UnknownTool")
+                content = f"[KẾT QUẢ TỪ HỆ THỐNG - TOOL {tool_name}]:\n{content}"
+            elif role == "assistant":
+                tool_calls = item.get("tool_calls") or []
+                for tc in tool_calls:
+                    if tc.get("type") == "function":
+                        name = tc.get("function", {}).get("name", "")
+                        args = tc.get("function", {}).get("arguments", "")
+                        content = str(content) + f"\n[System Log: You executed tool {name} with args {args}]\n"
+                if not str(content).strip():
+                    continue
+
             if isinstance(content, str):
                 # Resolve file-upload markers: upload the preserved full text
                 # and reference it via asset_pointer (1 msg quota instead of N chunks).
