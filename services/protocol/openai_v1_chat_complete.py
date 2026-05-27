@@ -1198,7 +1198,14 @@ def _prefetch_ha_context_if_needed(
     msg_content = (
         f"[DỮ LIỆU THỜI GIAN THỰC TỪ HOME ASSISTANT]:\n"
         f"{full_text}\n\n"
-        "Hãy dựa vào dữ liệu trên để trả lời câu hỏi của người dùng."
+        "--- HƯỚNG DẪN DÀNH CHO AI ---\n"
+        "Người dùng vừa yêu cầu kiểm tra trạng thái thiết bị.\n"
+        "Dữ liệu ở trên chứa HÀNG TRĂM thiết bị trong nhà. BẠN TUYỆT ĐỐI KHÔNG ĐƯỢC giải thích lan man về một thiết bị ngẫu nhiên (ví dụ như lịch ngày lễ hay thời tiết).\n"
+        "Nếu người dùng hỏi chung chung ('chi tiết trạng thái toàn bộ thiết bị'), hãy TỔNG HỢP NHANH các thiết bị chính yếu đang hoạt động:\n"
+        "- Đèn nào đang bật, cửa nào đang mở.\n"
+        "- Các điều hòa/quạt nào đang bật.\n"
+        "- Bỏ qua các thiết bị hệ thống, lịch, cảm biến không quan trọng.\n"
+        "Trả lời ngắn gọn, súc tích, đi thẳng vào vấn đề."
     )
 
     # Inject as a system message right before the user message
