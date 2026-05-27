@@ -613,12 +613,13 @@ def _execute_mcp_tools_in_response(
             xml_calls = _extract_xml_tool_calls_from_text(content_text)
             if xml_calls:
                 for i, xc in enumerate(xml_calls):
+                    fn = xc.get("function", {})
                     tool_calls.append({
                         "id": f"xml_{iteration}_{i}",
                         "type": "function",
                         "function": {
-                            "name": xc.get("name", ""),
-                            "arguments": json.dumps(xc.get("arguments", {}), ensure_ascii=False),
+                            "name": fn.get("name", ""),
+                            "arguments": fn.get("arguments", "{}"),
                         },
                     })
 
