@@ -805,7 +805,7 @@ def _dispatch(route, messages, tools, tool_choice, body):
                 logger.info({"event": "vision_fallback_to_gemini",
                              "reason": "no_active_chatgpt_account"})
                 return _handle_gemini_chat("auto", messages, body.get("stream"), body)
-        return _handle_chatgpt_chat(route.model, messages, tools, tool_choice, body.get("stream"), body)
+        return _handle_chatgpt_chat(route.model, messages, tools, tool_choice, body.get("stream"), body, route)
     else:
         logger.warning({"event": "unknown_provider", "provider": route.provider, "fallback": "chatgpt"})
         return _handle_chatgpt_chat(route.model, messages, tools, tool_choice, body.get("stream"), body)
@@ -917,6 +917,7 @@ def _handle_chatgpt_chat(
     tool_choice: Any,
     stream: bool,
     body: dict[str, Any],
+    route=None,
 ) -> dict[str, Any] | Iterator[dict[str, Any]]:
     """ChatGPT flow — auto-detects token type and routes to correct API.
 
@@ -956,7 +957,7 @@ def _handle_chatgpt_chat(
             break
         try:
             return _try_chatgpt_with_token(
-                token, model, messages, tools, tool_choice, body, preferred_type
+                token, model, messages, tools, tool_choice, body, preferred_type, route
             )
         except RuntimeError as exc:
             err_msg = str(exc).lower()
@@ -995,6 +996,7 @@ def _try_chatgpt_with_token(
     tool_choice: Any,
     body: dict[str, Any],
     preferred_type: str | None,
+    route=None,
 ) -> dict[str, Any] | Iterator[dict[str, Any]]:
     """Single-attempt body extracted from _handle_chatgpt_chat for the rotate-on-quota loop."""
     from services.account_service import detect_token_audience, _TOKEN_AUDIENCE_OPENAI_API, _TOKEN_AUDIENCE_CHATGPT
@@ -1097,9 +1099,15 @@ def _try_chatgpt_with_token(
             return _stream_chatgpt_addon(backend, messages, model, tools, tool_choice)
         return _chatgpt_addon_completion(model, messages, tools, tool_choice)
 
-    # Docker: original behavior, no XML parsing
+    # Docker: wrap stream with XML tool-call parser so GetLiveContext and other
+    # server-side tools are intercepted and executed, not passed through as raw text.
     if stream:
-        return stream_text_chat_completion(backend, messages, model, tools, tool_choice)
+        raw_stream = stream_text_chat_completion(backend, messages, model, tools, tool_choice)
+        if route is None:
+            # Fallback: build a minimal route for re-dispatch
+            from services.backend_router import BackendRoute
+            route = BackendRoute(provider="chatgpt", model=model)
+        return _wrap_mcp_stream(raw_stream, messages, route, body)
     request = ConversationRequest(model=model, messages=messages, tools=tools, tool_choice=tool_choice)
     return completion_response(model, collect_text(backend, request), messages=messages)
 
