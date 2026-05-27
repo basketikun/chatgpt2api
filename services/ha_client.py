@@ -154,8 +154,8 @@ _CONTEXT_DOMAINS = [
     "sensor", "binary_sensor", "input_boolean", "input_number", "input_select",
     "scene", "script", "automation", "vacuum", "camera",
 ]
-# Max entities per domain shown in context (keep token count low)
-_MAX_PER_DOMAIN = 20
+# Max entities per domain shown in context (keep token count low, but user requested all devices)
+_MAX_PER_DOMAIN = 9999
 
 
 def format_states_context() -> str:
