@@ -461,21 +461,7 @@ def get_ha_tools() -> list[dict[str, Any]]:
 def execute_ha_tool(tool_name: str, arguments: dict[str, Any]) -> str | None:
     """Execute an HA tool and return result text."""
     if tool_name == "GetLiveContext":
-        states = get_states()
-        if not states:
-            return "Không lấy được dữ liệu thiết bị từ HA"
-        lines = []
-        for s in states:
-            eid = s.get("entity_id", "")
-            state = s.get("state", "unknown")
-            attrs = s.get("attributes", {})
-            friendly = attrs.get("friendly_name", eid)
-            unit = attrs.get("unit_of_measurement", "")
-            line = f"{friendly} ({eid}): {state}"
-            if unit:
-                line += f" {unit}"
-            lines.append(line)
-        return "\n".join(lines)
+        return format_states_context()
     elif tool_name == "ha_get_state":
         eid = arguments.get("entity_id", "")
         state = get_state(eid)
