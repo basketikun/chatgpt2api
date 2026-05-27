@@ -1133,7 +1133,7 @@ _FORCE_TOOL_KEYWORDS = [
     "phòng khách", "phòng ngủ", "phòng học", "phòng bếp",
     "ban công", "nhà tắm", "nhà vệ sinh", "hành lang", "sân",
     "tầng", "cầu thang", "garage", "cổng",
-    "thiết bị", "toàn bộ", "tất cả",
+    "thiết bị", "toàn bộ", "tất cả", "thời tiết",
 ]
 
 
