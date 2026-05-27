@@ -12,7 +12,7 @@ WORKDIR /app/web
 RUN npm install -g bun
 
 COPY web/package.json web/bun.lock ./
-RUN bun install --frozen-lockfile
+RUN bun install
 
 COPY VERSION /app/VERSION
 COPY web ./
