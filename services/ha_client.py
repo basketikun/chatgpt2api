@@ -246,21 +246,20 @@ def _build_context(states: list[dict]) -> str:
         by_domain.setdefault(domain, []).append(s)
 
     lines = [
-        "## Smart Home — Device Registry (DỮ LIỆU ĐÃ ĐẦY ĐỦ Ở DƯỚI)",
-        f"{valid_count} thiết bị. Mỗi dòng: `tên | entity_id | trạng thái`.",
-        "**QUAN TRỌNG:**",
-        "- Khi user hỏi trạng thái / liệt kê / có những X nào → TRẢ LỜI TRỰC TIẾP "
-        "từ registry. KHÔNG gọi `ha_get_state` / `ha_search_entities` — dữ liệu đã "
-        "có đủ ở dưới (tên + entity_id + state).",
-        "- Khi user yêu cầu điều khiển (bật/tắt/mở/đóng/đặt) → tìm entity trong "
-        "registry bằng tên, rồi gọi `ha_call_service` MỘT LẦN với entity_id chính xác.",
+        "## Smart Home — Device Registry (DANH SÁCH THIẾT BỊ)",
+        f"{valid_count} thiết bị. Mỗi dòng: `tên | entity_id`.",
+        "**CÁCH DÙNG:**",
+        "- Khi user hỏi trạng thái / liệt kê / có những X nào → PHẢI gọi `GetLiveContext` "
+        "trước để lấy trạng thái LIVE từ Home Assistant. KHÔNG ĐƯỢC trả lời "
+        "từ registry — dữ liệu dưới đây là STATIC, có thể đã cũ.",
+        "- Khi user yêu cầu điều khiển (bật/tắt/mở/đóng/đặt) → tìm entity_id trong "
+        "registry bên dưới, rồi gọi `ha_call_service` MỘT LẦN với entity_id chính xác.",
         "",
         "--- HƯỚNG DẪN HÀNH ĐỘNG BẮT BUỘC (SYSTEM OVERRIDE) ---",
-        "Khi người dùng hỏi chung chung về trạng thái nhà (VD: 'trạng thái nhà', 'chi tiết toàn bộ thiết bị'):",
-        "1. KHÔNG ĐƯỢC chỉ trả lời về 1-2 thiết bị.",
-        "2. PHẢI TỔNG HỢP VÀ BÁO CÁO các nhóm thiết bị ĐIỀU KHIỂN ĐƯỢC: Đèn, Quạt, Điều hoà, Cửa, Công tắc, Khóa.",
-        "3. Liệt kê rõ: 'Hiện tại có [X] đèn đang bật: (kể tên)', 'Có [Y] điều hoà đang bật: (kể tên)'.",
-        "4. BỎ QUA hoàn toàn cảm biến (thời tiết, nhiệt độ, độ ẩm, contact) trừ khi được hỏi ĐÍCH DANH.",
+        "Khi người dùng hỏi về trạng thái nhà (VD: 'trạng thái nhà', 'chi tiết toàn bộ thiết bị'):",
+        "1. GỌI NGAY `GetLiveContext` để lấy trạng thái LIVE của toàn bộ thiết bị.",
+        "2. Dựa trên kết quả GetLiveContext, TỔNG HỢP VÀ BÁO CÁO các nhóm: Đèn, Quạt, Điều hoà, Cửa, Công tắc, Khóa.",
+        "3. BỎ QUA cảm biến (thời tiết, nhiệt độ, độ ẩm, contact) trừ khi được hỏi ĐÍCH DANH.",
         "",
     ]
 
