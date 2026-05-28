@@ -74,6 +74,7 @@ def create_router() -> APIRouter:
     router = APIRouter()
 
     @router.post("/api/oauth/codex/import-token")
+    @router.post("/dashboard/providers/codex")
     async def import_token(body: ImportTokenRequest):
         """Import a single ChatGPT access token — Codex Account Studio compatible.
 
