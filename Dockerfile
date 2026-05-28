@@ -56,8 +56,9 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 COPY main.py ./
-COPY config.json ./
 COPY VERSION ./
+# Create default config.json (secrets come from env vars at runtime)
+RUN echo '{}' > config.json
 COPY api ./api
 COPY services ./services
 COPY utils ./utils
