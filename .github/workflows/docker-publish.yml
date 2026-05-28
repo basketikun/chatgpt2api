@@ -1,5 +1,6 @@
 name: Publish Docker Image
 
+# Trigger on push to main (source) AND version tags (releases)
 on:
   push:
     branches:
