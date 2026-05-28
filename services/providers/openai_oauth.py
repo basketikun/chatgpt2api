@@ -21,8 +21,9 @@ from services.account_service import account_service
 from utils.log import logger
 
 CODEX_URL = "https://chatgpt.com/backend-api/codex/responses"
-CODEX_DEFAULT_MODEL = "gpt-5.5"  # First try; fallback chain: 5.5 → 5.4 → 5.3-codex
-CODEX_AUTO_FALLBACK = ["gpt-5.5", "gpt-5.4", "gpt-5.3-codex"]
+CODEX_DEFAULT_MODEL = "gpt-5.5"  # First try; fallback through supported models only
+# gpt-5.4 and gpt-5.3-codex are NOT supported with ChatGPT free accounts (400 error)
+CODEX_AUTO_FALLBACK = ["gpt-5.5"]
 CODEX_HEADERS = {
     "originator": "codex-cli",
     "User-Agent": "codex-cli/1.0.18 (Windows; x64)",
