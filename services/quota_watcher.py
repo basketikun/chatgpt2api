@@ -231,7 +231,8 @@ class QuotaWatcher:
             except asyncio.CancelledError:
                 raise
             except Exception:
-                logger.exception({"event": "quota_watcher_loop_error"})
+                import traceback
+                logger.error({"event": "quota_watcher_loop_error", "traceback": traceback.format_exc()[-500:]})
                 await asyncio.sleep(60)
 
     async def _process_account(self, account_id: str):
@@ -298,18 +299,20 @@ class QuotaWatcher:
                 # Re-schedule with updated next check time
                 now = time.time()
                 next_check = self._next_check_time(account, now)
-                item = QuotaCheckItem(next_check_at=next_check, account_id=account_id)
+                item = QuotaCheckItem(next_check_at=next_check, account_id=account_id, provider="chatgpt")
                 heapq.heappush(self._heap, item)
                 self._index[account_id] = item
 
             except Exception:
-                logger.exception({
+                import traceback
+                logger.error({
                     "event": "quota_watcher_process_error",
                     "account_id": account_id[:20] + "...",
+                    "traceback": traceback.format_exc()[-500:],
                 })
                 # Re-queue with cooldown after failure
                 next_check = time.time() + REFRESH_FAILURE_COOLDOWN
-                item = QuotaCheckItem(next_check_at=next_check, account_id=account_id)
+                item = QuotaCheckItem(next_check_at=next_check, account_id=account_id, provider="chatgpt")
                 heapq.heappush(self._heap, item)
                 self._index[account_id] = item
 
