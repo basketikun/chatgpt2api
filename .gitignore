@@ -30,3 +30,16 @@ git_cache/
 
 # codegraph local index (per-repo SQLite + FTS5)
 .codegraph/
+
+# Scratch/deploy scripts (có thể chứa credentials)
+scratch/
+build_and_push.sh
+
+# Logs & screenshots
+*.log
+*.png
+*.jpg
+*.b64
+logs*.txt
+parse_results.txt
+*.html
