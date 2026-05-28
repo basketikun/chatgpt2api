@@ -424,12 +424,47 @@ def create_router() -> APIRouter:
 
     @router.post("/api/accounts/oauth")
     async def create_oauth_accounts(body: dict, authorization: str | None = Header(default=None)):
-        """Add OAuth tokens (Codex from 9router) with custom type."""
+        """Add OAuth tokens (Codex from 9router) with custom type.
+
+        For codex-type accounts: decodes JWT to extract email/plan,
+        sets image_quota_unknown for image generation support.
+        """
         require_admin(authorization)
         tokens = [str(t or "").strip() for t in (body.get("tokens") or []) if str(t or "").strip()]
         if not tokens:
             raise HTTPException(status_code=400, detail={"error": "tokens is required"})
-        account_type = str(body.get("type") or "free,codex").strip()
+        account_type = str(body.get("type") or "codex").strip()
+
+        # For codex JWT tokens: decode metadata before adding so the UI
+        # shows email / plan immediately without waiting for a refresh.
+        if "codex" in account_type:
+            import base64, json
+            for token in tokens:
+                if not token.startswith("eyJ"):
+                    continue
+                try:
+                    parts = token.split(".")
+                    if len(parts) != 3:
+                        continue
+                    payload_b64 = parts[1].replace("-", "+").replace("_", "/")
+                    missing = (4 - (len(payload_b64) % 4)) % 4
+                    payload_b64 += "=" * missing
+                    payload = json.loads(base64.b64decode(payload_b64).decode("utf-8"))
+                except Exception:
+                    continue
+                auth = payload.get("https://api.openai.com/auth") or {}
+                profile = payload.get("https://api.openai.com/profile") or {}
+                email = profile.get("email") or payload.get("email")
+                plan = auth.get("chatgpt_plan_type")
+                if email or plan:
+                    account_service.update_account(token, {
+                        "email": email,
+                        "plan": plan or "",
+                        "image_quota_unknown": True,
+                        "quota": 10,
+                        "status": "active",
+                    })
+
         result = account_service.add_accounts_with_type(tokens, account_type)
         return {"items": result.get("items", []), "added": result.get("added", 0), "skipped": result.get("skipped", 0)}
 

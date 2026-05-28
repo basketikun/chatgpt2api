@@ -35,6 +35,9 @@ git_cache/
 # Scratch/deploy scripts (có thể chứa credentials)
 scratch/
 build_and_push.sh
+update_server.ps1
+setup_ssh_key.py
+restart_server.py
 
 # Logs & screenshots
 *.log

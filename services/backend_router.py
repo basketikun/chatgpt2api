@@ -37,7 +37,6 @@ PROVIDER_PREFIXES: dict[str, str] = {
     "gh/": "github",
     "cu/": "cursor",
     "cc/": "claude",
-    "cx/": "codex",
     "nv/": "nvidia_nim",
     "ag/": "antigravity",
 }
