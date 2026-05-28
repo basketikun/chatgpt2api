@@ -13,6 +13,7 @@ config.json
 edit
 
 docker-compose-local.yml
+**/docker-compose.local.yml
 
 .claude/settings.local.json
 
@@ -43,3 +44,20 @@ build_and_push.sh
 logs*.txt
 parse_results.txt
 *.html
+
+# Root test/debug files (không phải dự án)
+/9router-test
+/force_mcp.py
+/patch_js.py
+/patch_url.py
+/test_*.py
+/test_*.json
+/test_out.txt
+/test_strip*
+
+# Tool configs (local only)
+.agentmemoryignore
+
+# Plans & one-off scripts
+plans/
+scripts/test_storage.py
