@@ -241,7 +241,7 @@ def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
         # Skip web search for pure HA queries — they're answered from the
         # registry, no need to spend 8s on grounding.
         search_injected = False
-        if search_service.is_enabled and not ha_query_pristine and not is_vision_request:
+        if search_service.is_enabled and not ha_query_pristine and not is_vision_request and not bool(body.get("_is_ha_request")):
             before_size = _messages_size(messages)
             messages_copy = search_service.process_messages(messages)
             search_injected = _messages_size(messages_copy) > before_size
@@ -303,7 +303,7 @@ def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
     # Apply search injection for all backends — but skip when the user query
     # is a pure HA command/status (answered from registry) or a vision task.
     search_injected = False
-    if search_service.is_enabled and not ha_query_pristine and not is_vision_request:
+    if search_service.is_enabled and not ha_query_pristine and not is_vision_request and not bool(body.get("_is_ha_request")):
         before_size = _messages_size(messages)
         messages = search_service.process_messages(messages)
         search_injected = _messages_size(messages) > before_size
@@ -1786,6 +1786,8 @@ def _handle_openai_oauth_chat(
 
     attempted: set[str] = set()
     last_error = ""
+    usage_limit_hits = 0
+    max_account_switches = 8  # codext-style: try up to 8 accounts before giving up
 
     while True:
         try:
@@ -1793,17 +1795,24 @@ def _handle_openai_oauth_chat(
         except RuntimeError as exc:
             raise RuntimeError(str(exc))  # Raise so combo can fallback
 
-        if token in attempted:
+        if token in attempted or usage_limit_hits >= max_account_switches:
             break
         attempted.add(token)
 
         try:
             if stream:
-                return codex_oauth.chat_completions(
+                result = codex_oauth.chat_completions(
                     access_token=token, messages=messages, model=pure_model,
                     stream=True, temperature=temperature, max_tokens=max_tokens,
                     tools=tools, tool_choice=tool_choice,
                 )
+                # On successful stream start, clear any parked resume for this token
+                try:
+                    from services.account_switch_resume import account_switch_resume
+                    account_switch_resume.clear_parked(token[:40], reason="stream_started")
+                except Exception:
+                    pass
+                return result
             else:
                 result = codex_oauth.chat_completions(
                     access_token=token, messages=messages, model=pure_model,
@@ -1811,14 +1820,41 @@ def _handle_openai_oauth_chat(
                     tools=tools, tool_choice=tool_choice,
                 )
                 account_service.mark_text_used(token)
+                # Clear any parked resume on success
+                try:
+                    from services.account_switch_resume import account_switch_resume
+                    account_switch_resume.clear_parked(token[:40], reason="success")
+                except Exception:
+                    pass
                 return result
         except Exception as exc:
             last_error = str(exc)
-            # On 401 → skip this token, try next (don't set error)
-            if any(x in last_error.lower() for x in ("expired", "401")):
+            err_lower = last_error.lower()
+            # On 401/expired → skip this token, try next
+            if any(x in err_lower for x in ("expired", "401")):
                 continue
-            # On 400/429 → try next token (don't remove, might be temporary)
-            if any(x in last_error.lower() for x in ("400", "429", "rate")):
+            # On usage limit → codext-style: park resume prompt, demote, try next account
+            if any(x in err_lower for x in ("usage_limit", "quota", "capacity")):
+                usage_limit_hits += 1
+                # Park a recovery prompt for this account (codext-style)
+                try:
+                    if config.auto_switch_on_rate_limit:
+                        from services.account_switch_resume import account_switch_resume
+                        resume_prompt = config.usage_limit_resume_prompt
+                        if resume_prompt is not None:
+                            account_switch_resume.set_resume_prompt(resume_prompt)
+                        account_switch_resume.park_task(
+                            account_id=token[:40],
+                            model=pure_model,
+                            messages=messages,
+                        )
+                except Exception:
+                    pass
+                # Account is already demoted + marked limited in the provider,
+                # so the next get_token_for_request() will pick the NEXT account.
+                continue
+            # On 400/429 → try next token
+            if any(x in err_lower for x in ("400", "429", "rate")):
                 continue
             break
 

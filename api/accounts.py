@@ -633,4 +633,76 @@ def create_router() -> APIRouter:
             raise HTTPException(status_code=404, detail={"error": "server not found"})
         return {"import_job": server.get("import_job")}
 
+    @router.get("/api/accounts/status")
+    async def account_status(authorization: str | None = Header(default=None)):
+        """Rich account pool status — codext-style status header.
+
+        Returns account health, rate-limit snapshots, parked tasks,
+        and overall pool statistics in one call.
+        """
+        require_admin(authorization)
+        accounts = account_service.list_accounts()
+        # Count by status
+        status_counts = {"active": 0, "limited": 0, "error": 0, "disabled": 0}
+        detailed = []
+        for acc in accounts:
+            status = str(acc.get("status") or "active")
+            status_counts[status] = status_counts.get(status, 0) + 1
+            detailed.append({
+                "token_preview": (str(acc.get("access_token") or ""))[:20] + "...",
+                "email": acc.get("email") or None,
+                "plan": acc.get("plan") or str(acc.get("type") or ""),
+                "status": status,
+                "quota": int(acc.get("quota") or 0),
+                "success": int(acc.get("success") or 0),
+                "fail": int(acc.get("fail") or 0),
+                "last_used_at": str(acc.get("last_used_at") or ""),
+                "restore_at": str(acc.get("restore_at") or ""),
+                "health_score": round(account_service.get_health_score(acc.get("access_token") or ""), 2),
+            })
+
+        # Usage snapshot data if poller is active
+        snapshots = {}
+        try:
+            from services.usage_snapshot_poller import usage_snapshot_poller
+            snapshots = usage_snapshot_poller.get_status_summary()
+        except Exception:
+            snapshots = {"status": "poller_not_active"}
+
+        # Parked task data
+        parked = []
+        try:
+            from services.account_switch_resume import account_switch_resume
+            parked = account_switch_resume.list_parked()
+        except Exception:
+            pass
+
+        # Backoff stats
+        backoff_stats = {}
+        try:
+            from services.rate_limit_backoff import rate_limit_backoff as rlb
+            backoff_stats = rlb.get_stats()
+        except Exception:
+            pass
+
+        # Cooldown summary
+        cooldown_summary = {}
+        try:
+            from services.model_cooldown import model_cooldown_manager
+            cooldown_summary = model_cooldown_manager.get_summary()
+        except Exception:
+            pass
+
+        return {
+            "pool": {
+                "total": len(accounts),
+                "by_status": status_counts,
+                "accounts": detailed,
+            },
+            "usage_snapshots": snapshots,
+            "parked_tasks": parked,
+            "backoff": backoff_stats,
+            "cooldown": cooldown_summary,
+        }
+
     return router

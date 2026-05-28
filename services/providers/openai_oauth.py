@@ -164,7 +164,7 @@ def _responses_to_chat_chunk(event: dict[str, Any], model: str, completion_id: s
             "choices": [{"index": 0, "delta": {"content": delta}, "finish_reason": None}],
         }
 
-    if event_type == "response.output_item.done":
+    if event_type == "response.output_item.added":
         item = event.get("item", {})
         if item.get("type") == "function_call":
             return {
@@ -177,11 +177,32 @@ def _responses_to_chat_chunk(event: dict[str, Any], model: str, completion_id: s
                         "type": "function",
                         "function": {
                             "name": item.get("name", ""),
-                            "arguments": item.get("arguments", ""),
+                            "arguments": "",
                         },
                     }]
                 }, "finish_reason": None}],
             }
+
+    if event_type == "response.function_call.arguments.delta":
+        call_id = event.get("call_id", "")
+        delta = event.get("delta", "")
+        return {
+            "id": completion_id, "object": "chat.completion.chunk",
+            "created": created, "model": model,
+            "choices": [{"index": 0, "delta": {
+                "tool_calls": [{
+                    "index": 0,
+                    "id": call_id,
+                    "type": "function",
+                    "function": {"arguments": delta}
+                }]
+            }, "finish_reason": None}],
+        }
+
+    if event_type == "response.output_item.done":
+        item = event.get("item", {})
+        if item.get("type") == "function_call":
+            return None
 
     if event_type == "response.completed":
         return {
@@ -200,6 +221,14 @@ def _responses_to_chat_chunk(event: dict[str, Any], model: str, completion_id: s
         }
 
     return None
+
+def _log_event(event: dict):
+    try:
+        with open("/tmp/codex_events.log", "a", encoding="utf-8") as f:
+            import json
+            f.write(json.dumps(event) + "\n")
+    except:
+        pass
 
 
 class CodexOAuthProvider:
@@ -463,6 +492,7 @@ class CodexOAuthProvider:
         completion_id = f"chatcmpl-{uuid.uuid4().hex}"
         created = int(time.time())
         sent_role = False
+        has_tool_call = False
 
         try:
             for raw_line in response.iter_lines():
@@ -477,14 +507,21 @@ class CodexOAuthProvider:
                     break
                 try:
                     event = json.loads(payload)
-                except json.JSONDecodeError:
+                except Exception:
                     continue
+
+                _log_event(event)
 
                 chunk = _responses_to_chat_chunk(event, model, completion_id, created)
                 if chunk:
-                    if not sent_role and chunk["choices"][0]["delta"].get("content"):
-                        chunk["choices"][0]["delta"]["role"] = "assistant"
+                    delta = chunk["choices"][0]["delta"]
+                    if not sent_role and (delta.get("content") is not None or delta.get("tool_calls") is not None):
+                        delta["role"] = "assistant"
                         sent_role = True
+                    if delta.get("tool_calls"):
+                        has_tool_call = True
+                    if chunk["choices"][0].get("finish_reason") == "stop" and has_tool_call:
+                        chunk["choices"][0]["finish_reason"] = "tool_calls"
                     yield chunk
 
         except Exception as exc:
@@ -527,6 +564,8 @@ class CodexOAuthProvider:
         if tool_calls:
             message["tool_calls"] = tool_calls
 
+        finish_reason = "tool_calls" if tool_calls else "stop"
+
         from services.protocol.openai_v1_chat_complete import count_message_tokens, count_text_tokens
 
         return {
@@ -534,7 +573,7 @@ class CodexOAuthProvider:
             "object": "chat.completion",
             "created": int(time.time()),
             "model": model,
-            "choices": [{"index": 0, "message": message, "finish_reason": "stop"}],
+            "choices": [{"index": 0, "message": message, "finish_reason": finish_reason}],
             "usage": {
                 "prompt_tokens": count_message_tokens(messages, model),
                 "completion_tokens": count_text_tokens(output_text, model),

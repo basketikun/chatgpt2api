@@ -331,5 +331,26 @@ def _is_quota_exceeded(error_text: str) -> bool:
     return any(ind in text for ind in indicators)
 
 
+    def get_summary(self) -> dict[str, Any]:
+        """Get cooldown summary for status display."""
+        total_accounts = len(self._states)
+        cooling_accounts = 0
+        by_reason: dict[str, int] = {}
+        for acc_states in self._states.values():
+            has_cooling = False
+            for state in acc_states.values():
+                if state.is_cooling:
+                    has_cooling = True
+                    by_reason[state.reason] = by_reason.get(state.reason, 0) + 1
+            if has_cooling:
+                cooling_accounts += 1
+        return {
+            "total_tracked_accounts": total_accounts,
+            "accounts_in_cooldown": cooling_accounts,
+            "cooldown_by_reason": by_reason,
+        }
+
+
 # Singleton
 model_cooldown = ModelCooldownManager()
+model_cooldown_manager = model_cooldown  # alias for status endpoint

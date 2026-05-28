@@ -260,6 +260,45 @@ class ConfigStore:
         return bool(value)
 
     @property
+    def usage_limit_resume_prompt(self) -> str | None:
+        """Codex-style auto-resume prompt after usage limit + account switch.
+
+        - None (unset): use built-in default resume prompt
+        - "" (empty string): disable auto-resume entirely
+        - Any other string: use as custom resume prompt
+
+        Mirrors codext's [tui].usage_limit_resume_prompt config.
+        """
+        value = self.data.get("usage_limit_resume_prompt")
+        if value is None:
+            return None  # Use default
+        return str(value).strip()
+
+    @property
+    def usage_snapshot_polling_enabled(self) -> bool:
+        """Enable proactive rate-limit polling (codext-style 15s interval)."""
+        value = self.data.get("usage_snapshot_polling_enabled", True)
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "yes", "on"}
+        return bool(value)
+
+    @property
+    def auto_switch_on_rate_limit(self) -> bool:
+        """Auto-switch to next account when hitting usage limit (codext-style)."""
+        value = self.data.get("auto_switch_on_rate_limit", True)
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "yes", "on"}
+        return bool(value)
+
+    @property
+    def project_docs_watch_enabled(self) -> bool:
+        """Enable AGENTS.md / CLAUDE.md auto-reload watcher."""
+        value = self.data.get("project_docs_watch_enabled", True)
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "yes", "on"}
+        return bool(value)
+
+    @property
     def log_levels(self) -> list[str]:
         levels = self.data.get("log_levels")
         if not isinstance(levels, list):
@@ -377,6 +416,10 @@ class ConfigStore:
         data["image_account_concurrency"] = self.image_account_concurrency
         data["auto_remove_invalid_accounts"] = self.auto_remove_invalid_accounts
         data["auto_remove_rate_limited_accounts"] = self.auto_remove_rate_limited_accounts
+        data["usage_limit_resume_prompt"] = self.usage_limit_resume_prompt
+        data["usage_snapshot_polling_enabled"] = self.usage_snapshot_polling_enabled
+        data["auto_switch_on_rate_limit"] = self.auto_switch_on_rate_limit
+        data["project_docs_watch_enabled"] = self.project_docs_watch_enabled
         data["log_levels"] = self.log_levels
         data["sensitive_words"] = self.sensitive_words
         data["ai_review"] = self.ai_review

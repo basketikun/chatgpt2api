@@ -200,7 +200,17 @@ class LoggedCall:
             raise
         except Exception as exc:
             self.log("Gọi thất bại", status="failed", error=str(exc))
-            raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
+            return JSONResponse(
+                status_code=502,
+                content={
+                    "error": {
+                        "message": str(exc),
+                        "type": "server_error",
+                        "param": None,
+                        "code": "upstream_error",
+                    }
+                },
+            )
 
         if isinstance(result, dict):
             self.log("Gọi thành công", result)
@@ -217,7 +227,17 @@ class LoggedCall:
             raise
         except Exception as exc:
             self.log("Gọi thất bại", status="failed", error=str(exc))
-            raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
+            return JSONResponse(
+                status_code=502,
+                content={
+                    "error": {
+                        "message": str(exc),
+                        "type": "server_error",
+                        "param": None,
+                        "code": "upstream_error",
+                    }
+                },
+            )
         if not has_first:
             self.log("Kết thúc stream")
             return StreamingResponse(sender(()), media_type="text/event-stream")

@@ -78,10 +78,24 @@ def create_app() -> FastAPI:
             register_webhook()
         except Exception:
             pass
+        # Start Codex-inspired usage snapshot poller (15s proactive rate-limit polling)
+        try:
+            from services.usage_snapshot_poller import usage_snapshot_poller
+            poller_task = asyncio.create_task(usage_snapshot_poller.start())
+        except Exception:
+            poller_task = None
+        # Initialize project docs watcher (AGENTS.md / CLAUDE.md auto-reload)
+        try:
+            from services.project_docs_watcher import project_docs_watcher
+            project_docs_watcher.force_reload()
+        except Exception:
+            pass
         try:
             yield
         finally:
             await quota_watcher.stop()
+            if poller_task is not None:
+                await usage_snapshot_poller.stop()
             stop_event.set()
             thread.join(timeout=1)
             backup_service.stop()
