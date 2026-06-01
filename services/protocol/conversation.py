@@ -12,7 +12,7 @@ import tiktoken
 from services.account_service import account_service
 from services.config import config
 from services.image_storage_service import image_storage_service
-from services.openai_backend_api import ImagePollTimeoutError, OpenAIBackendAPI
+from services.openai_backend_api import ImageContentPolicyError, ImagePollTimeoutError, OpenAIBackendAPI
 from utils.helper import (
     IMAGE_MODELS,
     extract_image_from_message_content,
@@ -623,6 +623,55 @@ def collect_text(backend: OpenAIBackendAPI, request: ConversationRequest) -> str
     return "".join(stream_text_deltas(backend, request))
 
 
+def _get_detailed_error_from_tasks(
+    backend: OpenAIBackendAPI,
+    conversation_id: str,
+    timeout_secs: float = 10.0,
+    wait_secs: float = 2.0,
+) -> str:
+    """从 /backend-api/tasks/ 接口获取结构化错误信息。
+
+    当 SSE 流检测到 moderation 拦截时，轮询 tasks 接口获取详细错误文本。
+    使用结构化字段（metadata.is_error, author.role, content.content_type）判断，
+    而非依赖易变的文本匹配。
+
+    参数：
+    - `backend`：OpenAIBackendAPI 实例。
+    - `conversation_id`：会话 ID。
+    - `timeout_secs`：请求超时秒数。
+    - `wait_secs`：等待任务创建的秒数。设为 0 可跳过等待。
+
+    返回：
+    - 详细错误信息文本，如果未找到则返回空字符串。
+    """
+    import time as _time
+    try:
+        if wait_secs > 0:
+            _time.sleep(wait_secs)
+        tasks = backend._query_backend_tasks(conversation_id=conversation_id, timeout_secs=timeout_secs)
+        if not tasks:
+            return ""
+
+        for task in tasks:
+            is_error, error_msg, metadata = backend.check_task_error(task)
+            if is_error and error_msg:
+                logger.info({
+                    "event": "image_task_structured_error",
+                    "conversation_id": conversation_id,
+                    "error_msg": error_msg,
+                    "metadata": metadata,
+                })
+                return error_msg
+        return ""
+    except Exception as exc:
+        logger.warning({
+            "event": "image_task_error_query_failed",
+            "conversation_id": conversation_id,
+            "error": str(exc),
+        })
+        return ""
+
+
 def stream_image_outputs(
         backend: OpenAIBackendAPI,
         request: ConversationRequest,
@@ -673,12 +722,28 @@ def stream_image_outputs(
         "turn_use_case": last.get("turn_use_case"),
     })
     if message and not file_ids and not sediment_ids and last.get("blocked"):
-        yield ImageOutput(kind="message", model=request.model, index=index, total=total, text=message)
+        # 尝试从 /backend-api/tasks/ 获取详细错误信息
+        detailed_error = _get_detailed_error_from_tasks(backend, conversation_id)
+        error_text = detailed_error or message or "Image generation was rejected by upstream policy."
+        yield ImageOutput(kind="message", model=request.model, index=index, total=total, text=error_text)
         return
     should_poll_for_image = bool(request.images) or last.get("turn_use_case") == "image gen"
     if message and not file_ids and not sediment_ids and not should_poll_for_image:
         yield ImageOutput(kind="message", model=request.model, index=index, total=total, text=message)
         return
+
+    # 在轮询图片之前，先检查 /backend-api/tasks/ 是否有 moderation 拦截
+    # 这样可以避免不必要的长时间轮询超时
+    if not file_ids and not sediment_ids and conversation_id:
+        detailed_error = _get_detailed_error_from_tasks(backend, conversation_id, timeout_secs=5.0, wait_secs=1.0)
+        if detailed_error:
+            logger.info({
+                "event": "image_task_error_before_poll",
+                "conversation_id": conversation_id,
+                "error": detailed_error,
+            })
+            yield ImageOutput(kind="message", model=request.model, index=index, total=total, text=detailed_error)
+            return
 
     image_urls = backend.resolve_conversation_image_urls(conversation_id, file_ids, sediment_ids)
     if image_urls:
@@ -800,6 +865,21 @@ def stream_image_outputs_with_pool(request: ConversationRequest) -> Iterator[Ima
                 if account_email and not getattr(exc, "account_email", ""):
                     exc.account_email = account_email
                 raise
+            except ImageContentPolicyError as exc:
+                account_service.mark_image_result(token, False)
+                logger.warning({
+                    "event": "image_stream_content_policy_error",
+                    "request_token": token,
+                    "account_email": account_email,
+                    "error": str(exc),
+                })
+                raise ImageGenerationError(
+                    str(exc) or "Image generation was rejected by upstream policy.",
+                    status_code=400,
+                    error_type="invalid_request_error",
+                    code="content_policy_violation",
+                    account_email=account_email,
+                ) from exc
             except ImageGenerationError as exc:
                 account_service.mark_image_result(token, False)
                 if account_email and not getattr(exc, "account_email", ""):

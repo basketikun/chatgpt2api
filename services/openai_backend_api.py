@@ -34,6 +34,11 @@ class ImagePollTimeoutError(RuntimeError):
     pass
 
 
+class ImageContentPolicyError(RuntimeError):
+    """Raised when image generation is blocked by content policy moderation."""
+    pass
+
+
 @dataclass
 class ChatRequirements:
     """保存一次对话请求所需的 sentinel token。"""
@@ -1952,6 +1957,32 @@ class OpenAIBackendAPI:
 
         while _remaining() > 0:
             attempt += 1
+            # 在每次轮询时，先检查 /backend-api/tasks/ 是否有 moderation 错误
+            # 这样可以在轮询过程中尽早发现错误，避免长时间等待超时
+            try:
+                tasks = self._query_backend_tasks(conversation_id=conversation_id, timeout_secs=5.0)
+                for task in tasks:
+                    is_error, error_msg, metadata = self.check_task_error(task)
+                    if is_error and error_msg:
+                        logger.info({
+                            "event": "image_poll_task_error",
+                            "conversation_id": conversation_id,
+                            "attempt": attempt,
+                            "error_msg": error_msg,
+                            "metadata": metadata,
+                        })
+                        raise ImageContentPolicyError(error_msg)
+            except ImageContentPolicyError:
+                raise
+            except Exception as exc:
+                # tasks 查询失败不影响正常轮询流程
+                logger.debug({
+                    "event": "image_poll_task_check_failed",
+                    "conversation_id": conversation_id,
+                    "attempt": attempt,
+                    "error": str(exc),
+                })
+
             try:
                 conversation = self._get_conversation(conversation_id)
             except UpstreamHTTPError as exc:
@@ -2024,6 +2055,78 @@ class OpenAIBackendAPI:
         ensure_ok(response, path)
         data = response.json()
         return data.get("download_url") or data.get("url") or ""
+
+    def _query_backend_tasks(
+        self,
+        conversation_id: str = "",
+        task_id: str = "",
+        timeout_secs: float = 30.0,
+    ) -> list[Dict[str, Any]]:
+        """查询 /backend-api/tasks/ 接口获取异步任务状态和错误信息。
+
+        参数：
+        - `conversation_id`：可选。按 conversation_id 过滤任务。
+        - `task_id`：可选。按 task_id 过滤任务。
+        - `timeout_secs`：请求超时秒数。
+
+        返回：
+        - 任务列表，每个任务包含 image_gen_message 等字段。
+        """
+        path = "/backend-api/tasks"
+        response = self.session.get(
+            self.base_url + path,
+            headers=self._headers(path, {"Accept": "application/json"}),
+            timeout=timeout_secs,
+        )
+        ensure_ok(response, path)
+        data = response.json()
+        tasks = data.get("tasks", [])
+        if not isinstance(tasks, list):
+            return []
+
+        # 按 conversation_id 或 task_id 过滤
+        if conversation_id:
+            tasks = [
+                t for t in tasks
+                if isinstance(t, dict) and (
+                    t.get("conversation_id") == conversation_id
+                    or t.get("original_conversation_id") == conversation_id
+                )
+            ]
+        if task_id:
+            tasks = [t for t in tasks if isinstance(t, dict) and t.get("task_id") == task_id]
+        return tasks
+
+    def check_task_error(self, task: Dict[str, Any]) -> tuple[bool, str, Dict[str, Any]]:
+        """检查单个任务是否包含结构化错误。
+
+        通过以下字段判断（不依赖文本匹配）：
+        - image_gen_message.metadata.is_error == True
+        - image_gen_message.author.role == "assistant" (而非 "tool")
+        - image_gen_message.content.content_type == "text" (而非 "multimodal_text")
+
+        返回：
+        - (is_error, error_msg, metadata)
+        """
+        img_msg = task.get("image_gen_message") or {}
+        if not img_msg:
+            return False, "", {}
+
+        metadata = img_msg.get("metadata") or {}
+        content = img_msg.get("content") or {}
+        author = img_msg.get("author") or {}
+
+        is_error = metadata.get("is_error", False)
+        is_text_only = content.get("content_type") == "text"
+        is_assistant_role = author.get("role") == "assistant"
+
+        # 提取错误文本
+        error_msg = ""
+        if is_error and is_text_only:
+            parts = content.get("parts", [])
+            error_msg = "".join(p for p in parts if isinstance(p, str))
+
+        return is_error, error_msg, metadata
 
     def _resolve_image_urls(self, conversation_id: str, file_ids: list[str], sediment_ids: list[str]) -> list[str]:
         """把图片结果 id 解析成可下载 URL。"""
