@@ -27,7 +27,7 @@ def _load_ddg_aliases() -> set[str]:
             data = json.loads(DDG_ALIASES_FILE.read_text(encoding="utf-8"))
             if isinstance(data, list):
                 return {str(item).strip().lower() for item in data if str(item).strip()}
-    except Exception:
+    except (json.JSONDecodeError, OSError):
         pass
     return set()
 
@@ -123,7 +123,7 @@ def _parse_received_at(value: Any) -> datetime | None:
     try:
         date = datetime.fromisoformat(text[:-1] + "+00:00" if text.endswith("Z") else text)
         return date if date.tzinfo else date.replace(tzinfo=timezone.utc)
-    except Exception:
+    except (ValueError, OverflowError):
         pass
     try:
         date = parsedate_to_datetime(text)

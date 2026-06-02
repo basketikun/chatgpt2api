@@ -82,7 +82,7 @@ class CPAConfig:
                 return [pool] if pool["base_url"] else []
             if isinstance(raw, list):
                 return [_normalize_pool(item) for item in raw if isinstance(item, dict)]
-        except Exception:
+        except (json.JSONDecodeError, OSError):
             pass
         return []
 

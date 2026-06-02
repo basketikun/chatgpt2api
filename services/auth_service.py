@@ -244,7 +244,7 @@ class AuthService:
                     try:
                         self._save()
                         self._last_used_flush_at[item_id] = now
-                    except Exception:
+                    except OSError:
                         pass
                 return self._public_item(next_item)
         return None

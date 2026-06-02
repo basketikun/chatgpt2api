@@ -35,7 +35,7 @@ register_config_file = base_dir.parents[1] / "data" / "register.json"
 try:
     saved_config = json.loads(register_config_file.read_text(encoding="utf-8"))
     config.update({key: saved_config[key] for key in ("mail", "proxy", "total", "threads") if key in saved_config})
-except Exception:
+except (json.JSONDecodeError, OSError):
     pass
 
 auth_base = "https://auth.openai.com"

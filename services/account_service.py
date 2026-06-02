@@ -54,14 +54,14 @@ class AccountService:
             f = self._get_cumulative_file()
             if f.exists():
                 return int(f.read_text().strip())
-        except Exception:
+        except (OSError, ValueError):
             pass
         return len(self._accounts)
 
     def _save_cumulative_total(self) -> None:
         try:
             self._get_cumulative_file().write_text(str(self._cumulative_total))
-        except Exception:
+        except OSError:
             pass
 
     @staticmethod

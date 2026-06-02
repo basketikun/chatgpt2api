@@ -250,7 +250,7 @@ def compress_images(quality: int = 60) -> dict:
                 count += 1
             else:
                 Path(str(p) + ".tmp").unlink()
-        except Exception:
+        except (OSError, ValueError):
             pass
     return {"compressed": count, "saved_bytes": saved, "saved_mb": saved // (1024 * 1024)}
 
@@ -346,7 +346,7 @@ def _auto_cleanup_worker(stop_event: threading.Event) -> None:
                 logger.info({"event": "image_auto_cleanup", "free_mb": free_mb, "min_free_mb": min_free_mb})
                 result = delete_to_target(min_free_mb)
                 logger.info({"event": "image_auto_cleanup_done", **result})
-        except Exception:
+        except (OSError, ValueError):
             pass
 
 

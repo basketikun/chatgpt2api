@@ -180,7 +180,7 @@ def ensure_ok(response: requests.Response, context: str) -> None:
     body: Any = response.text
     try:
         body = response.json()
-    except Exception:
+    except (ValueError, TypeError, AttributeError):
         pass
     retry_after_header = response.headers.get("Retry-After") if hasattr(response, "headers") else None
     retry_after: int | None = None

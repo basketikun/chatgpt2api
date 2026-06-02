@@ -83,7 +83,7 @@ class Sub2APIConfig:
             raw = json.loads(self._store_file.read_text(encoding="utf-8"))
             if isinstance(raw, list):
                 return [_normalize_server(item) for item in raw if isinstance(item, dict)]
-        except Exception:
+        except (json.JSONDecodeError, OSError):
             pass
         return []
 
