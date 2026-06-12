@@ -350,7 +350,7 @@ export function ImageLightbox({
           onPointerDownOutside={(e) => e.preventDefault()}
         >
           <DialogPrimitive.Title className="sr-only">
-            图片预览
+            Image Preview
           </DialogPrimitive.Title>
 
           <div className="absolute top-[calc(env(safe-area-inset-top)+1rem)] right-4 z-10 flex items-center gap-2">
@@ -368,13 +368,13 @@ export function ImageLightbox({
               type="button"
               onClick={handleDownload}
               className="inline-flex size-9 items-center justify-center rounded-full bg-black/50 text-white/90 transition hover:bg-black/70"
-              aria-label="下载图片"
+              aria-label="Download image"
             >
               <Download className="size-4" />
             </button>
             <DialogPrimitive.Close className="inline-flex size-9 items-center justify-center rounded-full bg-black/50 text-white/90 transition hover:bg-black/70">
               <X className="size-4" />
-              <span className="sr-only">关闭</span>
+              <span className="sr-only">Close</span>
             </DialogPrimitive.Close>
           </div>
 
@@ -383,7 +383,7 @@ export function ImageLightbox({
               type="button"
               onClick={goPrev}
               className="absolute left-4 z-10 inline-flex size-10 items-center justify-center rounded-full bg-black/40 text-white/90 transition hover:bg-black/60"
-              aria-label="上一张"
+              aria-label="Previous"
             >
               <ChevronLeft className="size-5" />
             </button>
@@ -422,7 +422,7 @@ export function ImageLightbox({
               type="button"
               onClick={goNext}
               className="absolute right-4 z-10 inline-flex size-10 items-center justify-center rounded-full bg-black/40 text-white/90 transition hover:bg-black/60"
-              aria-label="下一张"
+              aria-label="Next"
             >
               <ChevronRight className="size-5" />
             </button>

@@ -23,7 +23,7 @@ services:
       # - GIT_FILE_PATH=accounts.json
       
       # 认证密钥 (可选，覆盖 config.json)
-      # - CHATGPT2API_AUTH_KEY=your_secret_key
+       - CHATGPT2API_AUTH_KEY=88b43e3ea202abbde35f9152f05a2ad4
       
       # 基础 URL (可选)
       # - CHATGPT2API_BASE_URL=https://your-domain.com

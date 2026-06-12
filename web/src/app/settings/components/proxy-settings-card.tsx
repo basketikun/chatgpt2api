@@ -26,7 +26,7 @@ export function ProxySettingsCard() {
   const handleTest = async () => {
     const candidate = proxy.trim();
     if (!candidate) {
-      toast.error("请先填写代理地址");
+      toast.error("Please fill in the proxy address first");
       return;
     }
     setIsTesting(true);
@@ -35,12 +35,12 @@ export function ProxySettingsCard() {
       const data = await testProxy(candidate);
       setTestResult(data.result);
       if (data.result.ok) {
-        toast.success(`代理可用（${data.result.latency_ms} ms，HTTP ${data.result.status}）`);
+        toast.success(`Proxy available (${data.result.latency_ms} ms, HTTP ${data.result.status})`);
       } else {
-        toast.error(`代理不可用：${data.result.error ?? "未知错误"}`);
+        toast.error(`Proxy unavailable: ${data.result.error ?? "Unknown error"}`);
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "测试代理失败");
+      toast.error(error instanceof Error ? error.message : "Proxy test failed");
     } finally {
       setIsTesting(false);
     }
@@ -55,12 +55,12 @@ export function ProxySettingsCard() {
               <Link2 className="size-5 text-stone-600" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold tracking-tight">全局代理</h2>
-              <p className="text-sm text-stone-500">为系统中的出站请求配置统一代理，保存后会立即生效。</p>
+              <h2 className="text-lg font-semibold tracking-tight">Global Proxy</h2>
+              <p className="text-sm text-stone-500">Configure a unified proxy for outbound requests in the system. Takes effect immediately after saving.</p>
             </div>
           </div>
           <Badge variant={proxy.trim() ? "success" : "secondary"} className="w-fit rounded-md px-2.5 py-1">
-            {proxy.trim() ? "已配置" : "未配置"}
+            {proxy.trim() ? "Configured" : "Not configured"}
           </Badge>
         </div>
 
@@ -71,7 +71,7 @@ export function ProxySettingsCard() {
         ) : (
           <>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-stone-700">代理地址</label>
+              <label className="text-sm font-medium text-stone-700">Proxy Address</label>
               <Input
                 value={proxy}
                 onChange={(event) => {
@@ -82,7 +82,7 @@ export function ProxySettingsCard() {
                 className="h-11 rounded-xl border-stone-200 bg-white"
               />
               <p className="text-sm text-stone-500">
-                留空表示不使用代理。请按完整地址填写，例如 `http://127.0.0.1:7890`、`http://用户名:密码@127.0.0.1:7890` 或 `socks5://127.0.0.1:7890`。
+                Leave empty for no proxy. Fill in the full address, e.g. `http://127.0.0.1:7890`, `http://username:password@127.0.0.1:7890` or `socks5://127.0.0.1:7890`.
               </p>
             </div>
 
@@ -95,8 +95,8 @@ export function ProxySettingsCard() {
                 }`}
               >
                 {testResult.ok
-                  ? `代理可用：HTTP ${testResult.status}，用时 ${testResult.latency_ms} ms`
-                  : `代理不可用：${testResult.error ?? "未知错误"}（用时 ${testResult.latency_ms} ms）`}
+                  ? `Proxy available: HTTP ${testResult.status}, took ${testResult.latency_ms} ms`
+                  : `Proxy unavailable: ${testResult.error ?? "Unknown error"} (took ${testResult.latency_ms} ms)`}
               </div>
             ) : null}
 
@@ -108,7 +108,7 @@ export function ProxySettingsCard() {
                 disabled={isTesting || isLoadingConfig}
               >
                 {isTesting ? <LoaderCircle className="size-4 animate-spin" /> : <PlugZap className="size-4" />}
-                测试代理
+                Test Proxy
               </Button>
               <Button
                 className="h-10 rounded-xl bg-stone-950 px-5 text-white hover:bg-stone-800"
@@ -116,7 +116,7 @@ export function ProxySettingsCard() {
                 disabled={isSavingConfig}
               >
                 {isSavingConfig ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
-                保存配置
+                Save Config
               </Button>
             </div>
           </>

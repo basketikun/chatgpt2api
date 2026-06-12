@@ -1,5 +1,5 @@
 {
-  "auth-key": "chatgpt2api",
+  "auth-key": "88b43e3ea202abbde35f9152f05a2ad4",
   "refresh_account_interval_minute": 60,
   "image_retention_days": 15,
   "image_poll_timeout_secs": 120,
@@ -12,7 +12,7 @@
     "warning"
   ],
   "proxy": "",
-  "base_url": "",
+  "base_url": "https://chat2api.113979.xyz",
   "sensitive_words": [],
   "global_system_prompt": "",
   "ai_review": {
