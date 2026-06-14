@@ -17,7 +17,7 @@ export default function HomePage() {
       if (!active) {
         return;
       }
-      router.replace(session ? getDefaultRouteForRole(session.role) : "/login");
+      router.replace(session ? getDefaultRouteForRole(session.role) : "/login/");
     };
 
     void redirect();

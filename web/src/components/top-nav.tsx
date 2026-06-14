@@ -16,16 +16,16 @@ import { cn } from "@/lib/utils";
 import { clearStoredAuthSession, type StoredAuthSession } from "@/store/auth";
 
 const adminNavItems = [
-  { href: "/image", label: "生图" },
-  { href: "/accounts", label: "号池管理" },
-  { href: "/register", label: "注册机" },
-  { href: "/image-manager", label: "图片管理" },
-  { href: "/logs", label: "日志管理" },
-  { href: "/debug", label: "调试" },
-  { href: "/settings", label: "设置" },
+  { href: "/image/", label: "生图" },
+  { href: "/accounts/", label: "号池管理" },
+  { href: "/register/", label: "注册机" },
+  { href: "/image-manager/", label: "图片管理" },
+  { href: "/logs/", label: "日志管理" },
+  { href: "/debug/", label: "调试" },
+  { href: "/settings/", label: "设置" },
 ];
 
-const userNavItems = [{ href: "/image", label: "画图" }];
+const userNavItems = [{ href: "/image/", label: "画图" }];
 
 function buildThirdPartyHref(appUrl: string, baseUrl: string, apiKey: string) {
   const url = appUrl.trim();
@@ -50,7 +50,7 @@ export function TopNav() {
     let active = true;
 
     const load = async () => {
-      if (pathname === "/login") {
+      if (pathname === "/login/") {
         if (!active) {
           return;
         }
@@ -101,10 +101,10 @@ export function TopNav() {
 
   const handleLogout = async () => {
     await clearStoredAuthSession();
-    router.replace("/login");
+    router.replace("/login/");
   };
 
-  if (pathname === "/login" || session === undefined || !session) {
+  if (pathname === "/login/" || session === undefined || !session) {
     return null;
   }
 
@@ -182,7 +182,7 @@ export function TopNav() {
               </SheetContent>
             </Sheet>
             <Link
-              href="/image"
+              href="/image/"
               className="shrink-0 py-1 text-[15px] font-bold tracking-tight text-stone-950 transition hover:text-stone-700 dark:text-stone-50 dark:hover:text-white"
             >
               chatgpt2api

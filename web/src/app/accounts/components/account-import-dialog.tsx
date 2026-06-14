@@ -725,7 +725,7 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
           onClick={() => {
             setOpen(false);
             resetState();
-            router.push("/settings");
+            router.push("/settings/");
           }}
         />
         <MethodCard
@@ -735,7 +735,7 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
           onClick={() => {
             setOpen(false);
             resetState();
-            router.push("/settings");
+            router.push("/settings/");
           }}
         />
       </div>
