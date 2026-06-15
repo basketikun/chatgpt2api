@@ -5,12 +5,14 @@ services:
       dockerfile: Dockerfile
     image: chatgpt2api:local
     container_name: chatgpt2api-local
+    restart: unless-stopped
     ports:
-      - "8000:80"
+      - "${CHATGPT2API_PORT:-3000}:80"
     volumes:
       - ./data:/app/data
       - ./config.json:/app/config.json
     environment:
+      TZ: ${TZ:-Asia/Shanghai}
       STORAGE_BACKEND: sqlite
       DATABASE_URL: sqlite:////app/data/accounts.db
     # 存储后端配置 (可选值: json, sqlite, postgres, git)

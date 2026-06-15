@@ -7,6 +7,7 @@ services:
       - ./config.json:/app/config.json
       - ./scripts:/app/scripts:ro
     environment:
+      TZ: ${TZ:-Asia/Shanghai}
       CHATGPT2API_CONFIG_FILE: /app/config.json
       CHATGPT2API_PROXY_RUNTIME_ENABLED: ${CHATGPT2API_PROXY_RUNTIME_ENABLED:-true}
       CHATGPT2API_PROXY_RUNTIME_EGRESS_MODE: ${CHATGPT2API_PROXY_RUNTIME_EGRESS_MODE:-single_proxy}
@@ -24,12 +25,15 @@ services:
       CHATGPT2API_FLARESOLVERR_URL: ${CHATGPT2API_FLARESOLVERR_URL:-http://flaresolverr:8191}
     command: ["python3", "/app/scripts/init_proxy_config.py"]
     restart: "no"
+    networks:
+      - warp-net
 
   warp-proxy:
     image: caomingjun/warp:latest
     container_name: chatgpt2api-warp-proxy
     restart: unless-stopped
     environment:
+      TZ: ${TZ:-Asia/Shanghai}
       WARP_SLEEP: "2"
       # 可选：填写 Cloudflare WARP+ License Key
       # WARP_LICENSE_KEY: ${WARP_LICENSE_KEY:-}
@@ -47,6 +51,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    networks:
+      - warp-net
 
   privoxy:
     image: vimagick/privoxy:latest
@@ -65,6 +71,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    networks:
+      - warp-net
 
   flaresolverr:
     image: ghcr.io/flaresolverr/flaresolverr:latest
@@ -102,7 +110,14 @@ services:
       - ./data:/app/data
       - ./config.json:/app/config.json
     environment:
+      TZ: ${TZ:-Asia/Shanghai}
       STORAGE_BACKEND: ${STORAGE_BACKEND:-json}
       DATABASE_URL: ${DATABASE_URL:-}
       CHATGPT2API_AUTH_KEY: ${CHATGPT2API_AUTH_KEY:-}
       CHATGPT2API_BASE_URL: ${CHATGPT2API_BASE_URL:-}
+    networks:
+      - warp-net
+
+networks:
+  warp-net:
+    driver: bridge
