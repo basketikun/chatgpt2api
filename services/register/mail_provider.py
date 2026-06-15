@@ -659,6 +659,13 @@ class CloudMailGenProvider(BaseMailProvider):
         if not self.domain:
             raise RuntimeError("CloudMailGen 需要至少配置一个 domain")
         address = self._resolve_address(username)
+        token = self._get_token()
+        self._request(
+            "POST",
+            "/api/public/addUser",
+            headers={"Authorization": token},
+            payload={"list": [{"email": address}]},
+        )
         return {"provider": self.name, "provider_ref": self.provider_ref, "address": address}
 
     def fetch_latest_message(self, mailbox: dict[str, Any]) -> dict[str, Any] | None:
