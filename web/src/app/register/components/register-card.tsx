@@ -58,6 +58,7 @@ export function RegisterCard() {
       ...(type === "yyds_mail" ? { api_base: "https://maliapi.215.im/v1", api_key: "", domain: [], subdomain: "", wildcard: false } : {}),
       ...(type === "ddg_mail" ? { ddg_token: "", cf_inbox_jwt: "", cf_domain: [], admin_password: "" } : {}),
       ...(type === "outlook_token" ? { mailboxes: "", mode: "graph", imap_host: "outlook.office365.com", message_limit: 10 } : {}),
+      ...(type === "gmail_imap" ? { gmail_user: "", gmail_password: "", imap_host: "imap.gmail.com", imap_port: 993, domain: [] } : {}),
     });
   };
 
@@ -186,6 +187,7 @@ export function RegisterCard() {
                             <SelectItem value="yyds_mail">yyds_mail</SelectItem>
                             <SelectItem value="ddg_mail">ddg_mail (DDG邮箱+CF中转)</SelectItem>
                             <SelectItem value="outlook_token">outlook_token (Outlook/Hotmail 邮箱池)</SelectItem>
+                            <SelectItem value="gmail_imap">gmail_imap (Gmail IMAP 转发邮箱)</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -289,6 +291,26 @@ export function RegisterCard() {
                           ) : null}
                         </>
                       ) : null}
+                      {type === "gmail_imap" ? (
+                        <>
+                          <div className="space-y-2">
+                            <label className="text-sm text-stone-700">Gmail 账号 <span className="text-red-400">*</span></label>
+                            <Input value={String(provider.gmail_user || "")} onChange={(event) => updateProvider(index, { gmail_user: event.target.value })} className="h-10 rounded-xl border-stone-200 bg-white" disabled={config.enabled} placeholder="如 user@gmail.com" />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-sm text-stone-700">Gmail 应用专用密码 <span className="text-red-400">*</span></label>
+                            <Input value={String(provider.gmail_password || "")} onChange={(event) => updateProvider(index, { gmail_password: event.target.value })} className="h-10 rounded-xl border-stone-200 bg-white" disabled={config.enabled} placeholder="16位 Google App Password" />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-sm text-stone-700">IMAP 主机</label>
+                            <Input value={String(provider.imap_host || "imap.gmail.com")} onChange={(event) => updateProvider(index, { imap_host: event.target.value })} className="h-10 rounded-xl border-stone-200 bg-white" disabled={config.enabled} />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-sm text-stone-700">IMAP 端口</label>
+                            <Input value={String(provider.imap_port || "993")} onChange={(event) => updateProvider(index, { imap_port: Number(event.target.value) || 993 })} className="h-10 rounded-xl border-stone-200 bg-white" disabled={config.enabled} />
+                          </div>
+                        </>
+                      ) : null}
                     </div>
 
                     {type === "outlook_token" ? (() => {
@@ -329,7 +351,7 @@ export function RegisterCard() {
                       );
                     })() : null}
 
-                    {type === "cloudmail_gen" || type === "tempmail_lol" || type === "cloudflare_temp_email" || type === "moemail" || type === "inbucket" || type === "yyds_mail" || type === "ddg_mail" ? (
+                    {type === "cloudmail_gen" || type === "tempmail_lol" || type === "cloudflare_temp_email" || type === "moemail" || type === "inbucket" || type === "yyds_mail" || type === "ddg_mail" || type === "gmail_imap" ? (
                       <div className="space-y-2">
                         <label className="text-sm text-stone-700">{type === "cloudmail_gen" ? "邮箱域名" : type === "inbucket" ? "基础域名列表" : "Domain"}</label>
                         <Textarea value={domains} onChange={(event) => updateProvider(index, { domain: event.target.value.split(/[\n,]/).map((item) => item.trim()) })} placeholder={type === "cloudmail_gen" ? "每行一个域名，留空则使用服务默认域名" : type === "inbucket" ? "每行一个基础域名，系统会自动生成随机子域名" : type === "moemail" ? "每行一个域名" : "每行一个域名，留空则使用服务默认域名"} className="min-h-20 rounded-xl border-stone-200 bg-white font-mono text-xs" disabled={config.enabled} />

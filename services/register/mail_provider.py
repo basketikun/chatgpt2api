@@ -365,6 +365,18 @@ def _message_tracking_ref(message: dict[str, Any]) -> str:
     return f"content:{provider}:{mailbox}:{received_value}:{digest}"
 
 
+OPENAI_SUBJECT_KEYWORDS = ("OpenAI", "ChatGPT", "Verify", "verification", "code")
+
+
+def _decode_mime_header(value: str | None) -> str:
+    if not value:
+        return ""
+    try:
+        return str(make_header(decode_header(value)))
+    except Exception:
+        return value
+
+
 class BaseMailProvider:
     name = "unknown"
 
@@ -1291,20 +1303,12 @@ class OutlookTokenProvider(BaseMailProvider):
             else:
                 plain.append(str(payload))
 
-        def _decode(value: str | None) -> str:
-            if not value:
-                return ""
-            try:
-                return str(make_header(decode_header(value)))
-            except Exception:
-                return value
-
         return {
             "provider": self.name,
             "mailbox": mailbox["address"],
-            "message_id": _decode(str(message.get("Message-ID") or "")),
-            "subject": _decode(str(message.get("Subject") or "")),
-            "sender": _decode(str(message.get("From") or "")),
+            "message_id": _decode_mime_header(str(message.get("Message-ID") or "")),
+            "subject": _decode_mime_header(str(message.get("Subject") or "")),
+            "sender": _decode_mime_header(str(message.get("From") or "")),
             "text_content": "\n".join(plain).strip(),
             "html_content": "\n".join(html).strip(),
             "received_at": received,
@@ -1344,6 +1348,172 @@ class OutlookTokenProvider(BaseMailProvider):
 
     def wait_for_code(self, mailbox: dict[str, Any]) -> str | None:
         """轮询时遍历最近 N 封邮件，逐封提取验证码，避免最新一封是广告/安全提醒时错过验证码。"""
+        seen_value = mailbox.setdefault("_seen_code_message_refs", [])
+        if not isinstance(seen_value, list):
+            seen_value = []
+            mailbox["_seen_code_message_refs"] = seen_value
+        seen_refs = {str(item) for item in seen_value}
+
+        deadline = time.monotonic() + self.conf["wait_timeout"]
+        while time.monotonic() < deadline:
+            for message in self.fetch_recent_messages(mailbox):
+                ref = _message_tracking_ref(message)
+                if ref in seen_refs:
+                    continue
+                code = _extract_code(message)
+                if code:
+                    seen_value.append(ref)
+                    return code
+                seen_refs.add(ref)
+            time.sleep(max(0.2, self.conf["wait_interval"]))
+        return None
+
+
+class GmailIMAPProvider(BaseMailProvider):
+    name = "gmail_imap"
+
+    def __init__(self, entry: dict, conf: dict):
+        super().__init__(conf, str(entry.get("provider_ref") or ""))
+        self.label = str(entry.get("label") or self.provider_ref)
+        self.gmail_user = str(entry.get("gmail_user") or "").strip()
+        self.gmail_password = str(entry.get("gmail_password") or "").strip()
+        self.imap_host = str(entry.get("imap_host") or "imap.gmail.com").strip()
+        self.imap_port = int(entry.get("imap_port") or 993)
+        self.domains = _normalize_string_list(entry.get("domain") or entry.get("domains") or ["jmail.chat"])
+        self.session = _create_session(conf)
+
+    def close(self) -> None:
+        self.session.close()
+
+    def create_mailbox(self, username: str | None = None) -> dict[str, Any]:
+        if not self.gmail_user or not self.gmail_password:
+            raise RuntimeError("GmailIMAPProvider 缺少 gmail_user 或 gmail_password")
+        if not self.domains:
+            raise RuntimeError("GmailIMAPProvider 需要至少配置一个 domain")
+        domain = _next_domain(self.domains)
+        address = f"{username or _random_mailbox_name()}@{domain}"
+        self._flush_old_emails(address)
+        return {
+            "provider": self.name,
+            "provider_ref": self.provider_ref,
+            "address": address,
+            "label": self.label,
+        }
+
+    def _flush_old_emails(self, target_email: str) -> None:
+        try:
+            print(f"  [GmailIMAP] Flushing old emails for {target_email}...")
+            timeout_sec = float(self.conf.get("request_timeout") or 15.0)
+            print(f"  [GmailIMAP] Connecting to {self.imap_host}:{self.imap_port} (timeout={timeout_sec})...")
+            mail = imaplib.IMAP4_SSL(self.imap_host, self.imap_port, timeout=timeout_sec)
+            print("  [GmailIMAP] Logging in...")
+            mail.login(self.gmail_user, self.gmail_password)
+            print("  [GmailIMAP] Logged in. Selecting INBOX...")
+            mail.select("INBOX")
+            print("  [GmailIMAP] Selected INBOX. Searching unseen with keywords...")
+            
+            msg_ids = []
+            for kw in ["OpenAI", "ChatGPT", "verification", "code"]:
+                status, data = mail.search(None, 'UNSEEN', 'HEADER', 'Subject', kw)
+                if status == "OK" and data[0]:
+                    msg_ids.extend(data[0].split())
+            msg_ids = sorted(list(set(msg_ids)))
+            
+            print(f"  [GmailIMAP] Search complete. msg_ids: {msg_ids}")
+            for mid in msg_ids:
+                self._check_and_seen_msg(mail, mid, target_email)
+            print("  [GmailIMAP] Logging out...")
+            mail.logout()
+            print("  [GmailIMAP] Logged out.")
+        except Exception as e:
+            print(f"  [GmailIMAP] Flush exception: {e}")
+            pass
+
+    def _check_and_seen_msg(self, mail, mid, target_email: str) -> None:
+        _, msg_data = mail.fetch(mid, "(RFC822)")
+        if not msg_data or not msg_data[0]:
+            return
+        msg = message_from_bytes(msg_data[0][1], policy=policy.default)
+        subject = _decode_mime_header(str(msg.get("Subject", "")))
+        if any(kw in subject for kw in OPENAI_SUBJECT_KEYWORDS):
+            if self._is_email_for_target(msg, target_email):
+                mail.store(mid, "+FLAGS", "\\Seen")
+
+    def _is_email_for_target(self, msg, target_email: str) -> bool:
+        target = target_email.strip().lower()
+        if not target:
+            return False
+        headers_to_check = ["To", "Cc", "Delivered-To", "X-Forwarded-To", "X-Original-To", "Envelope-To"]
+        vals = [str(msg.get(name)) for name in headers_to_check if msg.get(name)]
+        for val in vals:
+            if target in _decode_mime_header(val).lower():
+                return True
+        return False
+
+    def fetch_recent_messages(self, mailbox: dict[str, Any]) -> list[dict[str, Any]]:
+        target_email = mailbox["address"]
+        messages: list[dict[str, Any]] = []
+        try:
+            timeout_sec = float(self.conf.get("request_timeout") or 15.0)
+            mail = imaplib.IMAP4_SSL(self.imap_host, self.imap_port, timeout=timeout_sec)
+            mail.login(self.gmail_user, self.gmail_password)
+            mail.select("INBOX")
+            
+            msg_ids = []
+            for kw in ["OpenAI", "ChatGPT", "verification", "code"]:
+                status, data = mail.search(None, 'UNSEEN', 'HEADER', 'Subject', kw)
+                if status == "OK" and data[0]:
+                    msg_ids.extend(data[0].split())
+            msg_ids = sorted(list(set(msg_ids)))
+            
+            if msg_ids:
+                for mid in reversed(msg_ids[-10:]):
+                    item = self._read_and_parse_msg(mail, mid, target_email)
+                    if item:
+                        messages.append(item)
+            mail.logout()
+        except Exception as e:
+            raise RuntimeError(f"GmailIMAP 获取邮件失败: {e}")
+        return messages
+
+    def _read_and_parse_msg(self, mail, mid, target_email: str) -> dict[str, Any] | None:
+        _, msg_data = mail.fetch(mid, "(RFC822)")
+        if not msg_data or not msg_data[0]:
+            return None
+        msg = message_from_bytes(msg_data[0][1], policy=policy.default)
+        subject = _decode_mime_header(str(msg.get("Subject", "")))
+        if not any(kw in subject for kw in OPENAI_SUBJECT_KEYWORDS) or not self._is_email_for_target(msg, target_email):
+            return None
+        
+        text_content, html_content = _extract_content({"raw": msg_data[0][1].decode("utf-8", errors="replace")})
+        mail.store(mid, "+FLAGS", "\\Seen")
+        
+        sender = msg.get("from") or msg.get("sender") or ""
+        if isinstance(sender, dict):
+            sender = sender.get("address") or sender.get("email") or sender.get("name") or ""
+            
+        try:
+            received = _parse_received_at(parsedate_to_datetime(str(msg.get("Date") or "")))
+        except Exception:
+            received = None
+            
+        return {
+            "provider": self.name,
+            "mailbox": target_email,
+            "message_id": _decode_mime_header(str(msg.get("Message-ID") or "")),
+            "subject": subject,
+            "sender": str(sender),
+            "text_content": text_content,
+            "html_content": html_content,
+            "received_at": received,
+            "raw": None,
+        }
+
+    def fetch_latest_message(self, mailbox: dict[str, Any]) -> dict[str, Any] | None:
+        messages = self.fetch_recent_messages(mailbox)
+        return messages[0] if messages else None
+
+    def wait_for_code(self, mailbox: dict[str, Any]) -> str | None:
         seen_value = mailbox.setdefault("_seen_code_message_refs", [])
         if not isinstance(seen_value, list):
             seen_value = []
@@ -1420,6 +1590,8 @@ def _create_provider(mail_config: dict, provider: str = "", provider_ref: str = 
         return YydsMailProvider(entry, conf)
     if entry["type"] == "outlook_token":
         return OutlookTokenProvider(entry, conf)
+    if entry["type"] == "gmail_imap":
+        return GmailIMAPProvider(entry, conf)
     raise RuntimeError(f"不支持的 mail.provider: {entry['type']}")
 
 
