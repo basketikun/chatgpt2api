@@ -13,6 +13,7 @@ import {
   fetchRegisterConfig,
   resetRegister as resetRegisterApi,
   resetOutlookPool as resetOutlookPoolApi,
+  resetProxyBlacklist as resetProxyBlacklistApi,
   fetchSettingsConfig,
   runBackupNow,
   syncImageStorage,
@@ -356,6 +357,7 @@ type SettingsStore = {
   setRegisterTargetAvailable: (value: string) => void;
   setRegisterCheckInterval: (value: string) => void;
   setRegisterMailField: (key: "request_timeout" | "wait_timeout" | "wait_interval", value: string) => void;
+  setRegisterMailApiUseRegisterProxy: (value: boolean) => void;
   addRegisterProvider: () => void;
   updateRegisterProvider: (index: number, updates: Record<string, unknown>) => void;
   deleteRegisterProvider: (index: number) => void;
@@ -363,6 +365,7 @@ type SettingsStore = {
   toggleRegister: () => Promise<void>;
   resetRegister: () => Promise<void>;
   resetOutlookPool: (scope: "all" | "failed" | "unused") => Promise<void>;
+  resetProxyBlacklist: () => Promise<void>;
 
   loadPools: (silent?: boolean) => Promise<void>;
   openAddDialog: () => void;
@@ -969,6 +972,15 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     } : {});
   },
 
+  setRegisterMailApiUseRegisterProxy: (value) => {
+    set((state) => state.registerConfig ? {
+      registerConfig: {
+        ...state.registerConfig,
+        mail: { ...state.registerConfig.mail, api_use_register_proxy: value },
+      },
+    } : {});
+  },
+
   addRegisterProvider: () => {
     set((state) => state.registerConfig ? {
       registerConfig: {
@@ -1059,6 +1071,19 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       toast.success(scope === "unused" ? "已清空未使用邮箱" : scope === "failed" ? "已清除失败/占用的邮箱状态" : "Outlook 邮箱池状态已全部重置");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "重置邮箱池状态失败");
+    } finally {
+      set({ isSavingRegister: false });
+    }
+  },
+
+  resetProxyBlacklist: async () => {
+    set({ isSavingRegister: true });
+    try {
+      const data = await resetProxyBlacklistApi();
+      set({ registerConfig: data.register });
+      toast.success("代理黑名单已重置");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "重置代理黑名单失败");
     } finally {
       set({ isSavingRegister: false });
     }

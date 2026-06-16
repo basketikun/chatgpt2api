@@ -329,7 +329,7 @@ def _extract_text_candidates(value: Any) -> list[str]:
 def _message_matches_email(data: dict[str, Any], email: str) -> bool:
     target = str(email or "").strip().lower()
     candidates: list[str] = []
-    for key in ("to", "mailTo", "receiver", "receivers", "address", "email", "envelope_to"):
+    for key in ("to", "toEmail", "mailTo", "receiver", "receivers", "address", "email", "envelope_to"):
         if key in data:
             candidates.extend(_extract_text_candidates(data.get(key)))
     return not target or not candidates or any(target in str(item).strip().lower() for item in candidates if str(item).strip())
@@ -578,6 +578,10 @@ class DDGMailProvider(BaseMailProvider):
         self.session.close()
 
 
+class _NonRetryableCloudMailGenError(RuntimeError):
+    pass
+
+
 class CloudMailGenProvider(BaseMailProvider):
     name = "cloudmail_gen"
 
@@ -591,6 +595,14 @@ class CloudMailGenProvider(BaseMailProvider):
         self.email_prefix = str(entry.get("email_prefix") or "").strip()
         self.session = _create_session(conf)
 
+    def _clear_token_cache(self) -> None:
+        with cloudmail_token_lock:
+            cloudmail_token_cache.pop(self._cache_key(), None)
+
+    @staticmethod
+    def _is_retryable_status(status_code: int) -> bool:
+        return status_code == 429 or status_code >= 500
+
     def _request(
         self,
         method: str,
@@ -600,25 +612,54 @@ class CloudMailGenProvider(BaseMailProvider):
         payload: dict | None = None,
         expected: tuple[int, ...] = (200,),
     ):
-        resp = self.session.request(
-            method.upper(),
-            f"{self.api_base}{path}",
-            headers={
-                "Content-Type": "application/json",
-                "User-Agent": self.conf["user_agent"],
-                **(headers or {}),
-            },
-            params=params,
-            json=payload,
-            timeout=self.conf["request_timeout"],
-            verify=False,
-        )
-        if resp.status_code not in expected:
-            raise RuntimeError(f"CloudMailGen 请求失败: {method} {path}, HTTP {resp.status_code}, body={resp.text[:300]}")
-        return {} if resp.status_code == 204 else resp.json()
+        last_error = ""
+        attempts = 3
+        for attempt in range(attempts):
+            try:
+                resp = self.session.request(
+                    method.upper(),
+                    f"{self.api_base}{path}",
+                    headers={
+                        "Content-Type": "application/json",
+                        "User-Agent": self.conf["user_agent"],
+                        **(headers or {}),
+                    },
+                    params=params,
+                    json=payload,
+                    timeout=self.conf["request_timeout"],
+                    verify=False,
+                )
+                if resp.status_code in expected:
+                    return {} if resp.status_code == 204 else resp.json()
+                message = f"CloudMailGen 请求失败: {method} {path}, HTTP {resp.status_code}, body={resp.text[:300]}"
+                if not self._is_retryable_status(int(resp.status_code)):
+                    raise _NonRetryableCloudMailGenError(message)
+                last_error = message
+            except _NonRetryableCloudMailGenError as error:
+                raise RuntimeError(str(error)) from error
+            except Exception as error:
+                last_error = f"CloudMailGen 请求异常: {method} {path}, error={error}"
+            if attempt < attempts - 1:
+                time.sleep(0.5 * (attempt + 1))
+        raise RuntimeError(last_error or f"CloudMailGen 请求失败: {method} {path}")
 
     def _cache_key(self) -> str:
         return f"{self.api_base}|{self.admin_email}"
+
+    @staticmethod
+    def _is_success_payload(data: Any) -> bool:
+        return isinstance(data, dict) and data.get("code") == 200
+
+    def _fetch_email_list(self, token: str, address: str) -> dict:
+        data = self._request(
+            "POST",
+            "/api/public/emailList",
+            headers={"Authorization": token},
+            payload={"toEmail": address, "size": 20, "timeSort": "desc"},
+        )
+        if not isinstance(data, dict):
+            raise RuntimeError(f"CloudMailGen emailList 返回异常: {data}")
+        return data
 
     def _get_token(self) -> str:
         if not self.admin_email or not self.admin_password:
@@ -666,13 +707,14 @@ class CloudMailGenProvider(BaseMailProvider):
         if not address:
             raise RuntimeError("CloudMailGen 缺少 address")
         token = self._get_token()
-        data = self._request(
-            "POST",
-            "/api/public/emailList",
-            headers={"Authorization": token},
-            payload={"toEmail": address, "size": 20, "timeSort": "desc"},
-        )
-        items = (data.get("data") or []) if isinstance(data, dict) and data.get("code") == 200 else []
+        data = self._fetch_email_list(token, address)
+        if not self._is_success_payload(data):
+            self._clear_token_cache()
+            token = self._get_token()
+            data = self._fetch_email_list(token, address)
+        if not self._is_success_payload(data):
+            raise RuntimeError(f"CloudMailGen emailList 返回异常: {data}")
+        items = data.get("data") or []
         messages = [item for item in items if isinstance(item, dict) and _message_matches_email(item, address)]
         if not messages:
             return None
@@ -681,13 +723,13 @@ class CloudMailGenProvider(BaseMailProvider):
         return {
             "provider": self.name,
             "mailbox": address,
-            "message_id": str(item.get("id") or item.get("_id") or item.get("messageId") or ""),
+            "message_id": str(item.get("id") or item.get("_id") or item.get("messageId") or item.get("emailId") or ""),
             "subject": str(item.get("subject") or ""),
-            "sender": str(item.get("from") or item.get("sender") or ""),
+            "sender": str(item.get("from") or item.get("sender") or item.get("sendEmail") or ""),
             "text_content": text_content,
             "html_content": html_content,
             "received_at": _parse_received_at(
-                item.get("createdAt") or item.get("created_at") or item.get("receivedAt") or item.get("date") or item.get("timestamp")
+                item.get("createdAt") or item.get("created_at") or item.get("createTime") or item.get("receivedAt") or item.get("date") or item.get("timestamp")
             ),
             "to": item.get("to") or item.get("toEmail") or item.get("mailTo"),
             "raw": item,

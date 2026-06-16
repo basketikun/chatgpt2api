@@ -1,10 +1,13 @@
 "use client";
 
+import { useState } from "react";
+
 import { AlertTriangle, LoaderCircle, Plus, Play, RotateCcw, Save, Square, Trash2, UserPlus } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -28,6 +31,7 @@ export function RegisterCard() {
   const setTargetAvailable = useSettingsStore((state) => state.setRegisterTargetAvailable);
   const setCheckInterval = useSettingsStore((state) => state.setRegisterCheckInterval);
   const setMailField = useSettingsStore((state) => state.setRegisterMailField);
+  const setMailApiUseRegisterProxy = useSettingsStore((state) => state.setRegisterMailApiUseRegisterProxy);
   const addProvider = useSettingsStore((state) => state.addRegisterProvider);
   const updateProvider = useSettingsStore((state) => state.updateRegisterProvider);
   const deleteProvider = useSettingsStore((state) => state.deleteRegisterProvider);
@@ -35,6 +39,8 @@ export function RegisterCard() {
   const toggle = useSettingsStore((state) => state.toggleRegister);
   const reset = useSettingsStore((state) => state.resetRegister);
   const resetOutlookPool = useSettingsStore((state) => state.resetOutlookPool);
+  const resetProxyBlacklist = useSettingsStore((state) => state.resetProxyBlacklist);
+  const [proxyBlacklistDialogOpen, setProxyBlacklistDialogOpen] = useState(false);
 
   if (isLoading) {
     return (
@@ -52,6 +58,8 @@ export function RegisterCard() {
   const proxyMode = config.proxy_input_mode || "single";
   const proxySourceLabel = proxyMode === "url" ? "URL 列表" : proxyMode === "text" ? "手动列表" : "单代理";
   const currentProxy = String(stats.current_proxy || (proxyMode === "single" ? config.proxy : "") || "").trim();
+  const proxyBlacklistCount = Math.max(0, Number(stats.proxy_blacklist_count || 0));
+  const canResetProxyBlacklist = !config.enabled && proxyBlacklistCount > 0 && (proxyMode === "url" || proxyMode === "text");
   const updateProviderType = (index: number, type: string) => {
     updateProvider(index, {
       type,
@@ -127,6 +135,15 @@ export function RegisterCard() {
                 </SelectContent>
               </Select>
             </div>
+            {canResetProxyBlacklist ? (
+              <div className="space-y-2">
+                <label className="text-sm text-stone-700">代理黑名单</label>
+                <Button type="button" variant="outline" className="h-10 w-full rounded-xl border-stone-200 bg-white text-stone-700" onClick={() => setProxyBlacklistDialogOpen(true)} disabled={isSaving}>
+                  <Trash2 className="size-4" />
+                  重置黑名单
+                </Button>
+              </div>
+            ) : null}
             {proxyMode === "single" ? (
               <div className="space-y-2">
                 <label className="text-sm text-stone-700">注册代理</label>
@@ -165,6 +182,36 @@ export function RegisterCard() {
             </div>
           </div>
 
+          <Dialog open={proxyBlacklistDialogOpen} onOpenChange={setProxyBlacklistDialogOpen}>
+            <DialogContent showCloseButton={false} className="rounded-2xl p-6">
+              <DialogHeader className="gap-2">
+                <DialogTitle>重置代理黑名单</DialogTitle>
+                <DialogDescription className="text-sm leading-6">
+                  当前代理黑名单里有 {proxyBlacklistCount} 条记录。清理后会忘记这些代理的失败、冷却和评分状态，下一轮会重新评估代理。
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter className="pt-2">
+                <DialogClose asChild>
+                  <Button type="button" variant="outline" className="rounded-xl border-stone-200 bg-white" disabled={isSaving}>
+                    取消
+                  </Button>
+                </DialogClose>
+                <Button
+                  type="button"
+                  className="rounded-xl bg-stone-950 text-white hover:bg-stone-800"
+                  disabled={isSaving}
+                  onClick={async () => {
+                    await resetProxyBlacklist();
+                    setProxyBlacklistDialogOpen(false);
+                  }}
+                >
+                  {isSaving ? <LoaderCircle className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+                  确认清理
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
           <div className="space-y-3 border-t border-stone-200 pt-3">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -191,6 +238,14 @@ export function RegisterCard() {
                 <Input value={String(config.mail.wait_interval || "")} onChange={(event) => setMailField("wait_interval", event.target.value)} className="h-10 rounded-xl border-stone-200 bg-white" disabled={config.enabled} />
               </div>
             </div>
+
+            <label className="flex items-start gap-3 rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-700">
+              <Checkbox checked={config.mail.api_use_register_proxy !== false} onCheckedChange={(checked) => setMailApiUseRegisterProxy(Boolean(checked))} disabled={config.enabled} />
+              <span className="space-y-1">
+                <span className="block font-medium text-stone-800">邮箱服务后台 API 使用注册代理</span>
+                <span className="block text-xs leading-5 text-stone-500">关闭后邮箱平台 API 直连，注册 OpenAI/Auth0 请求仍使用注册代理。</span>
+              </span>
+            </label>
 
             <div className="space-y-3">
               {providers.map((provider, index) => {

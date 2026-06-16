@@ -27,6 +27,7 @@ config = {
         "request_timeout": 30,
         "wait_timeout": 30,
         "wait_interval": 2,
+        "api_use_register_proxy": True,
         "providers": [],
     },
     "proxy": "",
@@ -241,8 +242,24 @@ def _is_cloudflare_challenge(resp) -> bool:
     )
 
 
-def _mail_config() -> dict:
-    return {**config["mail"], "proxy": config["proxy"]}
+def _truthy(value: object, fallback: bool = True) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return fallback
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    return fallback
+
+
+def _mail_config(register_proxy: str = "") -> dict:
+    mail = config["mail"] if isinstance(config.get("mail"), dict) else {}
+    use_register_proxy = _truthy(mail.get("api_use_register_proxy"), True)
+    proxy = str(register_proxy or "").strip() if use_register_proxy else ""
+    return {**mail, "api_use_register_proxy": use_register_proxy, "proxy": proxy}
 
 
 def _authorize_landed_page(resp) -> str:
@@ -266,12 +283,12 @@ def _authorize_landed_page(resp) -> str:
     return ""
 
 
-def create_mailbox(username: str | None = None) -> dict:
-    return mail_provider.create_mailbox(_mail_config(), username)
+def create_mailbox(username: str | None = None, register_proxy: str = "") -> dict:
+    return mail_provider.create_mailbox(_mail_config(register_proxy), username)
 
 
-def wait_for_code(mailbox: dict) -> str | None:
-    return mail_provider.wait_for_code(_mail_config(), mailbox)
+def wait_for_code(mailbox: dict, register_proxy: str = "") -> str | None:
+    return mail_provider.wait_for_code(_mail_config(register_proxy), mailbox)
 
 
 from utils.sentinel import SentinelTokenGenerator, build_sentinel_token as _build_sentinel_token_tuple  # noqa: F401
@@ -417,6 +434,7 @@ class PlatformRegistrar:
         self.device_id = str(uuid.uuid4())
         self.code_verifier = ""
         self.platform_auth_code = ""
+        self.stage_timings: dict[str, float] = {}
 
     def close(self) -> None:
         self.session.close()
@@ -600,7 +618,7 @@ class PlatformRegistrar:
 
     def register(self, index: int) -> dict:
         step(index, "开始创建邮箱")
-        mailbox = create_mailbox()
+        mailbox = create_mailbox(register_proxy=self.proxy)
         email = str(mailbox.get("address") or "").strip()
         if not email:
             mail_provider.release_mailbox(mailbox)
@@ -610,11 +628,15 @@ class PlatformRegistrar:
         try:
             password = _random_password()
             first_name, last_name = _random_name()
-            self._platform_authorize(email, index)
+            platform_authorize_started = time.time()
+            try:
+                self._platform_authorize(email, index)
+            finally:
+                self.stage_timings["platform_authorize_ms"] = round((time.time() - platform_authorize_started) * 1000, 1)
             self._register_user(email, password, index)
             self._send_otp(index)
             step(index, "开始等待注册验证码")
-            code = wait_for_code(mailbox)
+            code = wait_for_code(mailbox, register_proxy=self.proxy)
             if not code:
                 raise RuntimeError("等待注册验证码超时")
             step(index, f"收到注册验证码: {code}")
@@ -678,6 +700,22 @@ def prepare_proxy_pool() -> dict[str, object]:
     }
 
 
+def reset_proxy_pool_cycle() -> dict[str, object]:
+    state = proxy_pool.reset_selection_cycle()
+    with stats_lock:
+        stats["current_proxy"] = ""
+        stats["proxy_pool_count"] = state.count
+        stats["proxy_source"] = state.source
+        stats["proxy_pool_last_error"] = state.last_error
+        stats["proxy_pool_last_fetch"] = state.last_fetch
+    return {
+        "proxy_pool_count": state.count,
+        "proxy_source": state.source,
+        "proxy_pool_last_error": state.last_error,
+        "proxy_pool_last_fetch": state.last_fetch,
+    }
+
+
 def worker(index: int) -> dict:
     start = time.time()
     selection = proxy_pool.next_proxy()
@@ -695,6 +733,13 @@ def worker(index: int) -> dict:
         step(index, "任务启动")
         result = registrar.register(index)
         cost = time.time() - start
+        platform_authorize_ms = float(registrar.stage_timings.get("platform_authorize_ms") or 0.0)
+        proxy_outcome = proxy_pool.record_result(
+            selection.proxy,
+            success=True,
+            cost_seconds=cost,
+            platform_authorize_ms=platform_authorize_ms,
+        )
         access_token = str(result["access_token"])
         account_service.add_account_items([result])
         refresh_result = account_service.refresh_accounts([access_token])
@@ -708,6 +753,14 @@ def worker(index: int) -> dict:
         return {"ok": True, "index": index, "result": result}
     except Exception as e:
         cost = time.time() - start
+        platform_authorize_ms = float(registrar.stage_timings.get("platform_authorize_ms") or 0.0)
+        proxy_outcome = proxy_pool.record_result(
+            selection.proxy,
+            success=False,
+            error=str(e),
+            cost_seconds=cost,
+            platform_authorize_ms=platform_authorize_ms,
+        )
         with stats_lock:
             stats["done"] += 1
             stats["fail"] += 1

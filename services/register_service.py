@@ -47,7 +47,7 @@ def _now() -> str:
 
 
 def _default_config() -> dict:
-    return {**openai_register.config, "mode": "total", "target_quota": 100, "target_available": 10, "check_interval": 5, "enabled": False, "stats": {"success": 0, "fail": 0, "done": 0, "running": 0, "threads": openai_register.config["threads"], "elapsed_seconds": 0, "avg_seconds": 0, "success_rate": 0, "current_quota": 0, "current_available": 0, "current_proxy": "", "proxy_pool_count": 0, "proxy_source": "single", "proxy_pool_last_error": "", "proxy_pool_last_fetch": 0}}
+    return {**openai_register.config, "mode": "total", "target_quota": 100, "target_available": 10, "check_interval": 5, "enabled": False, "stats": {"success": 0, "fail": 0, "done": 0, "running": 0, "threads": openai_register.config["threads"], "elapsed_seconds": 0, "avg_seconds": 0, "success_rate": 0, "current_quota": 0, "current_available": 0, "current_proxy": "", "proxy_pool_count": 0, "proxy_source": "single", "proxy_pool_last_error": "", "proxy_pool_last_fetch": 0, "proxy_state_count": 0, "proxy_blacklist_count": 0}}
 
 
 def _safe_int(value: object, fallback: int) -> int:
@@ -55,6 +55,19 @@ def _safe_int(value: object, fallback: int) -> int:
         return int(value or fallback)
     except (OverflowError, TypeError, ValueError):
         return fallback
+
+
+def _safe_bool(value: object, fallback: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return fallback
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    return fallback
 
 
 def _normalize(raw: dict) -> dict:
@@ -81,8 +94,11 @@ def _normalize(raw: dict) -> dict:
         else:
             proxy_input_mode = "single"
     cfg["proxy_input_mode"] = proxy_input_mode
-    if isinstance(cfg.get("mail"), dict):
-        cfg["mail"].pop("proxy", None)
+    default_mail = _default_config()["mail"] if isinstance(_default_config().get("mail"), dict) else {}
+    mail = cfg.get("mail") if isinstance(cfg.get("mail"), dict) else {}
+    cfg["mail"] = {**default_mail, **mail}
+    cfg["mail"]["api_use_register_proxy"] = _safe_bool(cfg["mail"].get("api_use_register_proxy"), True)
+    cfg["mail"].pop("proxy", None)
     cfg["enabled"] = bool(cfg.get("enabled"))
     stats = {**_default_config()["stats"], **(raw.get("stats") if isinstance(raw.get("stats"), dict) else {}),
              "threads": cfg["threads"]}
@@ -125,6 +141,7 @@ class RegisterService:
             for key in ("current_proxy", "proxy_pool_count", "proxy_source", "proxy_pool_last_error", "proxy_pool_last_fetch"):
                 if key in running_stats:
                     snapshot["stats"][key] = running_stats[key]
+            snapshot["stats"].update(openai_register.proxy_pool.proxy_state_metrics())
         self._redact_outlook_pools(snapshot)
         return snapshot
 
@@ -252,10 +269,21 @@ class RegisterService:
         with self._lock:
             self._logs = []
             proxy_metrics = openai_register.configure_proxy_pool(fetch_now=False)
-            self._config["stats"] = {"success": 0, "fail": 0, "done": 0, "running": 0, "threads": self._config["threads"], "elapsed_seconds": 0, "avg_seconds": 0, "success_rate": 0, **self._pool_metrics(), **proxy_metrics, "current_proxy": "", "updated_at": _now()}
+            self._config["stats"] = {"success": 0, "fail": 0, "done": 0, "running": 0, "threads": self._config["threads"], "elapsed_seconds": 0, "avg_seconds": 0, "success_rate": 0, **self._pool_metrics(), **proxy_metrics, **openai_register.proxy_pool.proxy_state_metrics(), "current_proxy": "", "updated_at": _now()}
             with openai_register.stats_lock:
                 openai_register.stats.update({"done": 0, "success": 0, "fail": 0, "start_time": 0.0, "current_proxy": "", **proxy_metrics})
             self._save()
+            return self.get()
+
+    def reset_proxy_blacklist(self) -> dict:
+        with self._lock:
+            if self._config.get("enabled"):
+                raise RuntimeError("注册任务运行中，先停止再重置代理黑名单")
+            metrics = openai_register.proxy_pool.reset_proxy_blacklist()
+            self._config["stats"].update(metrics)
+            self._config["stats"]["updated_at"] = _now()
+            self._save()
+            self._append_log(f"已重置代理黑名单，清除 {metrics['removed_proxy_state_count']} 条代理状态", "yellow")
             return self.get()
 
     def reset_outlook_pool(self, scope: str = "all") -> dict:
@@ -325,13 +353,24 @@ class RegisterService:
     def _run(self) -> None:
         threads = int(self.get()["threads"])
         submitted, done, success, fail = 0, 0, 0, 0
+        waiting_for_target_drop = False
         with ThreadPoolExecutor(max_workers=threads) as executor:
             futures = set()
             while True:
                 cfg = self.get()
-                while self.get()["enabled"] and not self._target_reached(cfg, submitted) and len(futures) < threads:
+                target_reached = self._target_reached(cfg, submitted)
+                if target_reached and str(cfg.get("mode") or "total") in {"quota", "available"}:
+                    waiting_for_target_drop = True
+                while self.get()["enabled"] and not target_reached and len(futures) < threads:
+                    if waiting_for_target_drop:
+                        proxy_metrics = openai_register.reset_proxy_pool_cycle()
+                        self._bump(**proxy_metrics)
+                        self._append_log("号池低于目标，已沿用当前黑名单并从代理列表开头重新评估", "yellow")
+                        waiting_for_target_drop = False
                     submitted += 1
                     futures.add(executor.submit(openai_register.worker, submitted))
+                    cfg = self.get()
+                    target_reached = self._target_reached(cfg, submitted)
                 self._bump(running=len(futures), done=done, success=success, fail=fail)
                 if not futures and (not self.get()["enabled"] or str(cfg.get("mode") or "total") == "total"):
                     break

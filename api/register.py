@@ -66,6 +66,14 @@ def create_router() -> APIRouter:
         require_admin(authorization)
         return {"register": register_service.reset_outlook_pool(body.scope or "all")}
 
+    @router.post("/api/register/proxy-blacklist/reset")
+    async def reset_proxy_blacklist(authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        try:
+            return {"register": register_service.reset_proxy_blacklist()}
+        except RuntimeError as error:
+            raise HTTPException(status_code=400, detail={"error": str(error)}) from error
+
     @router.get("/api/register/events")
     async def register_events(token: str = ""):
         require_admin(f"Bearer {token}")
