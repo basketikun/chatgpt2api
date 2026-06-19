@@ -6,6 +6,8 @@ dist/
 wheels/
 *.egg-info
 web_dist
+node_modules/
+web/node_modules/
 # Virtual environments
 .venv
 .idea

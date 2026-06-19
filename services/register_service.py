@@ -14,6 +14,31 @@ from services.register import mail_provider, openai_register
 
 
 REGISTER_FILE = DATA_DIR / "register.json"
+PRESETS_FILE = DATA_DIR / "register.presets.json"
+BUILTIN_PRESET_FILES = {
+    "local-proxy": DATA_DIR / "register.local.json",
+    "vps-warp": DATA_DIR / "register.vps.json",
+}
+REGISTER_CONFIG_KEYS = ("mail", "proxy", "total", "threads", "otp_resend", "otp_resend_delay")
+
+
+def _default_stats(threads: int) -> dict:
+    return {
+        "success": 0,
+        "fail": 0,
+        "done": 0,
+        "running": 0,
+        "threads": threads,
+        "elapsed_seconds": 0,
+        "avg_seconds": 0,
+        "success_rate": 0,
+        "current_quota": 0,
+        "current_available": 0,
+        "avg_stage_ms": {},
+        "last_errors_by_stage": {},
+        "mailbox_provider_success": {},
+        "otp_wait_avg_seconds": 0,
+    }
 
 
 def _serialize_outlook_pool(credentials: list[dict]) -> str:
@@ -37,7 +62,7 @@ def _now() -> str:
 
 
 def _default_config() -> dict:
-    return {**openai_register.config, "mode": "total", "target_quota": 100, "target_available": 10, "check_interval": 5, "enabled": False, "stats": {"success": 0, "fail": 0, "done": 0, "running": 0, "threads": openai_register.config["threads"], "elapsed_seconds": 0, "avg_seconds": 0, "success_rate": 0, "current_quota": 0, "current_available": 0}}
+    return {**openai_register.config, "mode": "total", "target_quota": 100, "target_available": 10, "check_interval": 5, "enabled": False, "stats": _default_stats(openai_register.config["threads"])}
 
 
 def _normalize(raw: dict) -> dict:
@@ -45,6 +70,10 @@ def _normalize(raw: dict) -> dict:
     cfg.update({k: v for k, v in raw.items() if k not in {"stats", "logs"}})
     cfg["total"] = max(1, int(cfg.get("total") or 1))
     cfg["threads"] = max(1, int(cfg.get("threads") or 1))
+    cfg["otp_resend"] = str(cfg.get("otp_resend") or "after_delay").strip().lower()
+    if cfg["otp_resend"] not in {"always", "after_delay", "off"}:
+        cfg["otp_resend"] = "after_delay"
+    cfg["otp_resend_delay"] = max(0, int(float(cfg.get("otp_resend_delay") or 5)))
     cfg["mode"] = str(cfg.get("mode") or "total").strip() if str(cfg.get("mode") or "total").strip() in {"total", "quota", "available"} else "total"
     cfg["target_quota"] = max(1, int(cfg.get("target_quota") or 1))
     cfg["target_available"] = max(1, int(cfg.get("target_available") or 1))
@@ -82,9 +111,75 @@ class RegisterService:
 
     def get(self) -> dict:
         with self._lock:
+            if isinstance(self._config.get("stats"), dict):
+                self._config["stats"].update(openai_register.snapshot_extra_stats())
             snapshot = json.loads(json.dumps({**self._config, "logs": self._logs[-300:]}, ensure_ascii=False))
         self._redact_outlook_pools(snapshot)
         return snapshot
+
+    def _preset_payload(self, raw: dict) -> dict:
+        cfg = _normalize({**self._config, **(raw or {}), "enabled": False})
+        return {key: value for key, value in cfg.items() if key not in {"stats", "logs", "enabled"}}
+
+    def _load_presets(self) -> dict[str, dict]:
+        presets: dict[str, dict] = {}
+        for name, path in BUILTIN_PRESET_FILES.items():
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if isinstance(data, dict):
+                presets[name] = data
+        try:
+            data = json.loads(PRESETS_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            return presets
+        if not isinstance(data, dict):
+            return presets
+        presets.update({str(name): preset for name, preset in data.items() if isinstance(preset, dict)})
+        return presets
+
+    def _save_presets(self, presets: dict[str, dict]) -> None:
+        PRESETS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        PRESETS_FILE.write_text(json.dumps(presets, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    def list_presets(self) -> dict:
+        with self._lock:
+            presets = self._load_presets()
+            snapshot = {
+                name: self._preset_payload(preset)
+                for name, preset in sorted(presets.items())
+                if str(name).strip()
+            }
+        for preset in snapshot.values():
+            self._redact_outlook_pools(preset)
+        return {"presets": snapshot}
+
+    def save_preset(self, name: str, updates: dict | None = None) -> dict:
+        preset_name = str(name or "").strip()
+        if not preset_name:
+            raise ValueError("preset name is required")
+        with self._lock:
+            payload = dict(updates or {})
+            self._merge_outlook_pools(payload)
+            presets = self._load_presets()
+            presets[preset_name] = self._preset_payload(payload)
+            self._save_presets(presets)
+        return self.list_presets()
+
+    def apply_preset(self, name: str) -> dict:
+        preset_name = str(name or "").strip()
+        with self._lock:
+            presets = self._load_presets()
+            preset = presets.get(preset_name)
+            if not isinstance(preset, dict):
+                raise ValueError(f"preset not found: {preset_name}")
+            self._config = _normalize({**self._config, **preset, "enabled": self._config.get("enabled", False)})
+            self._drop_mail_proxy()
+            openai_register.config.update({k: self._config[k] for k in REGISTER_CONFIG_KEYS})
+            self._save()
+            self._append_log(f"register preset applied: {preset_name}", "yellow")
+            return self.get()
 
     @staticmethod
     def _mask_email(email: str) -> str:
@@ -164,7 +259,7 @@ class RegisterService:
             self._merge_outlook_pools(updates)
             self._config = _normalize({**self._config, **updates})
             self._drop_mail_proxy()
-            openai_register.config.update({k: self._config[k] for k in ("mail", "proxy", "total", "threads")})
+            openai_register.config.update({k: self._config[k] for k in REGISTER_CONFIG_KEYS})
             self._save()
             return self.get()
 
@@ -178,10 +273,9 @@ class RegisterService:
             self._drop_mail_proxy()
             self._logs = []
             metrics = self._pool_metrics()
-            self._config["stats"] = {"job_id": uuid.uuid4().hex, "success": 0, "fail": 0, "done": 0, "running": 0, "threads": self._config["threads"], **metrics, "started_at": _now(), "updated_at": _now()}
-            openai_register.config.update({k: self._config[k] for k in ("mail", "proxy", "total", "threads")})
-            with openai_register.stats_lock:
-                openai_register.stats.update({"done": 0, "success": 0, "fail": 0, "start_time": time.time()})
+            self._config["stats"] = {**_default_stats(self._config["threads"]), "job_id": uuid.uuid4().hex, **metrics, "started_at": _now(), "updated_at": _now()}
+            openai_register.config.update({k: self._config[k] for k in REGISTER_CONFIG_KEYS})
+            openai_register.reset_stats(time.time())
             self._save()
             self._runner = threading.Thread(target=self._run, daemon=True, name="openai-register")
             self._runner.start()
@@ -199,9 +293,8 @@ class RegisterService:
     def reset(self) -> dict:
         with self._lock:
             self._logs = []
-            self._config["stats"] = {"success": 0, "fail": 0, "done": 0, "running": 0, "threads": self._config["threads"], "elapsed_seconds": 0, "avg_seconds": 0, "success_rate": 0, **self._pool_metrics(), "updated_at": _now()}
-            with openai_register.stats_lock:
-                openai_register.stats.update({"done": 0, "success": 0, "fail": 0, "start_time": 0.0})
+            self._config["stats"] = {**_default_stats(self._config["threads"]), **self._pool_metrics(), "updated_at": _now()}
+            openai_register.reset_stats(0.0)
             self._save()
             return self.get()
 
@@ -210,7 +303,7 @@ class RegisterService:
         if scope == "unused":
             with self._lock:
                 removed = self._prune_unused_outlook_pools()
-                openai_register.config.update({k: self._config[k] for k in ("mail", "proxy", "total", "threads")})
+                openai_register.config.update({k: self._config[k] for k in REGISTER_CONFIG_KEYS})
                 self._save()
                 self._append_log(f"已清空 Outlook 邮箱池未使用邮箱，移除 {removed} 个", "yellow")
             return self.get()
@@ -254,6 +347,7 @@ class RegisterService:
         with self._lock:
             self._config["stats"].update(updates)
             stats = self._config["stats"]
+            stats.update(openai_register.snapshot_extra_stats())
             started_at = str(stats.get("started_at") or "")
             if started_at:
                 try:

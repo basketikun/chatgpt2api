@@ -217,6 +217,8 @@ def _config(mail_config: dict) -> dict:
         "request_timeout": float(mail_config.get("request_timeout") or 30),
         "wait_timeout": float(mail_config.get("wait_timeout") or 30),
         "wait_interval": float(mail_config.get("wait_interval") or 2),
+        "fast_wait_seconds": float(mail_config.get("fast_wait_seconds") or 10),
+        "fast_wait_interval": float(mail_config.get("fast_wait_interval") or 0.8),
         "user_agent": str(mail_config.get("user_agent") or "Mozilla/5.0"),
         "proxy": str(mail_config.get("proxy") or "").strip(),
     }
@@ -329,7 +331,10 @@ def _extract_text_candidates(value: Any) -> list[str]:
 def _message_matches_email(data: dict[str, Any], email: str) -> bool:
     target = str(email or "").strip().lower()
     candidates: list[str] = []
-    for key in ("to", "mailTo", "receiver", "receivers", "address", "email", "envelope_to"):
+    # 仅匹配“收件人”字段。注意 sendEmail/sendName 是 CloudMail 的“发件人”字段（OpenAI 地址），
+    # 绝不能放进来：否则 candidates 非空却全是发件方，永远匹配不到我们自己的收件地址，
+    # 导致所有邮件被静默丢弃（表现为“一直收不到验证码”）。
+    for key in ("to", "toEmail", "toName", "mailTo", "receiver", "receivers", "address", "email", "envelope_to"):
         if key in data:
             candidates.extend(_extract_text_candidates(data.get(key)))
     return not target or not candidates or any(target in str(item).strip().lower() for item in candidates if str(item).strip())
@@ -373,14 +378,17 @@ class BaseMailProvider:
         self.provider_ref = provider_ref
 
     def wait_for(self, mailbox: dict[str, Any], on_message: Callable[[dict[str, Any]], ResultT | None]) -> ResultT | None:
-        deadline = time.monotonic() + self.conf["wait_timeout"]
+        started = time.monotonic()
+        deadline = started + self.conf["wait_timeout"]
         while time.monotonic() < deadline:
             message = self.fetch_latest_message(mailbox)
             if message:
                 result = on_message(message)
                 if result is not None:
                     return result
-            time.sleep(max(0.2, self.conf["wait_interval"]))
+            elapsed = time.monotonic() - started
+            interval = self.conf["fast_wait_interval"] if elapsed < self.conf["fast_wait_seconds"] else self.conf["wait_interval"]
+            time.sleep(max(0.2, interval))
         return None
 
     def wait_for_code(self, mailbox: dict[str, Any]) -> str | None:
@@ -589,6 +597,8 @@ class CloudMailGenProvider(BaseMailProvider):
         self.domain = _normalize_string_list(entry.get("domain"))
         self.subdomain = _normalize_string_list(entry.get("subdomain"))
         self.email_prefix = str(entry.get("email_prefix") or "").strip()
+        self.auto_add_account = entry.get("auto_add_account", True) is not False
+        self.account_add_token = str(entry.get("account_add_token") or entry.get("add_token") or "").strip()
         self.session = _create_session(conf)
 
     def _request(
@@ -643,6 +653,49 @@ class CloudMailGenProvider(BaseMailProvider):
             cloudmail_token_cache[cache_key] = (token, now + 24 * 3600)
         return token
 
+    def _get_admin_token(self) -> str:
+        if not self.admin_email or not self.admin_password:
+            raise RuntimeError("CloudMailGen missing admin_email or admin_password")
+        cache_key = f"{self._cache_key()}|admin"
+        now = time.time()
+        with cloudmail_token_lock:
+            cached = cloudmail_token_cache.get(cache_key)
+            if cached and now < cached[1] - 300:
+                return cached[0]
+        data = self._request(
+            "POST",
+            "/api/login",
+            payload={"email": self.admin_email, "password": self.admin_password},
+        )
+        token = ""
+        if isinstance(data, dict) and data.get("code") == 200:
+            token = str((data.get("data") or {}).get("token") or "").strip()
+        if not token:
+            raise RuntimeError(f"CloudMailGen login returned invalid response: {data}")
+        with cloudmail_token_lock:
+            cloudmail_token_cache[cache_key] = (token, now + 24 * 3600)
+        return token
+
+    def _ensure_account(self, address: str) -> dict[str, Any]:
+        token = self._get_admin_token()
+        data = self._request(
+            "POST",
+            "/api/account/add",
+            headers={"Authorization": token},
+            payload={"email": address, "token": self.account_add_token},
+        )
+        if not isinstance(data, dict):
+            raise RuntimeError(f"CloudMailGen account/add returned invalid response: {data}")
+        code = data.get("code")
+        message = str(data.get("message") or "")
+        if code == 200:
+            account = data.get("data")
+            result = account if isinstance(account, dict) else {}
+            return {**result, "_cloudmail_account_add_status": "created", "_cloudmail_account_add_message": message or "created"}
+        if code == 501 and "already" in message.lower():
+            return {"already_registered": True, "_cloudmail_account_add_status": "already_registered", "_cloudmail_account_add_message": message}
+        raise RuntimeError(f"CloudMailGen account/add failed: code={code}, message={message}, response={data}")
+
     def _resolve_address(self, username: str | None = None) -> str:
         domain = _next_domain(self.domain)
         if self.subdomain:
@@ -659,7 +712,14 @@ class CloudMailGenProvider(BaseMailProvider):
         if not self.domain:
             raise RuntimeError("CloudMailGen 需要至少配置一个 domain")
         address = self._resolve_address(username)
-        return {"provider": self.name, "provider_ref": self.provider_ref, "address": address}
+        mailbox = {"provider": self.name, "provider_ref": self.provider_ref, "address": address}
+        if self.auto_add_account:
+            account = self._ensure_account(address)
+            mailbox["account_id"] = str(account.get("accountId") or account.get("id") or "")
+            mailbox["_cloudmail_account_added"] = not bool(account.get("already_registered"))
+            mailbox["_cloudmail_account_add_status"] = str(account.get("_cloudmail_account_add_status") or "")
+            mailbox["_cloudmail_account_add_message"] = str(account.get("_cloudmail_account_add_message") or "")
+        return mailbox
 
     def fetch_latest_message(self, mailbox: dict[str, Any]) -> dict[str, Any] | None:
         address = str(mailbox.get("address") or "").strip()
@@ -674,6 +734,14 @@ class CloudMailGenProvider(BaseMailProvider):
         )
         items = (data.get("data") or []) if isinstance(data, dict) and data.get("code") == 200 else []
         messages = [item for item in items if isinstance(item, dict) and _message_matches_email(item, address)]
+        mailbox["_cloudmail_last_raw_count"] = len([item for item in items if isinstance(item, dict)])
+        mailbox["_cloudmail_last_matched_count"] = len(messages)
+        mailbox["_cloudmail_last_checked_at"] = datetime.now(timezone.utc).isoformat()
+        if items:
+            first = next((item for item in items if isinstance(item, dict)), {})
+            mailbox["_cloudmail_last_to"] = str(first.get("toEmail") or first.get("to") or first.get("mailTo") or "")
+            mailbox["_cloudmail_last_from"] = str(first.get("sendEmail") or first.get("from") or first.get("sender") or "")
+            mailbox["_cloudmail_last_subject"] = str(first.get("subject") or "")[:120]
         if not messages:
             return None
         item = messages[0]
@@ -681,7 +749,7 @@ class CloudMailGenProvider(BaseMailProvider):
         return {
             "provider": self.name,
             "mailbox": address,
-            "message_id": str(item.get("id") or item.get("_id") or item.get("messageId") or ""),
+            "message_id": str(item.get("id") or item.get("_id") or item.get("messageId") or item.get("emailId") or ""),
             "subject": str(item.get("subject") or ""),
             "sender": str(item.get("from") or item.get("sender") or ""),
             "text_content": text_content,
@@ -1350,7 +1418,8 @@ class OutlookTokenProvider(BaseMailProvider):
             mailbox["_seen_code_message_refs"] = seen_value
         seen_refs = {str(item) for item in seen_value}
 
-        deadline = time.monotonic() + self.conf["wait_timeout"]
+        started = time.monotonic()
+        deadline = started + self.conf["wait_timeout"]
         while time.monotonic() < deadline:
             for message in self.fetch_recent_messages(mailbox):
                 ref = _message_tracking_ref(message)
@@ -1361,7 +1430,9 @@ class OutlookTokenProvider(BaseMailProvider):
                     seen_value.append(ref)
                     return code
                 seen_refs.add(ref)
-            time.sleep(max(0.2, self.conf["wait_interval"]))
+            elapsed = time.monotonic() - started
+            interval = self.conf["fast_wait_interval"] if elapsed < self.conf["fast_wait_seconds"] else self.conf["wait_interval"]
+            time.sleep(max(0.2, interval))
         return None
 
 
@@ -1399,7 +1470,10 @@ def _next_entry(mail_config: dict) -> dict:
 def _create_provider(mail_config: dict, provider: str = "", provider_ref: str = "") -> BaseMailProvider:
     entry = next((dict(item) for item in _entries(mail_config) if provider_ref and item["provider_ref"] == provider_ref), None)
     entry = entry or next((dict(item) for item in _enabled_entries(mail_config) if provider and item["type"] == provider), None) or _next_entry(mail_config)
-    conf = _config(mail_config)
+    conf_source = dict(mail_config)
+    if str(entry.get("proxy") or "").strip():
+        conf_source["proxy"] = str(entry.get("proxy") or "").strip()
+    conf = _config(conf_source)
     if entry["type"] == "cloudmail_gen":
         return CloudMailGenProvider(entry, conf)
     if entry["type"] == "cloudflare_temp_email":

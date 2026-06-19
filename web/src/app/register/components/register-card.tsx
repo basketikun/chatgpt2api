@@ -22,7 +22,14 @@ export function RegisterCard() {
   const setTargetQuota = useSettingsStore((state) => state.setRegisterTargetQuota);
   const setTargetAvailable = useSettingsStore((state) => state.setRegisterTargetAvailable);
   const setCheckInterval = useSettingsStore((state) => state.setRegisterCheckInterval);
+  const setOtpResend = useSettingsStore((state) => state.setRegisterOtpResend);
+  const setOtpResendDelay = useSettingsStore((state) => state.setRegisterOtpResendDelay);
   const setMailField = useSettingsStore((state) => state.setRegisterMailField);
+  const presets = useSettingsStore((state) => state.registerPresets);
+  const selectedPreset = useSettingsStore((state) => state.selectedRegisterPreset);
+  const setSelectedPreset = useSettingsStore((state) => state.setSelectedRegisterPreset);
+  const applyPreset = useSettingsStore((state) => state.applySelectedRegisterPreset);
+  const savePreset = useSettingsStore((state) => state.saveCurrentRegisterPreset);
   const addProvider = useSettingsStore((state) => state.addRegisterProvider);
   const updateProvider = useSettingsStore((state) => state.updateRegisterProvider);
   const deleteProvider = useSettingsStore((state) => state.deleteRegisterProvider);
@@ -41,14 +48,27 @@ export function RegisterCard() {
 
   if (!config) return null;
 
-  const stats = config.stats || { success: 0, fail: 0, done: 0, running: 0, threads: config.threads };
+  const stats = config.stats || {
+    success: 0,
+    fail: 0,
+    done: 0,
+    running: 0,
+    threads: config.threads,
+    avg_stage_ms: {},
+    last_errors_by_stage: {},
+    mailbox_provider_success: {},
+    otp_wait_avg_seconds: 0,
+  };
   const providers = config.mail.providers || [];
   const logs = config.logs || [];
+  const stageEntries = Object.entries(stats.avg_stage_ms || {});
+  const errorEntries = Object.entries(stats.last_errors_by_stage || {});
+  const providerSuccessEntries = Object.entries(stats.mailbox_provider_success || {});
   const updateProviderType = (index: number, type: string) => {
     updateProvider(index, {
       type,
       enable: true,
-      ...(type === "cloudmail_gen" ? { api_base: "", admin_email: "", admin_password: "", domain: [], subdomain: [], email_prefix: "" } : {}),
+      ...(type === "cloudmail_gen" ? { api_base: "", admin_email: "", admin_password: "", domain: [], subdomain: [], email_prefix: "", auto_add_account: true } : {}),
       ...(type === "cloudflare_temp_email" ? { api_base: "", admin_password: "", domain: [] } : {}),
       ...(type === "tempmail_lol" ? { api_key: "", domain: [] } : {}),
       ...(type === "moemail" ? { api_base: "", api_key: "", domain: [] } : {}),
@@ -82,6 +102,33 @@ export function RegisterCard() {
           <div className="flex items-start gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs leading-5 text-sky-800">
             <AlertTriangle className="mt-0.5 size-4 shrink-0" />
             <span>如果注册日志出现 Cloudflare 拦截，可在设置页启用 FlareSolverr 清障；相关 Docker 容器需要先启动。</span>
+          </div>
+
+          <div className="grid gap-2 border border-stone-200 bg-white/70 p-3 md:grid-cols-[1fr_auto_auto_auto_auto]">
+            <Select value={selectedPreset || undefined} onValueChange={setSelectedPreset} disabled={config.enabled || presets.length === 0}>
+              <SelectTrigger className="h-9 rounded-xl border-stone-200 bg-white">
+                <SelectValue placeholder="Select preset" />
+              </SelectTrigger>
+              <SelectContent>
+                {presets.map((name) => (
+                  <SelectItem key={name} value={name}>{name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button type="button" variant="outline" className="h-9 rounded-xl border-stone-200 bg-white px-3 text-stone-700" onClick={() => void applyPreset()} disabled={isSaving || config.enabled || !selectedPreset}>
+              <RotateCcw className="size-4" />
+              Apply
+            </Button>
+            <Button type="button" variant="outline" className="h-9 rounded-xl border-stone-200 bg-white px-3 text-stone-700" onClick={() => setProxy("http://127.0.0.1:10808")} disabled={config.enabled}>
+              Local proxy
+            </Button>
+            <Button type="button" variant="outline" className="h-9 rounded-xl border-stone-200 bg-white px-3 text-stone-700" onClick={() => setProxy("")} disabled={config.enabled}>
+              VPS WARP
+            </Button>
+            <Button type="button" variant="outline" className="h-9 rounded-xl border-stone-200 bg-white px-3 text-stone-700" onClick={() => void savePreset()} disabled={isSaving || config.enabled}>
+              <Save className="size-4" />
+              Save preset
+            </Button>
           </div>
 
           <div className="grid gap-4 md:grid-cols-3">
@@ -121,6 +168,23 @@ export function RegisterCard() {
             <div className="space-y-2">
               <label className="text-sm text-stone-700">检查间隔（秒）</label>
               <Input value={String(config.check_interval || "")} onChange={(event) => setCheckInterval(event.target.value)} className="h-10 rounded-xl border-stone-200 bg-white" disabled={config.enabled || config.mode === "total"} />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm text-stone-700">OTP resend</label>
+              <Select value={config.otp_resend || "after_delay"} onValueChange={(value) => setOtpResend(value as "always" | "after_delay" | "off")} disabled={config.enabled}>
+                <SelectTrigger className="h-10 rounded-xl border-stone-200 bg-white">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="after_delay">After delay</SelectItem>
+                  <SelectItem value="always">Always</SelectItem>
+                  <SelectItem value="off">Off</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm text-stone-700">Resend delay (s)</label>
+              <Input value={String(config.otp_resend_delay ?? 5)} onChange={(event) => setOtpResendDelay(event.target.value)} className="h-10 rounded-xl border-stone-200 bg-white" disabled={config.enabled || (config.otp_resend || "after_delay") !== "after_delay"} />
             </div>
           </div>
 
@@ -205,6 +269,10 @@ export function RegisterCard() {
                                 <label className="text-sm text-stone-700">管理员密码</label>
                                 <Input value={String(provider.admin_password || "")} onChange={(event) => updateProvider(index, { admin_password: event.target.value })} className="h-10 rounded-xl border-stone-200 bg-white" disabled={config.enabled} />
                               </div>
+                              <label className="flex items-center gap-3 pt-8 text-sm text-stone-700">
+                                <Checkbox checked={Boolean(provider.auto_add_account ?? true)} onCheckedChange={(checked) => updateProvider(index, { auto_add_account: Boolean(checked) })} disabled={config.enabled} />
+                                Auto add CloudMail account
+                              </label>
                             </>
                           ) : null}
                           {type === "cloudflare_temp_email" || type === "ddg_mail" ? (
@@ -376,6 +444,45 @@ export function RegisterCard() {
                   <div className="mt-1 text-base font-semibold text-stone-800">{value}</div>
                 </div>
               ))}
+            </div>
+            <div className="grid gap-2 border border-stone-200 bg-white/70 p-3 text-xs md:grid-cols-3">
+              <div>
+                <div className="font-semibold text-stone-700">Avg stage time</div>
+                <div className="mt-2 space-y-1 text-stone-500">
+                  {stageEntries.length ? stageEntries.map(([key, value]) => (
+                    <div key={key} className="flex justify-between gap-3">
+                      <span>{key}</span>
+                      <span className="font-mono text-stone-800">{value}ms</span>
+                    </div>
+                  )) : <span>None</span>}
+                </div>
+              </div>
+              <div>
+                <div className="font-semibold text-stone-700">Provider success</div>
+                <div className="mt-2 space-y-1 text-stone-500">
+                  {providerSuccessEntries.length ? providerSuccessEntries.map(([key, value]) => (
+                    <div key={key} className="flex justify-between gap-3">
+                      <span>{key}</span>
+                      <span className="font-mono text-stone-800">{value}</span>
+                    </div>
+                  )) : <span>None</span>}
+                  <div className="flex justify-between gap-3">
+                    <span>OTP avg wait</span>
+                    <span className="font-mono text-stone-800">{stats.otp_wait_avg_seconds || 0}s</span>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <div className="font-semibold text-stone-700">Recent failure stage</div>
+                <div className="mt-2 space-y-1 text-stone-500">
+                  {errorEntries.length ? errorEntries.slice(-4).map(([key, value]) => (
+                    <div key={key}>
+                      <span className="font-mono text-rose-600">{key}</span>
+                      <span className="ml-2 break-all">{value}</span>
+                    </div>
+                  )) : <span>None</span>}
+                </div>
+              </div>
             </div>
             <div className="grid grid-cols-3 gap-2">
               <Button className="h-10 rounded-xl bg-stone-950 px-3 text-white hover:bg-stone-800" onClick={() => void toggle()} disabled={isSaving}>

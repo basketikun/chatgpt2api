@@ -331,11 +331,15 @@ export type RegisterConfig = {
     request_timeout: number;
     wait_timeout: number;
     wait_interval: number;
+    fast_wait_seconds?: number;
+    fast_wait_interval?: number;
     providers: Array<Record<string, unknown>>;
   };
   proxy: string;
   total: number;
   threads: number;
+  otp_resend?: "always" | "after_delay" | "off";
+  otp_resend_delay?: number;
   mode: "total" | "quota" | "available";
   target_quota: number;
   target_available: number;
@@ -352,6 +356,10 @@ export type RegisterConfig = {
     success_rate?: number;
     current_quota?: number;
     current_available?: number;
+    avg_stage_ms?: Record<string, number>;
+    last_errors_by_stage?: Record<string, string>;
+    mailbox_provider_success?: Record<string, number>;
+    otp_wait_avg_seconds?: number;
     started_at?: string;
     updated_at?: string;
     finished_at?: string;
@@ -361,6 +369,10 @@ export type RegisterConfig = {
     text: string;
     level: string;
   }>;
+};
+
+export type RegisterPresetsResponse = {
+  presets: Record<string, Partial<RegisterConfig>>;
 };
 
 export async function login(authKey: string) {
@@ -752,8 +764,11 @@ export async function updateRegisterConfig(updates: Partial<RegisterConfig>) {
   });
 }
 
-export async function startRegister() {
-  return httpRequest<{ register: RegisterConfig }>("/api/register/start", { method: "POST" });
+export async function startRegister(updates?: Partial<RegisterConfig>) {
+  return httpRequest<{ register: RegisterConfig }>("/api/register/start", {
+    method: "POST",
+    body: updates ?? {},
+  });
 }
 
 export async function stopRegister() {
@@ -768,6 +783,23 @@ export async function resetOutlookPool(scope: "all" | "failed" | "unused" = "all
   return httpRequest<{ register: RegisterConfig }>("/api/register/outlook-pool/reset", {
     method: "POST",
     body: { scope },
+  });
+}
+
+export async function fetchRegisterPresets() {
+  return httpRequest<RegisterPresetsResponse>("/api/register/presets");
+}
+
+export async function saveRegisterPreset(name: string, updates: Partial<RegisterConfig>) {
+  return httpRequest<RegisterPresetsResponse>(`/api/register/presets/${encodeURIComponent(name)}`, {
+    method: "POST",
+    body: updates,
+  });
+}
+
+export async function applyRegisterPreset(name: string) {
+  return httpRequest<{ register: RegisterConfig }>(`/api/register/presets/${encodeURIComponent(name)}/apply`, {
+    method: "POST",
   });
 }
 

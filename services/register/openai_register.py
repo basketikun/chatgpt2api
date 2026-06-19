@@ -26,16 +26,20 @@ config = {
         "request_timeout": 30,
         "wait_timeout": 30,
         "wait_interval": 2,
+        "fast_wait_seconds": 10,
+        "fast_wait_interval": 0.8,
         "providers": [],
     },
     "proxy": "",
     "total": 10,
     "threads": 3,
+    "otp_resend": "after_delay",
+    "otp_resend_delay": 5,
 }
 register_config_file = base_dir.parents[1] / "data" / "register.json"
 try:
     saved_config = json.loads(register_config_file.read_text(encoding="utf-8"))
-    config.update({key: saved_config[key] for key in ("mail", "proxy", "total", "threads") if key in saved_config})
+    config.update({key: saved_config[key] for key in ("mail", "proxy", "total", "threads", "otp_resend", "otp_resend_delay") if key in saved_config})
 except Exception:
     pass
 
@@ -55,8 +59,119 @@ sec_ch_ua_full_version_list = '"Chromium";v="145.0.0.0", "Not:A-Brand";v="99.0.0
 default_timeout = 30
 print_lock = threading.Lock()
 stats_lock = threading.Lock()
-stats = {"done": 0, "success": 0, "fail": 0, "start_time": 0.0}
+REGISTER_STAGE_NAMES = (
+    "create_mailbox_ms",
+    "authorize_ms",
+    "register_user_ms",
+    "send_otp_ms",
+    "wait_otp_ms",
+    "validate_otp_ms",
+    "create_account_ms",
+    "exchange_token_ms",
+    "refresh_account_ms",
+)
+
+
+def _new_stats(start_time: float = 0.0) -> dict:
+    return {
+        "done": 0,
+        "success": 0,
+        "fail": 0,
+        "start_time": start_time,
+        "stage_totals_ms": {},
+        "stage_counts": {},
+        "last_errors_by_stage": {},
+        "mailbox_provider_success": {},
+        "otp_wait_total_seconds": 0.0,
+        "otp_wait_count": 0,
+    }
+
+
+stats = _new_stats()
 register_log_sink = None
+
+
+class RegisterStageError(RuntimeError):
+    def __init__(self, stage: str, error: Exception):
+        self.stage = stage
+        self.original = error
+        super().__init__(str(error))
+
+
+def reset_stats(start_time: float = 0.0) -> None:
+    with stats_lock:
+        stats.clear()
+        stats.update(_new_stats(start_time))
+
+
+def _round_ms(value: float) -> float:
+    return round(float(value), 1)
+
+
+def _merge_stage_ms(target: dict, stage_ms: dict[str, float]) -> None:
+    totals = target.setdefault("stage_totals_ms", {})
+    counts = target.setdefault("stage_counts", {})
+    for key, value in stage_ms.items():
+        if key not in REGISTER_STAGE_NAMES:
+            continue
+        totals[key] = float(totals.get(key) or 0.0) + float(value or 0.0)
+        counts[key] = int(counts.get(key) or 0) + 1
+
+
+def _failure_stage(error: Exception) -> str:
+    if isinstance(error, RegisterStageError):
+        return error.stage
+    return "openai_register"
+
+
+def record_register_success(metrics: dict[str, Any]) -> None:
+    with stats_lock:
+        _merge_stage_ms(stats, metrics.get("stage_ms") if isinstance(metrics.get("stage_ms"), dict) else {})
+        provider = str(metrics.get("mailbox_provider") or "").strip()
+        if provider:
+            providers = stats.setdefault("mailbox_provider_success", {})
+            providers[provider] = int(providers.get(provider) or 0) + 1
+        otp_wait = metrics.get("otp_wait_seconds")
+        if isinstance(otp_wait, (int, float)):
+            stats["otp_wait_total_seconds"] = float(stats.get("otp_wait_total_seconds") or 0.0) + float(otp_wait)
+            stats["otp_wait_count"] = int(stats.get("otp_wait_count") or 0) + 1
+
+
+def record_register_stage_metrics(stage_ms: dict[str, float]) -> None:
+    with stats_lock:
+        _merge_stage_ms(stats, stage_ms)
+
+
+def record_register_failure(error: Exception) -> None:
+    stage = _failure_stage(error)
+    with stats_lock:
+        errors = stats.setdefault("last_errors_by_stage", {})
+        errors[stage] = str(error)[-500:]
+
+
+def record_refresh_metrics(duration_ms: float, error: Exception | str | None = None) -> None:
+    with stats_lock:
+        _merge_stage_ms(stats, {"refresh_account_ms": duration_ms})
+        if error:
+            errors = stats.setdefault("last_errors_by_stage", {})
+            errors["account_refresh"] = str(error)[-500:]
+
+
+def snapshot_extra_stats() -> dict:
+    with stats_lock:
+        totals = dict(stats.get("stage_totals_ms") or {})
+        counts = dict(stats.get("stage_counts") or {})
+        otp_count = int(stats.get("otp_wait_count") or 0)
+        return {
+            "avg_stage_ms": {
+                key: _round_ms(float(totals.get(key) or 0.0) / int(counts.get(key) or 1))
+                for key in REGISTER_STAGE_NAMES
+                if int(counts.get(key) or 0) > 0
+            },
+            "last_errors_by_stage": dict(stats.get("last_errors_by_stage") or {}),
+            "mailbox_provider_success": dict(stats.get("mailbox_provider_success") or {}),
+            "otp_wait_avg_seconds": round(float(stats.get("otp_wait_total_seconds") or 0.0) / otp_count, 1) if otp_count else 0,
+        }
 
 common_headers = {
     "accept": "application/json",
@@ -211,7 +326,7 @@ def _is_cloudflare_challenge(resp) -> bool:
 
 
 def _mail_config() -> dict:
-    return {**config["mail"], "proxy": config["proxy"]}
+    return dict(config["mail"])
 
 
 def _authorize_landed_page(resp) -> str:
@@ -248,7 +363,13 @@ from utils.sentinel import SentinelTokenGenerator, build_sentinel_token as _buil
 
 def build_sentinel_token(session: requests.Session, device_id: str, flow: str) -> str:
     """请求 sentinel token，返回 sentinel header 字符串（兼容旧接口）。"""
-    sentinel_val, _oai_sc_val = _build_sentinel_token_tuple(session, device_id, flow, user_agent=user_agent, sec_ch_ua=sec_ch_ua)
+    sentinel_val, oai_sc_val = _build_sentinel_token_tuple(session, device_id, flow, user_agent=user_agent, sec_ch_ua=sec_ch_ua)
+    if oai_sc_val:
+        for domain in (".openai.com", "openai.com", ".auth.openai.com", "auth.openai.com"):
+            try:
+                session.cookies.set("oai-sc", oai_sc_val, domain=domain)
+            except Exception:
+                continue
     return sentinel_val
 
 
@@ -386,9 +507,24 @@ class PlatformRegistrar:
         self.device_id = str(uuid.uuid4())
         self.code_verifier = ""
         self.platform_auth_code = ""
+        self.otp_send_url = ""
+        self.stage_ms: dict[str, float] = {}
+        self.otp_wait_seconds = 0.0
+        self.mailbox_provider = ""
 
     def close(self) -> None:
         self.session.close()
+
+    def _time_stage(self, metric: str, failure_stage: str, func, *args, **kwargs):
+        started = time.monotonic()
+        try:
+            return func(*args, **kwargs)
+        except RegisterStageError:
+            raise
+        except Exception as error:
+            raise RegisterStageError(failure_stage, error) from error
+        finally:
+            self.stage_ms[metric] = _round_ms((time.monotonic() - started) * 1000)
 
     def _navigate_headers(self, referer: str = "") -> dict[str, str]:
         headers = dict(navigate_headers)
@@ -500,23 +636,86 @@ class PlatformRegistrar:
                 step(index, "注册失败提示: 邮箱域名很可能因滥用被封禁，请更换邮箱域名", "yellow")
             detail = f", detail={json.dumps(data, ensure_ascii=False)}" if data else ""
             raise RuntimeError(error or f"user_register_http_{getattr(resp, 'status_code', 'unknown')}{detail}")
+        # 记录注册响应体，帮助诊断邮件是否在 _register_user 阶段由服务端触发
+        try:
+            body = (resp.text or "")[:500] if resp is not None else ""
+            if body:
+                step(index, f"register_user 响应: {body}")
+        except Exception:
+            pass
+        # 从 continue_url 提取 otp_send URL（不拼 ?email=xxx，依赖服务端 session 状态）
+        data = _response_json(resp) if resp is not None else {}
+        self.otp_send_url = str(data.get("continue_url") or "").strip()
+        if self.otp_send_url and not self.otp_send_url.startswith("http"):
+            self.otp_send_url = ""
         step(index, "提交注册密码完成")
 
-    def _send_otp(self, index: int) -> None:
-        step(index, "开始发送验证码")
-        url = f"{auth_base}/api/accounts/email-otp/send"
-        headers = _headers_with_clearance(self._navigate_headers(f"{auth_base}/create-account/password"), url, self.proxy, self.clearance_user_agent)
+    def _send_otp_request(self, url: str, referer: str, *, navigate: bool, index: int):
+        headers = self._navigate_headers(referer) if navigate else self._json_headers(referer)
+        headers = _headers_with_clearance(headers, url, self.proxy, self.clearance_user_agent)
         resp, error = request_with_local_retry(self.session, "get", url, headers=headers, allow_redirects=True, verify=False)
         if _is_cloudflare_challenge(resp):
             bundle = self._refresh_cloudflare_clearance(auth_base, index)
             if bundle is None:
                 raise RuntimeError(_cloudflare_block_message(resp, reason=self.clearance_failure_reason))
-            headers = _headers_with_clearance(self._navigate_headers(f"{auth_base}/create-account/password"), url, self.proxy, self.clearance_user_agent)
+            headers = self._navigate_headers(referer) if navigate else self._json_headers(referer)
+            headers = _headers_with_clearance(headers, url, self.proxy, self.clearance_user_agent)
             resp, error = request_with_local_retry(self.session, "get", url, headers=headers, allow_redirects=True, verify=False)
             if _is_cloudflare_challenge(resp):
                 raise RuntimeError(_cloudflare_block_message(resp, "Cloudflare clearance 重试仍被拦截"))
         if resp is None or resp.status_code not in (200, 302):
             raise RuntimeError(error or f"send_otp_http_{getattr(resp, 'status_code', 'unknown')}")
+        data = _response_json(resp)
+        if isinstance(data, dict) and data.get("error"):
+            raise RuntimeError(f"send_otp_api_error: {data.get('error')}")
+        return resp
+
+    def _resend_otp_request(self, index: int):
+        url = f"{auth_base}/api/accounts/email-otp/resend"
+        headers = self._json_headers(f"{auth_base}/email-verification")
+        headers = _headers_with_clearance(headers, url, self.proxy, self.clearance_user_agent)
+        resp, error = request_with_local_retry(self.session, "post", url, headers=headers, allow_redirects=True, verify=False)
+        if _is_cloudflare_challenge(resp):
+            bundle = self._refresh_cloudflare_clearance(auth_base, index)
+            if bundle is None:
+                raise RuntimeError(_cloudflare_block_message(resp, reason=self.clearance_failure_reason))
+            headers = self._json_headers(f"{auth_base}/email-verification")
+            headers = _headers_with_clearance(headers, url, self.proxy, self.clearance_user_agent)
+            resp, error = request_with_local_retry(self.session, "post", url, headers=headers, allow_redirects=True, verify=False)
+            if _is_cloudflare_challenge(resp):
+                raise RuntimeError(_cloudflare_block_message(resp, "Cloudflare clearance 重试仍被拦截"))
+        if resp is None or resp.status_code not in (200, 204):
+            raise RuntimeError(error or f"resend_otp_http_{getattr(resp, 'status_code', 'unknown')}")
+        return resp
+
+    def _send_otp(self, index: int) -> None:
+        step(index, "开始发送验证码")
+        send_url = f"{auth_base}/api/accounts/email-otp/send"
+        resp = self._send_otp_request(send_url, f"{auth_base}/create-account/password", navigate=False, index=index)
+        data = _response_json(resp)
+        verification_url = str(data.get("continue_url") or "").strip()
+        urls = [send_url]
+        if self.otp_send_url and self.otp_send_url not in urls:
+            urls.append(self.otp_send_url)
+            try:
+                self._send_otp_request(self.otp_send_url, str(getattr(resp, "url", "") or send_url), navigate=True, index=index)
+            except Exception as error:
+                step(index, f"continue_url 落页失败，继续等待验证码: {error}", "yellow")
+        if verification_url.startswith("http") and verification_url not in urls:
+            urls.append(verification_url)
+            try:
+                landing = self._send_otp_request(verification_url, str(getattr(resp, "url", "") or send_url), navigate=True, index=index)
+                step(index, f"email_verification 落页: {_response_debug_detail(landing, limit=160)}")
+            except Exception as error:
+                step(index, f"email_verification 落页失败，继续等待验证码: {error}", "yellow")
+        try:
+            resent = self._resend_otp_request(index)
+            step(index, f"resend_otp 响应: {_response_debug_detail(resent, limit=200)}")
+        except Exception as error:
+            step(index, f"resend_otp 触发失败，继续等待验证码: {error}", "yellow")
+        debug = _response_debug_detail(resp, limit=300)
+        if debug:
+            step(index, f"send_otp 响应: {debug}")
         step(index, "发送验证码完成")
 
     def _validate_otp(self, code: str, index: int) -> None:
@@ -585,6 +784,15 @@ class PlatformRegistrar:
             step(index, "开始等待注册验证码")
             code = wait_for_code(mailbox)
             if not code:
+                if mailbox.get("provider") == "cloudmail_gen":
+                    raise RuntimeError(
+                        "wait_register_otp_timeout"
+                        f" (cloudmail_raw={mailbox.get('_cloudmail_last_raw_count', 'unknown')},"
+                        f" matched={mailbox.get('_cloudmail_last_matched_count', 'unknown')},"
+                        f" to={mailbox.get('_cloudmail_last_to', '')},"
+                        f" from={mailbox.get('_cloudmail_last_from', '')},"
+                        f" subject={mailbox.get('_cloudmail_last_subject', '')})"
+                    )
                 raise RuntimeError("等待注册验证码超时")
             step(index, f"收到注册验证码: {code}")
             self._validate_otp(code, index)
@@ -603,6 +811,150 @@ class PlatformRegistrar:
             "source_type": "web",
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
+
+
+def _platform_resend_otp(self: PlatformRegistrar, index: int) -> None:
+    try:
+        resent = self._resend_otp_request(index)
+        step(index, f"resend_otp response: {_response_debug_detail(resent, limit=200)}")
+    except Exception as error:
+        step(index, f"resend_otp failed, continue waiting for OTP: {error}", "yellow")
+
+
+def _platform_send_otp(self: PlatformRegistrar, index: int) -> None:
+    step(index, "start sending OTP")
+    send_url = f"{auth_base}/api/accounts/email-otp/send"
+    resp = self._send_otp_request(send_url, f"{auth_base}/create-account/password", navigate=False, index=index)
+    data = _response_json(resp)
+    verification_url = str(data.get("continue_url") or "").strip()
+    urls = [send_url]
+    if self.otp_send_url and self.otp_send_url not in urls:
+        urls.append(self.otp_send_url)
+        try:
+            self._send_otp_request(self.otp_send_url, str(getattr(resp, "url", "") or send_url), navigate=True, index=index)
+        except Exception as error:
+            step(index, f"continue_url landing failed, continue waiting for OTP: {error}", "yellow")
+    if verification_url.startswith("http") and verification_url not in urls:
+        urls.append(verification_url)
+        try:
+            landing = self._send_otp_request(verification_url, str(getattr(resp, "url", "") or send_url), navigate=True, index=index)
+            step(index, f"email_verification landing: {_response_debug_detail(landing, limit=160)}")
+        except Exception as error:
+            step(index, f"email_verification landing failed, continue waiting for OTP: {error}", "yellow")
+    if str(config.get("otp_resend") or "after_delay").strip().lower() == "always":
+        self._resend_otp(index)
+    debug = _response_debug_detail(resp, limit=300)
+    if debug:
+        step(index, f"send_otp response: {debug}")
+    step(index, "send OTP done")
+
+
+def _platform_wait_for_code_with_resend(self: PlatformRegistrar, mailbox: dict, index: int) -> str | None:
+    mode = str(config.get("otp_resend") or "after_delay").strip().lower()
+    if mode not in {"always", "after_delay", "off"}:
+        mode = "after_delay"
+    if mode != "after_delay":
+        return wait_for_code(mailbox)
+    base_conf = _mail_config()
+    wait_timeout = float(base_conf.get("wait_timeout") or 30)
+    delay = max(0.0, min(float(config.get("otp_resend_delay") or 5), wait_timeout))
+    if delay <= 0:
+        return wait_for_code(mailbox)
+    first_conf = dict(base_conf)
+    first_conf["wait_timeout"] = delay
+    code = mail_provider.wait_for_code(first_conf, mailbox)
+    if code:
+        return code
+    self._resend_otp(index)
+    remaining_conf = dict(base_conf)
+    remaining_conf["wait_timeout"] = max(0.2, wait_timeout - delay)
+    return mail_provider.wait_for_code(remaining_conf, mailbox)
+
+
+def _platform_register_optimized(self: PlatformRegistrar, index: int) -> dict:
+    step(index, "start creating mailbox")
+    mailbox = self._time_stage("create_mailbox_ms", "cloudmail_add", create_mailbox)
+    email = str(mailbox.get("address") or "").strip()
+    if not email:
+        mail_provider.release_mailbox(mailbox)
+        raise RegisterStageError("cloudmail_add", RuntimeError("mail provider did not return address"))
+    self.mailbox_provider = str(mailbox.get("provider") or "").strip()
+    label = str(mailbox.get("label") or "")
+    step(index, f"mailbox created[{label or self.mailbox_provider}]: {email}")
+    if mailbox.get("_cloudmail_account_add_status"):
+        step(
+            index,
+            "CloudMail account/add "
+            f"{mailbox.get('_cloudmail_account_add_status')}: {mailbox.get('_cloudmail_account_add_message', '')}",
+        )
+    try:
+        password = _random_password()
+        first_name, last_name = _random_name()
+        self._time_stage("authorize_ms", "openai_register", self._platform_authorize, email, index)
+        self._time_stage("register_user_ms", "openai_register", self._register_user, email, password, index)
+        self._time_stage("send_otp_ms", "openai_register", self._send_otp, index)
+        step(index, "start waiting for registration OTP")
+        wait_started = time.monotonic()
+        code = self._time_stage("wait_otp_ms", "wait_otp", self._wait_for_code_with_resend, mailbox, index)
+        self.otp_wait_seconds = round(time.monotonic() - wait_started, 1)
+        if not code:
+            if mailbox.get("provider") == "cloudmail_gen":
+                raise RegisterStageError(
+                    "wait_otp",
+                    RuntimeError(
+                        "wait_register_otp_timeout"
+                        f" (cloudmail_raw={mailbox.get('_cloudmail_last_raw_count', 'unknown')},"
+                        f" matched={mailbox.get('_cloudmail_last_matched_count', 'unknown')},"
+                        f" to={mailbox.get('_cloudmail_last_to', '')},"
+                        f" from={mailbox.get('_cloudmail_last_from', '')},"
+                        f" subject={mailbox.get('_cloudmail_last_subject', '')})"
+                    ),
+                )
+            raise RegisterStageError("wait_otp", RuntimeError("wait_register_otp_timeout"))
+        step(index, f"received registration OTP {code}")
+        self._time_stage("validate_otp_ms", "openai_register", self._validate_otp, code, index)
+        self._time_stage("create_account_ms", "openai_register", self._create_account, f"{first_name} {last_name}", _random_birthdate(), index)
+        tokens = self._time_stage("exchange_token_ms", "openai_register", self._exchange_registered_tokens, index)
+    except Exception as error:
+        mail_provider.mark_mailbox_result(mailbox, success=False, error=error)
+        raise
+    mail_provider.mark_mailbox_result(mailbox, success=True)
+    return {
+        "email": email,
+        "password": password,
+        "access_token": str(tokens.get("access_token") or "").strip(),
+        "refresh_token": str(tokens.get("refresh_token") or "").strip(),
+        "id_token": str(tokens.get("id_token") or "").strip(),
+        "source_type": "web",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "_register_metrics": {
+            "stage_ms": dict(self.stage_ms),
+            "mailbox_provider": self.mailbox_provider,
+            "otp_wait_seconds": self.otp_wait_seconds,
+        },
+    }
+
+
+PlatformRegistrar._resend_otp = _platform_resend_otp
+PlatformRegistrar._send_otp = _platform_send_otp
+PlatformRegistrar._wait_for_code_with_resend = _platform_wait_for_code_with_resend
+PlatformRegistrar.register = _platform_register_optimized
+
+
+def _refresh_account_background(index: int, access_token: str) -> None:
+    started = time.monotonic()
+    try:
+        result = account_service.refresh_accounts([access_token])
+        duration_ms = (time.monotonic() - started) * 1000
+        if result.get("errors"):
+            record_refresh_metrics(duration_ms, result["errors"])
+            step(index, f"stage=account_refresh account status refresh failed in background: {result['errors']}", "yellow")
+        else:
+            record_refresh_metrics(duration_ms)
+            step(index, "account status refresh completed in background")
+    except Exception as error:
+        record_refresh_metrics((time.monotonic() - started) * 1000, error)
+        step(index, f"stage=account_refresh account status refresh failed in background: {error}", "yellow")
 
 
 def worker(index: int) -> dict:
@@ -630,5 +982,44 @@ def worker(index: int) -> dict:
             stats["fail"] += 1
         log(f"任务{index} 注册失败，本次耗时{cost:.1f}s，原因: {e}", "red")
         return {"ok": False, "index": index, "error": str(e)}
+    finally:
+        registrar.close()
+
+
+def worker(index: int) -> dict:
+    start = time.time()
+    registrar = PlatformRegistrar(config["proxy"])
+    try:
+        step(index, "task started")
+        result = registrar.register(index)
+        cost = time.time() - start
+        access_token = str(result["access_token"])
+        metrics = result.pop("_register_metrics", {})
+        account_service.add_account_items([result])
+        step(index, "注册成功，账号已保存")
+        threading.Thread(
+            target=_refresh_account_background,
+            args=(index, access_token),
+            daemon=True,
+            name=f"register-refresh-{index}",
+        ).start()
+        step(index, "账号状态刷新后台进行", "yellow")
+        record_register_success(metrics if isinstance(metrics, dict) else {})
+        with stats_lock:
+            stats["done"] += 1
+            stats["success"] += 1
+            avg = (time.time() - stats["start_time"]) / stats["success"]
+        log(f'{result["email"]} registered successfully, cost={cost:.1f}s, global_avg={avg:.1f}s', "green")
+        return {"ok": True, "index": index, "result": result}
+    except Exception as e:
+        cost = time.time() - start
+        record_register_stage_metrics(dict(getattr(registrar, "stage_ms", {}) or {}))
+        record_register_failure(e)
+        stage = _failure_stage(e)
+        with stats_lock:
+            stats["done"] += 1
+            stats["fail"] += 1
+        log(f"task{index} registration failed, stage={stage}, cost={cost:.1f}s, reason={e}", "red")
+        return {"ok": False, "index": index, "error": str(e), "stage": stage}
     finally:
         registrar.close()

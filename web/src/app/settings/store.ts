@@ -4,6 +4,7 @@ import { create } from "zustand";
 import { toast } from "sonner";
 
 import {
+  applyRegisterPreset,
   createCPAPool,
   deleteBackup,
   deleteCPAPool,
@@ -11,10 +12,12 @@ import {
   fetchCPAPools,
   fetchBackups,
   fetchRegisterConfig,
+  fetchRegisterPresets,
   resetRegister as resetRegisterApi,
   resetOutlookPool as resetOutlookPoolApi,
   fetchSettingsConfig,
   runBackupNow,
+  saveRegisterPreset,
   syncImageStorage,
   startRegister,
   startCPAImport,
@@ -265,6 +268,8 @@ type SettingsStore = {
   isSyncingImageStorage: boolean;
 
   registerConfig: RegisterConfig | null;
+  registerPresets: string[];
+  selectedRegisterPreset: string;
   isLoadingRegister: boolean;
   isSavingRegister: boolean;
 
@@ -333,7 +338,13 @@ type SettingsStore = {
   setRegisterTargetQuota: (value: string) => void;
   setRegisterTargetAvailable: (value: string) => void;
   setRegisterCheckInterval: (value: string) => void;
+  setRegisterOtpResend: (value: "always" | "after_delay" | "off") => void;
+  setRegisterOtpResendDelay: (value: string) => void;
   setRegisterMailField: (key: "request_timeout" | "wait_timeout" | "wait_interval", value: string) => void;
+  setSelectedRegisterPreset: (value: string) => void;
+  loadRegisterPresets: () => Promise<void>;
+  applySelectedRegisterPreset: () => Promise<void>;
+  saveCurrentRegisterPreset: () => Promise<void>;
   addRegisterProvider: () => void;
   updateRegisterProvider: (index: number, updates: Record<string, unknown>) => void;
   deleteRegisterProvider: (index: number) => void;
@@ -377,6 +388,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   isSyncingImageStorage: false,
 
   registerConfig: null,
+  registerPresets: [],
+  selectedRegisterPreset: "",
   isLoadingRegister: true,
   isSavingRegister: false,
 
@@ -883,6 +896,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     try {
       const data = await fetchRegisterConfig();
       set({ registerConfig: data.register });
+      void get().loadRegisterPresets();
     } catch (error) {
       if (!silent) toast.error(error instanceof Error ? error.message : "加载注册配置失败");
     } finally {
@@ -922,6 +936,14 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     set((state) => state.registerConfig ? { registerConfig: { ...state.registerConfig, check_interval: Number(value) || 0 } } : {});
   },
 
+  setRegisterOtpResend: (value) => {
+    set((state) => state.registerConfig ? { registerConfig: { ...state.registerConfig, otp_resend: value } } : {});
+  },
+
+  setRegisterOtpResendDelay: (value) => {
+    set((state) => state.registerConfig ? { registerConfig: { ...state.registerConfig, otp_resend_delay: Number(value) || 0 } } : {});
+  },
+
   setRegisterMailField: (key, value) => {
     set((state) => state.registerConfig ? {
       registerConfig: {
@@ -929,6 +951,72 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         mail: { ...state.registerConfig.mail, [key]: Number(value) || 0 },
       },
     } : {});
+  },
+
+  setSelectedRegisterPreset: (value) => {
+    set({ selectedRegisterPreset: value });
+  },
+
+  loadRegisterPresets: async () => {
+    try {
+      const data = await fetchRegisterPresets();
+      const names = Object.keys(data.presets || {});
+      set((state) => ({
+        registerPresets: names,
+        selectedRegisterPreset: state.selectedRegisterPreset && names.includes(state.selectedRegisterPreset)
+          ? state.selectedRegisterPreset
+          : names[0] || "",
+      }));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Load register presets failed");
+    }
+  },
+
+  applySelectedRegisterPreset: async () => {
+    const name = get().selectedRegisterPreset;
+    if (!name) {
+      toast.error("Select a register preset first");
+      return;
+    }
+    set({ isSavingRegister: true });
+    try {
+      const data = await applyRegisterPreset(name);
+      set({ registerConfig: data.register });
+      toast.success(`Applied preset: ${name}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Apply register preset failed");
+    } finally {
+      set({ isSavingRegister: false });
+    }
+  },
+
+  saveCurrentRegisterPreset: async () => {
+    const { registerConfig } = get();
+    if (!registerConfig) return;
+    const name = window.prompt("Preset name", get().selectedRegisterPreset || "local-proxy");
+    if (!name?.trim()) return;
+    set({ isSavingRegister: true });
+    try {
+      const data = await saveRegisterPreset(name.trim(), {
+        mail: registerConfig.mail,
+        proxy: registerConfig.proxy.trim(),
+        total: Math.max(1, Number(registerConfig.total) || 1),
+        threads: Math.max(1, Number(registerConfig.threads) || 1),
+        mode: registerConfig.mode,
+        target_quota: Math.max(1, Number(registerConfig.target_quota) || 1),
+        target_available: Math.max(1, Number(registerConfig.target_available) || 1),
+        check_interval: Math.max(1, Number(registerConfig.check_interval) || 5),
+        otp_resend: registerConfig.otp_resend || "after_delay",
+        otp_resend_delay: Math.max(0, Number(registerConfig.otp_resend_delay) || 5),
+      });
+      const names = Object.keys(data.presets || {});
+      set({ registerPresets: names, selectedRegisterPreset: name.trim() });
+      toast.success(`Saved preset: ${name.trim()}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Save register preset failed");
+    } finally {
+      set({ isSavingRegister: false });
+    }
   },
 
   addRegisterProvider: () => {
@@ -939,7 +1027,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
           ...state.registerConfig.mail,
           providers: [
             ...(state.registerConfig.mail.providers || []),
-            { enable: true, type: "cloudmail_gen", api_base: "", admin_email: "", admin_password: "", domain: [], subdomain: [], email_prefix: "" },
+            { enable: true, type: "cloudmail_gen", api_base: "", admin_email: "", admin_password: "", domain: [], subdomain: [], email_prefix: "", auto_add_account: true },
           ],
         },
       },
@@ -981,6 +1069,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         target_quota: Math.max(1, Number(registerConfig.target_quota) || 1),
         target_available: Math.max(1, Number(registerConfig.target_available) || 1),
         check_interval: Math.max(1, Number(registerConfig.check_interval) || 5),
+        otp_resend: registerConfig.otp_resend || "after_delay",
+        otp_resend_delay: Math.max(0, Number(registerConfig.otp_resend_delay) || 5),
       });
       set({ registerConfig: data.register });
       toast.success("注册配置已保存");
@@ -996,19 +1086,19 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     if (!registerConfig) return;
     set({ isSavingRegister: true });
     try {
-      if (!registerConfig.enabled) {
-        await updateRegisterConfig({
-          mail: registerConfig.mail,
-          proxy: registerConfig.proxy.trim(),
-          total: Math.max(1, Number(registerConfig.total) || 1),
-          threads: Math.max(1, Number(registerConfig.threads) || 1),
-          mode: registerConfig.mode,
-          target_quota: Math.max(1, Number(registerConfig.target_quota) || 1),
-          target_available: Math.max(1, Number(registerConfig.target_available) || 1),
-          check_interval: Math.max(1, Number(registerConfig.check_interval) || 5),
-        });
-      }
-      const data = registerConfig.enabled ? await stopRegister() : await startRegister();
+      const updates = {
+        mail: registerConfig.mail,
+        proxy: registerConfig.proxy.trim(),
+        total: Math.max(1, Number(registerConfig.total) || 1),
+        threads: Math.max(1, Number(registerConfig.threads) || 1),
+        mode: registerConfig.mode,
+        target_quota: Math.max(1, Number(registerConfig.target_quota) || 1),
+        target_available: Math.max(1, Number(registerConfig.target_available) || 1),
+        check_interval: Math.max(1, Number(registerConfig.check_interval) || 5),
+        otp_resend: registerConfig.otp_resend || "after_delay",
+        otp_resend_delay: Math.max(0, Number(registerConfig.otp_resend_delay) || 5),
+      };
+      const data = registerConfig.enabled ? await stopRegister() : await startRegister(updates);
       set({ registerConfig: data.register });
       toast.success(registerConfig.enabled ? "注册任务已停止" : "注册任务已启动");
     } catch (error) {

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 
-from fastapi import APIRouter, Header
+from fastapi import APIRouter, Body, Header, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -20,10 +20,16 @@ class RegisterConfigRequest(BaseModel):
     target_quota: int | None = None
     target_available: int | None = None
     check_interval: int | None = None
+    otp_resend: str | None = None
+    otp_resend_delay: int | None = None
 
 
 class OutlookPoolResetRequest(BaseModel):
     scope: str | None = None
+
+
+class RegisterPresetRequest(RegisterConfigRequest):
+    pass
 
 
 def create_router() -> APIRouter:
@@ -40,8 +46,13 @@ def create_router() -> APIRouter:
         return {"register": register_service.update(body.model_dump(exclude_none=True))}
 
     @router.post("/api/register/start")
-    async def start_register(authorization: str | None = Header(default=None)):
+    async def start_register(
+        body: RegisterConfigRequest | None = Body(default=None),
+        authorization: str | None = Header(default=None),
+    ):
         require_admin(authorization)
+        if body is not None:
+            register_service.update(body.model_dump(exclude_none=True))
         return {"register": register_service.start()}
 
     @router.post("/api/register/stop")
@@ -58,6 +69,27 @@ def create_router() -> APIRouter:
     async def reset_outlook_pool(body: OutlookPoolResetRequest, authorization: str | None = Header(default=None)):
         require_admin(authorization)
         return {"register": register_service.reset_outlook_pool(body.scope or "all")}
+
+    @router.get("/api/register/presets")
+    async def list_register_presets(authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        return register_service.list_presets()
+
+    @router.post("/api/register/presets/{name}")
+    async def save_register_preset(name: str, body: RegisterPresetRequest, authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        try:
+            return register_service.save_preset(name, body.model_dump(exclude_none=True))
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @router.post("/api/register/presets/{name}/apply")
+    async def apply_register_preset(name: str, authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        try:
+            return {"register": register_service.apply_preset(name)}
+        except ValueError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
 
     @router.get("/api/register/events")
     async def register_events(token: str = ""):
