@@ -22,6 +22,8 @@ SUB2API_CONFIG_FILE = DATA_DIR / "sub2api_config.json"
 # Cached JWT per server to avoid re-login on every list/import call.
 # Token lifetime on sub2api defaults to 24h; we refresh 5 min before expiry.
 _TOKEN_REFRESH_SKEW = 5 * 60
+_LIST_PAGE_SIZE = 50
+_REQUEST_TIMEOUT = 60
 
 
 def _new_id() -> str:
@@ -269,6 +271,29 @@ def _extract_paged_items(payload: object) -> tuple[list, int]:
     return [], 0
 
 
+def _extract_data_accounts(payload: object) -> list[dict]:
+    """Return accounts from sub2api's explicit backup/export payload."""
+    inner = _unwrap_envelope(payload)
+    if isinstance(inner, dict):
+        accounts = inner.get("accounts")
+        if isinstance(accounts, list):
+            return [item for item in accounts if isinstance(item, dict)]
+    return []
+
+
+def _account_credentials(account: dict) -> dict:
+    credentials = account.get("credentials")
+    return credentials if isinstance(credentials, dict) else {}
+
+
+def _account_has_credential(account: dict, key: str) -> bool:
+    credentials = _account_credentials(account)
+    if _clean(credentials.get(key)):
+        return True
+    status = account.get("credentials_status")
+    return bool(isinstance(status, dict) and status.get(f"has_{key}"))
+
+
 def list_remote_accounts(server: dict) -> list[dict]:
     """Return a flat list of OpenAI OAuth accounts from a sub2api server."""
     base_url = _clean(server.get("base_url"))
@@ -286,8 +311,9 @@ def list_remote_accounts(server: dict) -> list[dict]:
             params: dict[str, object] = {
                 "platform": "openai",
                 "type": "oauth",
+                "status": "active",
                 "page": page,
-                "page_size": 200,
+                "page_size": _LIST_PAGE_SIZE,
             }
             if group_id:
                 params["group"] = group_id
@@ -295,7 +321,7 @@ def list_remote_accounts(server: dict) -> list[dict]:
                 f"{base_url.rstrip('/')}/api/v1/admin/accounts",
                 headers=headers,
                 params=params,
-                timeout=30,
+                timeout=_REQUEST_TIMEOUT,
             )
             if not response.ok:
                 raise RuntimeError(f"sub2api list failed: HTTP {response.status_code} {response.text[:200]}")
@@ -308,28 +334,58 @@ def list_remote_accounts(server: dict) -> list[dict]:
             for account in data:
                 if not isinstance(account, dict):
                     continue
-                credentials = account.get("credentials") if isinstance(account.get("credentials"), dict) else {}
-                access_token = _extract_access_token(credentials)
-                if not access_token:
-                    continue
+                credentials = _account_credentials(account)
                 account_id = account.get("id")
+                if account_id is None:
+                    account_id = credentials.get("chatgpt_account_id")
+                if account_id is None:
+                    continue
                 items.append({
-                    "id": str(account_id) if account_id is not None else _clean(credentials.get("chatgpt_account_id")),
+                    "id": str(account_id),
                     "name": _clean(account.get("name")),
                     "email": _clean(credentials.get("email")) or _clean(account.get("name")),
                     "plan_type": _clean(credentials.get("plan_type")),
                     "status": _clean(account.get("status")),
                     "expires_at": _clean(credentials.get("expires_at")),
-                    "has_refresh_token": bool(_clean(credentials.get("refresh_token"))),
+                    "has_refresh_token": _account_has_credential(account, "refresh_token"),
                 })
 
-            if page * 200 >= total or len(data) < 200:
+            if page * _LIST_PAGE_SIZE >= total or len(data) < _LIST_PAGE_SIZE:
                 break
             page += 1
     finally:
         session.close()
 
     return items
+
+
+def _fetch_exported_accounts(server: dict, account_ids: list[str]) -> list[dict]:
+    """Return raw exported account payloads, including credentials, from sub2api."""
+    base_url = _clean(server.get("base_url"))
+    if not base_url:
+        return []
+
+    ids = [_clean(item) for item in account_ids if _clean(item)]
+    if not ids:
+        return []
+
+    headers = _auth_headers(server)
+    session = Session(verify=True)
+    try:
+        response = session.get(
+            f"{base_url.rstrip('/')}/api/v1/admin/accounts/data",
+            headers=headers,
+            params={
+                "ids": ",".join(ids),
+                "include_proxies": "false",
+            },
+            timeout=60,
+        )
+        if not response.ok:
+            raise RuntimeError(f"sub2api export failed: HTTP {response.status_code} {response.text[:200]}")
+        return _extract_data_accounts(response.json())
+    finally:
+        session.close()
 
 
 def list_remote_groups(server: dict) -> list[dict]:
@@ -389,26 +445,9 @@ def list_remote_groups(server: dict) -> list[dict]:
 
 def _fetch_access_token_for_account(server: dict, account_id: str) -> tuple[str, dict]:
     """Return (access_token, account_meta) for a single sub2api account id."""
-    base_url = _clean(server.get("base_url"))
-    headers = _auth_headers(server)
-
-    session = Session(verify=True)
-    try:
-        response = session.get(
-            f"{base_url.rstrip('/')}/api/v1/admin/accounts/{account_id}",
-            headers=headers,
-            timeout=30,
-        )
-        if not response.ok:
-            raise RuntimeError(f"HTTP {response.status_code}")
-        payload = response.json()
-    finally:
-        session.close()
-
-    account = _unwrap_envelope(payload)
-    if not isinstance(account, dict):
-        account = payload if isinstance(payload, dict) else {}
-    credentials = account.get("credentials") if isinstance(account.get("credentials"), dict) else {}
+    accounts = _fetch_exported_accounts(server, [account_id])
+    account = accounts[0] if accounts else {}
+    credentials = _account_credentials(account)
     access_token = _extract_access_token(credentials)
     if not access_token:
         raise RuntimeError("missing access_token")
