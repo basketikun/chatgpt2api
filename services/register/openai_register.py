@@ -24,7 +24,7 @@ base_dir = Path(__file__).resolve().parent
 config = {
     "mail": {
         "request_timeout": 30,
-        "wait_timeout": 30,
+        "wait_timeout": 60,
         "wait_interval": 2,
         "providers": [],
     },
@@ -215,11 +215,7 @@ def _mail_config() -> dict:
 
 
 def _authorize_landed_page(resp) -> str:
-    """诊断用：粗判 authorize 之后落在哪个页面。返回 signup / login / "" 仅供日志。
-
-    注意：email-verification / email_otp_verification 在注册和登录流程里都会出现，
-    无法据此可靠区分，所以这里只用于打日志，绝不据此中断注册流程。
-    """
+    """诊断用：粗判 authorize 之后落在哪个页面。返回 signup / login / email_verification / ""。"""
     if resp is None:
         return ""
     final_url = str(getattr(resp, "url", "") or "").lower()
@@ -232,11 +228,13 @@ def _authorize_landed_page(resp) -> str:
         return "signup"
     if "/log-in" in final_url or "/login" in final_url or page_type in {"login", "password_verification"}:
         return "login"
+    if "email-verification" in final_url or "email_verification" in page_type:
+        return "email_verification"
     return ""
 
 
 def create_mailbox(username: str | None = None) -> dict:
-    return mail_provider.create_mailbox(_mail_config(), username)
+    return mail_provider.create_mailbox(_mail_config(), username, keep_alive=True)
 
 
 def wait_for_code(mailbox: dict) -> str | None:
@@ -386,6 +384,7 @@ class PlatformRegistrar:
         self.device_id = str(uuid.uuid4())
         self.code_verifier = ""
         self.platform_auth_code = ""
+        self.is_login_mode = False
 
     def close(self) -> None:
         self.session.close()
@@ -473,9 +472,11 @@ class PlatformRegistrar:
             status = getattr(resp, "status_code", "unknown")
             raise RuntimeError(error or f"platform_authorize_http_{status}{detail}, {debug}")
         landed = _authorize_landed_page(resp)
-        # 仅打日志，不据此中断：authorize 落地页无法可靠区分注册/登录，
-        # 真正的判定交给 user/register（失败会 dump 完整响应）。
-        step(index, f"platform authorize 完成[{landed or '?'}] url={str(getattr(resp, 'url', '') or '')[:160]}")
+        # 根据 authorize 落地页判断是注册还是登录流程
+        # email_verification: OpenAI 要求先验证邮箱（已注册或需先确认），走登录流程
+        self.is_login_mode = landed in ("login", "email_verification")
+        mode_label = "登录" if self.is_login_mode else "注册"
+        step(index, f"platform authorize 完成[{landed or '?'}] → {mode_label}流程, url={str(getattr(resp, 'url', '') or '')[:160]}")
 
     def _register_user(self, email: str, password: str, index: int) -> None:
         step(index, "开始提交注册密码")
@@ -502,6 +503,38 @@ class PlatformRegistrar:
             raise RuntimeError(error or f"user_register_http_{getattr(resp, 'status_code', 'unknown')}{detail}")
         step(index, "提交注册密码完成")
 
+    def _login_password(self, email: str, password: str, index: int) -> None:
+        """登录流程：提交密码到 authorize/continue（已注册邮箱走此路径）。"""
+        step(index, "开始提交登录密码")
+        url = f"{auth_base}/api/accounts/authorize/continue"
+        headers = self._json_headers(f"{auth_base}/log-in/password")
+        headers["openai-sentinel-token"] = build_sentinel_token(self.session, self.device_id, "authorize_continue")
+        headers = _headers_with_clearance(headers, url, self.proxy, self.clearance_user_agent)
+        resp, error = request_with_local_retry(
+            self.session, "post", url,
+            json={"username": email, "password": password},
+            headers=headers, verify=False,
+        )
+        if _is_cloudflare_challenge(resp):
+            bundle = self._refresh_cloudflare_clearance(auth_base, index)
+            if bundle is None:
+                raise RuntimeError(_cloudflare_block_message(resp, reason=self.clearance_failure_reason))
+            headers = self._json_headers(f"{auth_base}/log-in/password")
+            headers["openai-sentinel-token"] = build_sentinel_token(self.session, self.device_id, "authorize_continue")
+            headers = _headers_with_clearance(headers, url, self.proxy, self.clearance_user_agent)
+            resp, error = request_with_local_retry(
+                self.session, "post", url,
+                json={"username": email, "password": password},
+                headers=headers, verify=False,
+            )
+            if _is_cloudflare_challenge(resp):
+                raise RuntimeError(_cloudflare_block_message(resp, "Cloudflare clearance 重试仍被拦截"))
+        if resp is None or resp.status_code != 200:
+            data = _response_json(resp) if resp is not None else {}
+            detail = f", detail={json.dumps(data, ensure_ascii=False)}" if data else ""
+            raise RuntimeError(error or f"login_password_http_{getattr(resp, 'status_code', 'unknown')}{detail}")
+        step(index, "提交登录密码完成")
+
     def _send_otp(self, index: int) -> None:
         step(index, "开始发送验证码")
         url = f"{auth_base}/api/accounts/email-otp/send"
@@ -519,10 +552,29 @@ class PlatformRegistrar:
             raise RuntimeError(error or f"send_otp_http_{getattr(resp, 'status_code', 'unknown')}")
         step(index, "发送验证码完成")
 
-    def _validate_otp(self, code: str, index: int) -> None:
+    def _validate_otp(self, code: str, index: int, follow_redirects: bool = True) -> Any:
         step(index, f"开始校验验证码 {code}")
-        resp, error = validate_otp(self.session, self.device_id, code)
-        if resp is None or resp.status_code != 200:
+        headers = dict(common_headers)
+        headers["referer"] = f"{auth_base}/email-verification"
+        headers["oai-device-id"] = self.device_id
+        headers.update(_make_trace_headers())
+        url = f"{auth_base}/api/accounts/email-otp/validate"
+        resp, error = request_with_local_retry(
+            self.session, "post", url, json={"code": code},
+            headers=headers, verify=False, allow_redirects=follow_redirects,
+        )
+        # 对于 follow_redirects=False，302/303 是正常响应（重定向到下一步）
+        ok_statuses = {200}
+        if not follow_redirects:
+            ok_statuses.update({301, 302, 303})
+        if resp is not None and resp.status_code not in ok_statuses:
+            # 重试 with sentinel token
+            headers["openai-sentinel-token"] = build_sentinel_token(self.session, self.device_id, "authorize_continue")
+            resp, error = request_with_local_retry(
+                self.session, "post", url, json={"code": code},
+                headers=headers, verify=False, allow_redirects=follow_redirects,
+            )
+        if resp is None or resp.status_code not in ok_statuses:
             body = ""
             try:
                 body = (resp.text or "")[:500] if resp is not None else ""
@@ -530,6 +582,7 @@ class PlatformRegistrar:
                 pass
             raise RuntimeError(error or f"validate_otp_http_{getattr(resp, 'status_code', 'unknown')}_body={body}")
         step(index, "验证码校验完成")
+        return resp
 
     def _create_account(self, name: str, birthdate: str, index: int) -> None:
         step(index, "开始创建账号资料")
@@ -559,6 +612,195 @@ class PlatformRegistrar:
         self.platform_auth_code = str((callback_params or {}).get("code") or "").strip()
         step(index, "创建账号资料完成")
 
+    def _complete_login(self, otp_resp: Any, index: int) -> None:
+        """登录流程：OTP 验证后提取 auth code。
+
+        已注册邮箱的 OTP 验证响应可能是：
+        1. 直接包含 auth code（continue_url 指向 platform.openai.com/auth/callback?code=xxx）
+        2. 指向 about-you 页面（page.type=about_you）— 需要先提交资料再获取 auth code
+        3. 302 重定向链中包含 auth code
+        4. 需要额外步骤（password_verification 等）
+        """
+        data = _response_json(otp_resp) if otp_resp is not None else {}
+        otp_status = getattr(otp_resp, "status_code", 0) if otp_resp is not None else 0
+
+        # 检查 page.type，如果是 about_you 则需要提交资料
+        page_info = data.get("page") if isinstance(data, dict) else None
+        page_type = str(page_info.get("type") or "").lower() if isinstance(page_info, dict) else ""
+        continue_url = str(data.get("continue_url") or "").strip()
+
+        if page_type == "about_you" or (continue_url and "about-you" in continue_url.lower()):
+            step(index, "登录 OTP 验证后需要填写 about-you 资料")
+            # 跟随重定向到达 about-you 页面
+            if otp_status in (301, 302, 303, 307, 308):
+                location = str(getattr(otp_resp, "headers", {}).get("location") or "").strip()
+                if location:
+                    self._follow_redirect_to_page(location, index)
+            elif continue_url:
+                self._follow_redirect_to_page(continue_url, index)
+            # 提交资料获取 auth code
+            first_name, last_name = _random_name()
+            self._create_account(f"{first_name} {last_name}", _random_birthdate(), index)
+            if self.platform_auth_code:
+                step(index, "登录完成，通过 about-you 获取到 auth code")
+                return
+            raise RuntimeError("登录流程: about-you 提交后未获取到 auth code")
+
+        # 0. 如果 OTP 响应本身是 302 重定向（follow_redirects=False），沿重定向链提取 auth code
+        if otp_status in (301, 302, 303, 307, 308):
+            location = str(getattr(otp_resp, "headers", {}).get("location") or "").strip()
+            if location:
+                step(index, f"OTP 响应为 {otp_status} 重定向: {location[:120]}")
+                # 沿重定向链提取 auth code
+                redirect_url = location
+                redirect_resp = otp_resp
+                for _ in range(15):
+                    # 先检查当前 URL 是否包含 auth code
+                    callback_params = extract_oauth_callback_params_from_url(
+                        str(getattr(redirect_resp, "url", "") or redirect_url)
+                    )
+                    code = str((callback_params or {}).get("code") or "").strip()
+                    if code:
+                        self.platform_auth_code = code
+                        step(index, "登录完成，从重定向链提取到 auth code")
+                        return
+
+                    status = getattr(redirect_resp, "status_code", 0)
+                    if status not in (301, 302, 303, 307, 308):
+                        # 到达最终页面，检查其内容
+                        final_data = _response_json(redirect_resp)
+                        for url_key in ("continue_url", "redirect_uri", "redirect_url"):
+                            url_val = str(final_data.get(url_key) or "").strip()
+                            if url_val:
+                                cb = extract_oauth_callback_params_from_url(url_val)
+                                code = str((cb or {}).get("code") or "").strip()
+                                if code:
+                                    self.platform_auth_code = code
+                                    step(index, f"登录完成，从最终页面 {url_key} 提取到 auth code")
+                                    return
+                        break
+
+                    next_location = str(redirect_resp.headers.get("location") or "").strip()
+                    if not next_location:
+                        break
+                    if next_location.startswith("/"):
+                        from urllib.parse import urlparse as _urlparse
+                        parsed = _urlparse(redirect_url if redirect_url.startswith("http") else auth_base)
+                        next_location = f"{parsed.scheme}://{parsed.netloc}{next_location}"
+
+                    step(index, f"跟随重定向: {next_location[:120]}")
+                    redirect_url = next_location
+                    redirect_resp, _ = request_with_local_retry(
+                        self.session, "get", next_location,
+                        headers=self._navigate_headers(auth_base),
+                        allow_redirects=False, verify=False,
+                    )
+                    if redirect_resp is None:
+                        break
+
+                # 重定向链走完没找到 auth code，报错
+                step(index, "重定向链中未找到 auth code", "yellow")
+
+        # 1. 直接从响应 JSON 字段提取 auth code
+        for url_key in ("continue_url", "redirect_uri", "redirect_url", "next_url"):
+            url_val = str(data.get(url_key) or "").strip()
+            if url_val:
+                callback_params = extract_oauth_callback_params_from_url(url_val)
+                code = str((callback_params or {}).get("code") or "").strip()
+                if code:
+                    self.platform_auth_code = code
+                    step(index, f"登录完成，从响应 {url_key} 提取到 auth code")
+                    return
+
+        # 2. 跟随 JSON 中的重定向 URL（allow_redirects=True 场景下可能有 JSON body）
+        for url_key in ("continue_url", "redirect_uri", "redirect_url"):
+            url_val = str(data.get(url_key) or "").strip()
+            if url_val and not url_val.startswith("http"):
+                continue
+            if url_val:
+                step(index, f"跟随登录重定向: {url_val[:120]}")
+                redirect_resp, redirect_err = request_with_local_retry(
+                    self.session, "get", url_val,
+                    headers=self._navigate_headers(auth_base),
+                    allow_redirects=False, verify=False,
+                )
+                for _ in range(10):
+                    if redirect_resp is None:
+                        break
+                    r_url = str(getattr(redirect_resp, "url", "") or "")
+                    callback_params = extract_oauth_callback_params_from_url(r_url)
+                    code = str((callback_params or {}).get("code") or "").strip()
+                    if code:
+                        self.platform_auth_code = code
+                        step(index, f"登录完成，从重定向 URL 提取到 auth code")
+                        return
+                    status = getattr(redirect_resp, "status_code", 0)
+                    if status in (301, 302, 303, 307, 308):
+                        location = str(redirect_resp.headers.get("location") or "")
+                        if not location:
+                            break
+                        if location.startswith("/"):
+                            from urllib.parse import urlparse as _urlparse
+                            parsed = _urlparse(url_val)
+                            location = f"{parsed.scheme}://{parsed.netloc}{location}"
+                        step(index, f"继续跟随重定向: {location[:120]}")
+                        redirect_resp, _ = request_with_local_retry(
+                            self.session, "get", location,
+                            headers=self._navigate_headers(auth_base),
+                            allow_redirects=False, verify=False,
+                        )
+                    else:
+                        break
+
+        # 3. 检查 page.type 判断是否需要额外步骤
+        page_info = data.get("page") if isinstance(data, dict) else None
+        page_type = str(page_info.get("type") or "").lower() if isinstance(page_info, dict) else ""
+
+        if page_type in ("login", "password_verification"):
+            step(index, f"登录 OTP 验证后需要密码验证 (page_type={page_type})", "yellow")
+            step(index, f"登录需要密码验证，但当前流程为无密码邮箱 OTP 登录", "yellow")
+            step(index, f"响应字段: {list(data.keys())}", "yellow")
+            if data:
+                step(index, f"响应内容: {json.dumps(data, ensure_ascii=False)[:500]}", "yellow")
+            raise RuntimeError(
+                f"登录流程: OTP 验证后需要密码验证 (page_type={page_type})，"
+                "当前仅支持无密码邮箱 OTP 登录"
+            )
+
+        # 4. 记录详细调试信息
+        step(index, f"登录 OTP 响应未包含 auth code，status={otp_status}，响应字段: {list(data.keys())}", "yellow")
+        if data:
+            step(index, f"响应内容: {json.dumps(data, ensure_ascii=False)[:500]}", "yellow")
+        raise RuntimeError("登录流程: OTP 验证后未获取到 auth code，请检查响应格式")
+
+    def _follow_redirect_to_page(self, start_url: str, index: int) -> None:
+        """跟随重定向链直到到达最终页面（用于 signup-after-verify 场景）。"""
+        url = start_url
+        for i in range(15):
+            if not url:
+                break
+            resp, _ = request_with_local_retry(
+                self.session, "get", url,
+                headers=self._navigate_headers(auth_base),
+                allow_redirects=False, verify=False,
+            )
+            if resp is None:
+                break
+            status = getattr(resp, "status_code", 0)
+            if status in (301, 302, 303, 307, 308):
+                location = str(resp.headers.get("location") or "").strip()
+                if not location:
+                    break
+                if location.startswith("/"):
+                    from urllib.parse import urlparse as _urlparse
+                    parsed = _urlparse(url if url.startswith("http") else auth_base)
+                    location = f"{parsed.scheme}://{parsed.netloc}{location}"
+                step(index, f"跟随重定向 [{i+1}]: {location[:120]}")
+                url = location
+            else:
+                step(index, f"重定向链结束，到达页面: {str(getattr(resp, 'url', url) or url)[:120]}")
+                break
+
     def _exchange_registered_tokens(self, index: int) -> dict:
         step(index, "开始换 token")
         tokens = request_platform_oauth_token(self.session, self.platform_auth_code, self.code_verifier)
@@ -580,19 +822,106 @@ class PlatformRegistrar:
             password = _random_password()
             first_name, last_name = _random_name()
             self._platform_authorize(email, index)
-            self._register_user(email, password, index)
-            self._send_otp(index)
-            step(index, "开始等待注册验证码")
-            code = wait_for_code(mailbox)
-            if not code:
-                raise RuntimeError("等待注册验证码超时")
-            step(index, f"收到注册验证码: {code}")
-            self._validate_otp(code, index)
-            self._create_account(f"{first_name} {last_name}", _random_birthdate(), index)
+
+            if self.is_login_mode:
+                # email-verification 流程：OpenAI 要求先验证邮箱
+                # 验证后可能是注册（新邮箱）或登录（已注册），通过 validate_otp 响应判断
+                self._send_otp(index)
+                step(index, "开始等待邮箱验证码")
+                code = wait_for_code(mailbox)
+                if not code:
+                    raise RuntimeError("等待邮箱验证码超时")
+                step(index, f"收到邮箱验证码: {code}")
+                # 使用 follow_redirects=False 以便捕获重定向链中的 auth code
+                otp_resp = self._validate_otp(code, index, follow_redirects=False)
+                otp_status = getattr(otp_resp, "status_code", 0)
+
+                if otp_status in (301, 302, 303, 307, 308):
+                    # 302 重定向：检查 Location 判断 signup vs login
+                    location = str(getattr(otp_resp, "headers", {}).get("location") or "").strip()
+                    step(index, f"OTP 验证返回 {otp_status}，Location: {location[:160]}")
+
+                    if any(kw in location.lower() for kw in ("create-account", "signup", "about-you")):
+                        # 邮箱验证后走注册流程
+                        step(index, "邮箱验证通过，继续注册流程")
+                        self.is_login_mode = False
+                        # 跟随重定向到达注册页面
+                        self._follow_redirect_to_page(location, index)
+                        self._register_user(email, password, index)
+                        # 第二次发 OTP 前再次快照（排除第一封验证码邮件）
+                        stored_provider = mailbox.get("_provider")
+                        if stored_provider and hasattr(stored_provider, "pre_login_and_snapshot"):
+                            stored_provider.pre_login_and_snapshot(mailbox)
+                        self._send_otp(index)
+                        step(index, "开始等待注册验证码")
+                        code = wait_for_code(mailbox)
+                        if not code:
+                            raise RuntimeError("等待注册验证码超时")
+                        step(index, f"收到注册验证码: {code}")
+                        self._validate_otp(code, index)
+                        self._create_account(f"{first_name} {last_name}", _random_birthdate(), index)
+                    else:
+                        # 邮箱已注册，走无密码登录流程（参考 login-chatgpt.js）
+                        step(index, "邮箱验证通过，邮箱已注册，切换无密码登录流程")
+                        self._complete_login(otp_resp, index)
+                else:
+                    # 200 JSON 响应（allow_redirects=True 行为兼容）
+                    otp_data = _response_json(otp_resp)
+                    otp_continue = str(otp_data.get("continue_url") or otp_data.get("redirect_uri") or otp_data.get("redirect_url") or "").strip()
+                    otp_page = ""
+                    page_info = otp_data.get("page") if isinstance(otp_data, dict) else None
+                    if isinstance(page_info, dict):
+                        otp_page = str(page_info.get("type") or "").lower()
+
+                    is_signup_after_verify = (
+                        "create-account" in otp_continue.lower()
+                        or "signup" in otp_continue.lower()
+                        or otp_page in ("signup", "create_account")
+                    )
+
+                    if is_signup_after_verify:
+                        step(index, "邮箱验证通过，继续注册流程")
+                        self.is_login_mode = False
+                        self._register_user(email, password, index)
+                        # 第二次发 OTP 前再次快照（排除第一封验证码邮件）
+                        stored_provider = mailbox.get("_provider")
+                        if stored_provider and hasattr(stored_provider, "pre_login_and_snapshot"):
+                            stored_provider.pre_login_and_snapshot(mailbox)
+                        self._send_otp(index)
+                        step(index, "开始等待注册验证码")
+                        code = wait_for_code(mailbox)
+                        if not code:
+                            raise RuntimeError("等待注册验证码超时")
+                        step(index, f"收到注册验证码: {code}")
+                        self._validate_otp(code, index)
+                        self._create_account(f"{first_name} {last_name}", _random_birthdate(), index)
+                    else:
+                        step(index, "邮箱验证通过，邮箱已注册，切换无密码登录流程")
+                        self._complete_login(otp_resp, index)
+            else:
+                # 标准注册流程：新邮箱
+                self._register_user(email, password, index)
+                self._send_otp(index)
+                step(index, "开始等待注册验证码")
+                code = wait_for_code(mailbox)
+                if not code:
+                    raise RuntimeError("等待注册验证码超时")
+                step(index, f"收到注册验证码: {code}")
+                self._validate_otp(code, index)
+                self._create_account(f"{first_name} {last_name}", _random_birthdate(), index)
+
             tokens = self._exchange_registered_tokens(index)
         except Exception as error:
             mail_provider.mark_mailbox_result(mailbox, success=False, error=error)
             raise
+        finally:
+            # 关闭 keep_alive 模式存储的 provider
+            stored_provider = mailbox.pop("_provider", None)
+            if stored_provider is not None:
+                try:
+                    stored_provider.close()
+                except Exception:
+                    pass
         mail_provider.mark_mailbox_result(mailbox, success=True)
         return {
             "email": email,

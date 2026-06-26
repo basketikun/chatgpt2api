@@ -13,6 +13,7 @@ import {
   fetchRegisterConfig,
   resetRegister as resetRegisterApi,
   resetOutlookPool as resetOutlookPoolApi,
+  resetMailComPool as resetMailComPoolApi,
   fetchSettingsConfig,
   runBackupNow,
   syncImageStorage,
@@ -341,6 +342,7 @@ type SettingsStore = {
   toggleRegister: () => Promise<void>;
   resetRegister: () => Promise<void>;
   resetOutlookPool: (scope: "all" | "failed" | "unused") => Promise<void>;
+  resetMailComPool: (scope: "all" | "failed" | "unused") => Promise<void>;
 
   loadPools: (silent?: boolean) => Promise<void>;
   openAddDialog: () => void;
@@ -1039,6 +1041,19 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       toast.success(scope === "unused" ? "已清空未使用邮箱" : scope === "failed" ? "已清除失败/占用的邮箱状态" : "Outlook 邮箱池状态已全部重置");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "重置邮箱池状态失败");
+    } finally {
+      set({ isSavingRegister: false });
+    }
+  },
+
+  resetMailComPool: async (scope) => {
+    set({ isSavingRegister: true });
+    try {
+      const data = await resetMailComPoolApi(scope);
+      set({ registerConfig: data.register });
+      toast.success(scope === "unused" ? "已清空 mail.com 未使用邮箱" : scope === "failed" ? "已清除 mail.com 失败/占用的邮箱状态" : "mail.com 邮箱池状态已全部重置");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "重置 mail.com 邮箱池状态失败");
     } finally {
       set({ isSavingRegister: false });
     }

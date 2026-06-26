@@ -771,6 +771,13 @@ export async function resetOutlookPool(scope: "all" | "failed" | "unused" = "all
   });
 }
 
+export async function resetMailComPool(scope: "all" | "failed" | "unused" = "all") {
+  return httpRequest<{ register: RegisterConfig }>("/api/register/mail-com-pool/reset", {
+    method: "POST",
+    body: { scope },
+  });
+}
+
 // ── CPA (CLIProxyAPI) ──────────────────────────────────────────────
 
 export type CPAPool = {

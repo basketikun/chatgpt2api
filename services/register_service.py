@@ -22,6 +22,10 @@ def _serialize_outlook_pool(credentials: list[dict]) -> str:
     )
 
 
+def _serialize_mail_com_pool(credentials: list[dict]) -> str:
+    return "\n".join(f'{c["email"]}----{c.get("password", "")}' for c in credentials)
+
+
 def _merge_outlook_pool(old_text: str, new_text: str) -> str:
     """合并已存邮箱池与新导入文本，按邮箱去重，新导入的同名邮箱覆盖旧凭据。"""
     merged: dict[str, dict] = {}
@@ -30,6 +34,16 @@ def _merge_outlook_pool(old_text: str, new_text: str) -> str:
     for credential in mail_provider.parse_outlook_credentials(new_text or ""):
         merged[credential["email"].strip().lower()] = credential
     return _serialize_outlook_pool(list(merged.values()))
+
+
+def _merge_mail_com_pool(old_text: str, new_text: str) -> str:
+    """合并 mail.com 邮箱池：email----password 格式，按邮箱去重。"""
+    merged: dict[str, dict] = {}
+    for credential in mail_provider.parse_mail_com_credentials(old_text or ""):
+        merged[credential["email"].strip().lower()] = credential
+    for credential in mail_provider.parse_mail_com_credentials(new_text or ""):
+        merged[credential["email"].strip().lower()] = credential
+    return _serialize_mail_com_pool(list(merged.values()))
 
 
 def _now() -> str:
@@ -83,7 +97,7 @@ class RegisterService:
     def get(self) -> dict:
         with self._lock:
             snapshot = json.loads(json.dumps({**self._config, "logs": self._logs[-300:]}, ensure_ascii=False))
-        self._redact_outlook_pools(snapshot)
+        self._redact_pools(snapshot)
         return snapshot
 
     @staticmethod
@@ -94,8 +108,8 @@ class RegisterService:
         masked = (local[:2] + "***" + local[-1:]) if len(local) > 2 else (local[:1] + "***")
         return f"{masked}@{domain}"
 
-    def _redact_outlook_pools(self, snapshot: dict) -> None:
-        """把 outlook_token 邮箱池里的密码/refresh_token 从对外输出中抹掉，仅保留脱敏预览与统计。
+    def _redact_pools(self, snapshot: dict) -> None:
+        """把 outlook_token / mail_com 邮箱池里的密码/refresh_token 从对外输出中抹掉，仅保留脱敏预览与统计。
 
         mailboxes 改为只写导入框（输出为空），避免把密码与 refresh_token 通过 GET/SSE 反复广播。
         """
@@ -106,20 +120,30 @@ class RegisterService:
         if not isinstance(providers, list):
             return
         for provider in providers:
-            if not isinstance(provider, dict) or provider.get("type") != "outlook_token":
+            if not isinstance(provider, dict):
                 continue
-            credentials = mail_provider.parse_outlook_credentials(str(provider.get("mailboxes") or ""))
-            provider["mailboxes"] = ""
-            provider["mailboxes_count"] = len(credentials)
-            provider["mailboxes_preview"] = [self._mask_email(c["email"]) for c in credentials]
-            provider["mailboxes_stats"] = mail_provider.outlook_token_pool_stats(credentials)
+            ptype = provider.get("type")
+
+            if ptype == "outlook_token":
+                credentials = mail_provider.parse_outlook_credentials(str(provider.get("mailboxes") or ""))
+                provider["mailboxes"] = ""
+                provider["mailboxes_count"] = len(credentials)
+                provider["mailboxes_preview"] = [self._mask_email(c["email"]) for c in credentials]
+                provider["mailboxes_stats"] = mail_provider.outlook_token_pool_stats(credentials)
+
+            elif ptype == "mail_com":
+                credentials = mail_provider.parse_mail_com_credentials(str(provider.get("mailboxes") or ""))
+                provider["mailboxes"] = ""
+                provider["mailboxes_count"] = len(credentials)
+                provider["mailboxes_preview"] = [self._mask_email(c["email"]) for c in credentials]
+                provider["mailboxes_stats"] = mail_provider.mail_com_pool_stats(credentials)
 
     def _drop_mail_proxy(self) -> None:
         if isinstance(self._config.get("mail"), dict):
             self._config["mail"].pop("proxy", None)
 
-    def _merge_outlook_pools(self, updates: dict) -> None:
-        """对 outlook_token provider：把前端新导入的 mailboxes 与已存池按邮箱合并去重。
+    def _merge_pools(self, updates: dict) -> None:
+        """对 outlook_token / mail_com provider：把前端新导入的 mailboxes 与已存池按邮箱合并去重。
 
         前端 mailboxes 是只写导入框，留空表示不改动；填入的新行追加/覆盖已存凭据。
         按数组下标与已存的同类型 provider 对齐。
@@ -130,16 +154,26 @@ class RegisterService:
         old_mail = self._config.get("mail") if isinstance(self._config.get("mail"), dict) else {}
         old_providers = old_mail.get("providers") if isinstance(old_mail.get("providers"), list) else []
         for index, provider in enumerate(mail["providers"]):
-            if not isinstance(provider, dict) or provider.get("type") != "outlook_token":
+            if not isinstance(provider, dict):
                 continue
+            ptype = provider.get("type")
             old = old_providers[index] if index < len(old_providers) and isinstance(old_providers[index], dict) else {}
-            old_text = str(old.get("mailboxes") or "") if old.get("type") == "outlook_token" else ""
-            new_text = str(provider.get("mailboxes") or "")
-            provider["mailboxes"] = _merge_outlook_pool(old_text, new_text) if (old_text or new_text) else ""
-            for key in ("mailboxes_count", "mailboxes_preview", "mailboxes_stats"):
-                provider.pop(key, None)
 
-    def _prune_unused_outlook_pools(self) -> int:
+            if ptype == "outlook_token":
+                old_text = str(old.get("mailboxes") or "") if old.get("type") == "outlook_token" else ""
+                new_text = str(provider.get("mailboxes") or "")
+                provider["mailboxes"] = _merge_outlook_pool(old_text, new_text) if (old_text or new_text) else ""
+                for key in ("mailboxes_count", "mailboxes_preview", "mailboxes_stats"):
+                    provider.pop(key, None)
+
+            elif ptype == "mail_com":
+                old_text = str(old.get("mailboxes") or "") if old.get("type") == "mail_com" else ""
+                new_text = str(provider.get("mailboxes") or "")
+                provider["mailboxes"] = _merge_mail_com_pool(old_text, new_text) if (old_text or new_text) else ""
+                for key in ("mailboxes_count", "mailboxes_preview", "mailboxes_stats"):
+                    provider.pop(key, None)
+
+    def _prune_unused_pools(self) -> int:
         mail = self._config.get("mail")
         if not isinstance(mail, dict):
             return 0
@@ -148,20 +182,31 @@ class RegisterService:
             return 0
         total_removed = 0
         for provider in providers:
-            if not isinstance(provider, dict) or provider.get("type") != "outlook_token":
+            if not isinstance(provider, dict):
                 continue
-            credentials = mail_provider.parse_outlook_credentials(str(provider.get("mailboxes") or ""))
-            kept, removed = mail_provider.prune_outlook_unused_credentials(credentials)
-            if removed:
-                provider["mailboxes"] = _serialize_outlook_pool(kept)
-                total_removed += removed
+            ptype = provider.get("type")
+
+            if ptype == "outlook_token":
+                credentials = mail_provider.parse_outlook_credentials(str(provider.get("mailboxes") or ""))
+                kept, removed = mail_provider.prune_outlook_unused_credentials(credentials)
+                if removed:
+                    provider["mailboxes"] = _serialize_outlook_pool(kept)
+                    total_removed += removed
+
+            elif ptype == "mail_com":
+                credentials = mail_provider.parse_mail_com_credentials(str(provider.get("mailboxes") or ""))
+                kept, removed = mail_provider.prune_mail_com_unused_credentials(credentials)
+                if removed:
+                    provider["mailboxes"] = _serialize_mail_com_pool(kept)
+                    total_removed += removed
+
             for key in ("mailboxes_count", "mailboxes_preview", "mailboxes_stats"):
                 provider.pop(key, None)
         return total_removed
 
     def update(self, updates: dict) -> dict:
         with self._lock:
-            self._merge_outlook_pools(updates)
+            self._merge_pools(updates)
             self._config = _normalize({**self._config, **updates})
             self._drop_mail_proxy()
             openai_register.config.update({k: self._config[k] for k in ("mail", "proxy", "total", "threads")})
@@ -209,7 +254,7 @@ class RegisterService:
         scope = str(scope or "all").strip().lower()
         if scope == "unused":
             with self._lock:
-                removed = self._prune_unused_outlook_pools()
+                removed = self._prune_unused_pools()
                 openai_register.config.update({k: self._config[k] for k in ("mail", "proxy", "total", "threads")})
                 self._save()
                 self._append_log(f"已清空 Outlook 邮箱池未使用邮箱，移除 {removed} 个", "yellow")
@@ -219,6 +264,24 @@ class RegisterService:
         with self._lock:
             self._append_log(
                 f"已重置 Outlook 邮箱池状态（范围={'仅失败/占用' if scope == 'failed' else '全部'}），清除 {cleared} 条记录",
+                "yellow",
+            )
+        return self.get()
+
+    def reset_mail_com_pool(self, scope: str = "all") -> dict:
+        scope = str(scope or "all").strip().lower()
+        if scope == "unused":
+            with self._lock:
+                removed = self._prune_unused_pools()
+                openai_register.config.update({k: self._config[k] for k in ("mail", "proxy", "total", "threads")})
+                self._save()
+                self._append_log(f"已清空 mail.com 邮箱池未使用邮箱，移除 {removed} 个", "yellow")
+            return self.get()
+        scope = "failed" if str(scope) == "failed" else "all"
+        cleared = mail_provider.reset_mail_com_pool_state(scope)
+        with self._lock:
+            self._append_log(
+                f"已重置 mail.com 邮箱池状态（范围={'仅失败/占用' if scope == 'failed' else '全部'}），清除 {cleared} 条记录",
                 "yellow",
             )
         return self.get()

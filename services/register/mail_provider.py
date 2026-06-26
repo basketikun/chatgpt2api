@@ -13,6 +13,7 @@ from email.header import decode_header, make_header
 from email.utils import parsedate_to_datetime
 from threading import Lock
 from typing import Any, Callable, TypeVar
+from urllib.parse import urlencode
 
 from curl_cffi import requests
 
@@ -28,6 +29,12 @@ _outlook_token_state_lock = Lock()
 OUTLOOK_IN_USE_STALE_SECONDS = 3600
 OUTLOOK_RECORDED_STATES = {"used", "in_use", "token_invalid", "failed"}
 OUTLOOK_UNAVAILABLE_STATES = {"used", "token_invalid", "failed"}
+
+MAIL_COM_USED_FILE = DATA_DIR / "mail_com_used.json"
+_mail_com_state_lock = Lock()
+MAIL_COM_IN_USE_STALE_SECONDS = 3600
+MAIL_COM_RECORDED_STATES = {"used", "in_use", "token_invalid", "failed"}
+MAIL_COM_UNAVAILABLE_STATES = {"used", "token_invalid", "failed"}
 
 
 def _load_ddg_aliases() -> set[str]:
@@ -186,6 +193,142 @@ def prune_outlook_unused_credentials(credentials: list[dict[str, str]]) -> tuple
 def outlook_token_pool_stats(pool: list[dict[str, str]] | None = None) -> dict[str, int]:
     """统计邮箱池各状态数量。pool 为该 provider 当前导入的邮箱列表（用于算 unused）。"""
     store = _load_outlook_token_state()
+    counts = {"unused": 0, "in_use": 0, "used": 0, "token_invalid": 0, "failed": 0}
+    if pool:
+        for credential in pool:
+            entry = store.get(str(credential.get("email") or "").strip().lower())
+            state = str(entry.get("state") or "") if isinstance(entry, dict) else ""
+            if state in counts:
+                counts[state] += 1
+            else:
+                counts["unused"] += 1
+    else:
+        for entry in store.values():
+            state = str(entry.get("state") or "") if isinstance(entry, dict) else ""
+            if state in counts:
+                counts[state] += 1
+    return counts
+
+
+# ---------------------------------------------------------------------------
+# mail.com 邮箱池状态管理（与 outlook_token 独立的状态文件）
+# ---------------------------------------------------------------------------
+
+
+def _load_mail_com_state() -> dict[str, dict[str, Any]]:
+    """读取 mail.com 邮箱池状态文件，返回 {email_lower: {state, reason, updated_at}}。"""
+    try:
+        if not MAIL_COM_USED_FILE.exists():
+            return {}
+        data = json.loads(MAIL_COM_USED_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    state: dict[str, dict[str, Any]] = {}
+    if isinstance(data, list):
+        for item in data:
+            key = str(item).strip().lower()
+            if key:
+                state[key] = {"state": "used", "reason": "", "updated_at": ""}
+    elif isinstance(data, dict):
+        for key, value in data.items():
+            email = str(key).strip().lower()
+            if not email:
+                continue
+            if isinstance(value, dict):
+                state[email] = {
+                    "state": str(value.get("state") or "used").strip() or "used",
+                    "reason": str(value.get("reason") or ""),
+                    "updated_at": str(value.get("updated_at") or ""),
+                }
+            else:
+                state[email] = {"state": str(value or "used").strip() or "used", "reason": "", "updated_at": ""}
+    return state
+
+
+def _save_mail_com_state(state: dict[str, dict[str, Any]]) -> None:
+    MAIL_COM_USED_FILE.parent.mkdir(parents=True, exist_ok=True)
+    ordered = {key: state[key] for key in sorted(state)}
+    MAIL_COM_USED_FILE.write_text(json.dumps(ordered, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _mail_com_entry_available(entry: dict[str, Any] | None) -> bool:
+    """该 mail.com 邮箱当前是否可领用。"""
+    if not isinstance(entry, dict):
+        return True
+    current = str(entry.get("state") or "")
+    if current in MAIL_COM_UNAVAILABLE_STATES:
+        return False
+    if current == "in_use":
+        updated_at = str(entry.get("updated_at") or "")
+        try:
+            ts = datetime.fromisoformat(updated_at)
+            age = (datetime.now(timezone.utc) - (ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc))).total_seconds()
+            return age >= MAIL_COM_IN_USE_STALE_SECONDS
+        except Exception:
+            return True
+    return True
+
+
+def _set_mail_com_state(address: str, state: str, reason: str = "") -> None:
+    target = str(address or "").strip().lower()
+    if not target:
+        return
+    with _mail_com_state_lock:
+        store = _load_mail_com_state()
+        store[target] = {"state": str(state), "reason": str(reason or ""), "updated_at": datetime.now(timezone.utc).isoformat()}
+        _save_mail_com_state(store)
+
+
+def _release_mail_com_state(address: str) -> None:
+    """把 in_use 释放回未使用（仅当当前确实是 in_use 时）。"""
+    target = str(address or "").strip().lower()
+    if not target:
+        return
+    with _mail_com_state_lock:
+        store = _load_mail_com_state()
+        entry = store.get(target)
+        if isinstance(entry, dict) and str(entry.get("state") or "") == "in_use":
+            store.pop(target, None)
+            _save_mail_com_state(store)
+
+
+def reset_mail_com_pool_state(scope: str = "all") -> int:
+    """重置 mail.com 邮箱池状态文件。"""
+    with _mail_com_state_lock:
+        store = _load_mail_com_state()
+        if not store:
+            return 0
+        if str(scope) == "failed":
+            remove = {key for key, value in store.items() if str(value.get("state") or "") in {"failed", "token_invalid", "in_use"}}
+            for key in remove:
+                store.pop(key, None)
+            _save_mail_com_state(store)
+            return len(remove)
+        count = len(store)
+        _save_mail_com_state({})
+        return count
+
+
+def prune_mail_com_unused_credentials(credentials: list[dict[str, str]]) -> tuple[list[dict[str, str]], int]:
+    """Return mail.com credentials with recorded state, plus the number pruned as unused."""
+    with _mail_com_state_lock:
+        store = _load_mail_com_state()
+    kept: list[dict[str, str]] = []
+    removed = 0
+    for credential in credentials:
+        key = str(credential.get("email") or "").strip().lower()
+        entry = store.get(key) if key else None
+        state = str(entry.get("state") or "") if isinstance(entry, dict) else ""
+        if state in MAIL_COM_RECORDED_STATES:
+            kept.append(credential)
+        else:
+            removed += 1
+    return kept, removed
+
+
+def mail_com_pool_stats(pool: list[dict[str, str]] | None = None) -> dict[str, int]:
+    """统计 mail.com 邮箱池各状态数量。"""
+    store = _load_mail_com_state()
     counts = {"unused": 0, "in_use": 0, "used": 0, "token_invalid": 0, "failed": 0}
     if pool:
         for credential in pool:
@@ -384,23 +527,28 @@ class BaseMailProvider:
         return None
 
     def wait_for_code(self, mailbox: dict[str, Any]) -> str | None:
+        """轮询收件箱，逐封扫描最近邮件提取验证码。
+        已有邮件通过 _seen_code_message_refs 过滤（在 pre_login_and_snapshot 或 skip_existing 中预填充）。
+        """
         seen_value = mailbox.setdefault("_seen_code_message_refs", [])
         if not isinstance(seen_value, list):
             seen_value = []
             mailbox["_seen_code_message_refs"] = seen_value
         seen_refs = {str(item) for item in seen_value}
 
-        def extract_unseen_code(message: dict[str, Any]) -> str | None:
-            ref = _message_tracking_ref(message)
-            if ref in seen_refs:
-                return None
-            code = _extract_code(message)
-            if code:
-                seen_value.append(ref)
-                seen_refs.add(ref)
-            return code
-
-        return self.wait_for(mailbox, extract_unseen_code)
+        deadline = time.monotonic() + self.conf["wait_timeout"]
+        while time.monotonic() < deadline:
+            message = self.fetch_latest_message(mailbox)
+            if message:
+                ref = _message_tracking_ref(message)
+                if ref not in seen_refs:
+                    code = _extract_code(message)
+                    if code:
+                        seen_value.append(ref)
+                        return code
+                    seen_refs.add(ref)
+            time.sleep(max(0.2, self.conf["wait_interval"]))
+        return None
 
     def close(self) -> None:
         pass
@@ -1097,6 +1245,28 @@ def parse_outlook_credentials(text: str) -> list[dict[str, str]]:
     return credentials
 
 
+def parse_mail_com_credentials(text: str) -> list[dict[str, str]]:
+    """解析 mail.com 邮箱池文本，每行格式：email----password（2字段）。"""
+    credentials: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for raw_line in str(text or "").splitlines():
+        line = _clean_outlook_value(raw_line)
+        if not line or "----" not in line:
+            continue
+        parts = [_clean_outlook_value(part) for part in line.split("----", 1)]
+        if len(parts) != 2:
+            continue
+        email, password = parts
+        if "@" not in email or not password:
+            continue
+        key = email.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        credentials.append({"email": email, "password": password})
+    return credentials
+
+
 def _normalize_outlook_pool(value: Any) -> list[dict[str, str]]:
     """邮箱池既支持纯文本（每行一条），也支持已解析的对象列表。"""
     if isinstance(value, str):
@@ -1114,6 +1284,392 @@ def _normalize_outlook_pool(value: Any) -> list[dict[str, str]]:
                     items.append({"email": email, "password": _clean_outlook_value(item.get("password") or ""), "client_id": client_id, "refresh_token": refresh_token})
         return items
     return []
+
+
+# ---------------------------------------------------------------------------
+# mail.com 邮箱池（HTTP 逆向 + 邮箱密码登录）
+# ---------------------------------------------------------------------------
+
+MAIL_COM_MAILLIST_BASIC_AUTH = "Basic bWFpbGNvbV93ZWJtYWlsZXJtYWlsbGlzdF9wYXNzcG9ydF9saXZlOioqKioqKio="
+MAIL_COM_MAIL_DETAIL_BASIC_AUTH = "Basic bWFpbGNvbV9tYWlsZGV0YWlsX3Bhc3Nwb3J0X2xpdmU6KioqKioqKg=="
+
+
+class _MailComHttpClient:
+    """mail.com 邮箱 HTTP 客户端（移植自 Node.js client.js）。
+
+    使用纯 HTTP 逆向 mail.com webmail 接口：5 步登录 → 获取邮件列表 → 读取邮件正文。
+    通过 curl_cffi.requests.Session 自动管理 cookies 和 TLS 指纹模拟。
+    """
+
+    def __init__(self, session: requests.Session):
+        self.session = session
+        self.sid: str | None = None
+        self.access_token: str | None = None
+        self.read_mail_token: str | None = None
+
+    @staticmethod
+    def _generate_no_cache_id() -> str:
+        chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
+        return "a-" + "".join(random.choice(chars) for _ in range(22))
+
+    def login(self, username: str, password: str) -> None:
+        """5 步登录流程，移植自 client.js lines 79-189。"""
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+            "Accept-Language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Origin": "https://www.mail.com",
+            "Referer": "https://www.mail.com/",
+        }
+
+        # Step 1: POST 登录表单
+        body = urlencode({
+            "username": username,
+            "password": password,
+            "edition": "us",
+            "lang": "en",
+            "usertype": "standard",
+            "service": "mailint",
+            "uasServiceID": "mc_starter_mailcom",
+            "ibaInfo": "abd=false",
+            "successURL": "https://$(clientName)-$(dataCenter).mail.com/login",
+            "loginFailedURL": "https://www.mail.com/logout/?ls=wd",
+            "loginErrorURL": "https://www.mail.com/logout/?ls=te",
+        })
+        r1 = self.session.post(
+            "https://login.mail.com/login",
+            headers=headers,
+            data=body,
+            allow_redirects=False,
+            timeout=30,
+            verify=False,
+        )
+        if not r1.headers.get("location"):
+            raise MailComError(f"mail.com 登录失败 ({r1.status_code}): 未返回重定向")
+
+        # Step 2: 跟随重定向到 navigator
+        r2 = self.session.get(
+            r1.headers["location"],
+            headers={**headers, "Referer": "https://login.mail.com/"},
+            timeout=30,
+            verify=False,
+        )
+
+        # Step 3: 提取并访问 halogin URL
+        ha_match = re.search(r'halogin\?([^"\'\s<>]+)', r2.text)
+        if not ha_match:
+            raise MailComError("mail.com 登录: 未找到 halogin")
+        r3 = self.session.get(
+            f"https://navigator-lxa.mail.com/halogin?{ha_match.group(1)}",
+            headers={**headers, "Referer": "https://navigator-lxa.mail.com/"},
+            allow_redirects=False,
+            timeout=30,
+            verify=False,
+        )
+
+        # Step 4: 从 halogin 的 Location 响应头中提取 sid
+        if not r3.headers.get("location"):
+            raise MailComError("mail.com halogin 未返回重定向 - 可能账号密码错误")
+        sid_match = re.search(r"sid=([a-f0-9]{64,})", r3.headers["location"], re.I)
+        if not sid_match:
+            location = r3.headers["location"]
+            if location in ("/",) or "logout" in location:
+                raise MailComError("mail.com 登录失败 - 账号或密码错误")
+            raise MailComError(f"mail.com 未找到 sid, Location: {location}")
+        self.sid = sid_match.group(1)
+
+        # Step 5: 获取 OAuth2 access_token（用于读取邮件列表）
+        token_resp = self.session.post(
+            f"https://oauthbridge.navigator-lxa.mail.com/navigator/oauth2/token?sid={self.sid}",
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Authorization": MAIL_COM_MAILLIST_BASIC_AUTH,
+                "X-UI-App": "mailcom.webmailer.mail-list/5.23.3",
+                "Accept": "*/*",
+                "Origin": "https://webmailer.mail.com",
+                "Referer": "https://webmailer.mail.com/",
+            },
+            data="grant_type=urn:mam:oauth:grant-type:spa&scope=mail_mailbox_r",
+            timeout=30,
+            verify=False,
+        )
+        try:
+            token_data = token_resp.json()
+        except Exception:
+            raise MailComError(f"mail.com 解析 token 响应失败: {token_resp.text[:200]}")
+        if not token_data.get("access_token"):
+            raise MailComError(f"mail.com 获取 token 失败: {token_resp.text[:200]}")
+        self.access_token = token_data["access_token"]
+
+    def _ensure_read_mail_token(self) -> None:
+        """延迟获取用于读取邮件正文的 token（mail_detail scope）。"""
+        if self.read_mail_token:
+            return
+        token_resp = self.session.post(
+            f"https://oauthbridge.navigator-lxa.mail.com/navigator/oauth2/token?sid={self.sid}",
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Authorization": MAIL_COM_MAIL_DETAIL_BASIC_AUTH,
+                "X-UI-App": "mailcom.webmailer.mail-detail/7.35.2",
+                "Accept": "*/*",
+                "Origin": "https://webmailer.mail.com",
+                "Referer": "https://webmailer.mail.com/",
+            },
+            data="grant_type=urn:mam:oauth:grant-type:spa&scope=mail_mailbox_r",
+            timeout=30,
+            verify=False,
+        )
+        try:
+            token_data = token_resp.json()
+        except Exception:
+            raise MailComError(f"mail.com 解析 read token 响应失败: {token_resp.text[:200]}")
+        if not token_data.get("access_token"):
+            raise MailComError(f"mail.com 获取 read token 失败: {token_resp.text[:200]}")
+        self.read_mail_token = token_data["access_token"]
+
+    def get_mail_list(self) -> list[dict]:
+        """获取收件箱邮件列表。"""
+        url = (
+            f"https://maillist.mail.com/Mailbox/Mail?"
+            f"folderTypeOrId=INBOX&offset=0&amount=50"
+            f"&orderBy=INTERNALDATE+DESC&no_cache={self._generate_no_cache_id()}"
+        )
+        resp = self.session.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {self.access_token}",
+                "X-UI-App": "mailcom.webmailer.mail-list/5.23.3",
+                "Accept": "application/vnd.1and1.mms.unified-maillist-v1+json; charset=utf-8",
+                "Content-Type": "application/vnd.1and1.mms.inboxadrequest-v1+json; charset=utf-8",
+                "Origin": "https://webmailer.mail.com",
+                "Referer": "https://webmailer.mail.com/",
+            },
+            json={
+                "aditionContext": {
+                    "brand": "mailcom",
+                    "category": "mail",
+                    "section": "3c/folder",
+                    "tagid": "inline",
+                    "layoutclass": "b",
+                },
+                "deviceContext": {"app": {"name": "browser"}, "deviceclass": "b"},
+                "adBlocker": False,
+                "mailboxContext": {"currentPage": 1, "visibleMessages": 50},
+            },
+            timeout=30,
+            verify=False,
+        )
+        if resp.status_code != 200:
+            return []
+        try:
+            data = resp.json()
+        except Exception:
+            return []
+        mails: list[dict] = []
+        for element in data.get("mailListElements") or []:
+            if element.get("type") == "ad":
+                continue
+            if element.get("type") == "mail" and element.get("rawData"):
+                raw = element["rawData"]
+                attr = raw.get("attribute") or {}
+                header = raw.get("mailHeader") or {}
+                mails.append({
+                    "mailId": attr.get("mailIdentifier", ""),
+                    "from": header.get("from", ""),
+                    "subject": header.get("subject", ""),
+                    "date": header.get("date", ""),
+                    "internalDate": attr.get("internalDate", ""),
+                })
+        return mails
+
+    def read_mail(self, mail_id: str) -> str:
+        """读取邮件正文 HTML。"""
+        self._ensure_read_mail_token()
+        url = (
+            f"https://mailcom.mailbody-ui.de/Mail/{mail_id}/Body/html?"
+            f"target_origin=https%3A%2F%2Fwebmailer.mail.com"
+            f"&no_cache={self._generate_no_cache_id()}"
+        )
+        resp = self.session.post(
+            url,
+            headers={
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Origin": "https://webmailer.mail.com",
+                "Referer": "https://webmailer.mail.com/",
+            },
+            data=f"access_token={self.read_mail_token}",
+            timeout=30,
+            verify=False,
+        )
+        if resp.status_code != 200:
+            return ""
+        return resp.text
+
+
+class MailComError(RuntimeError):
+    """mail.com 登录/认证失败（凭据失效），与「读邮件失败」区分。"""
+
+
+class MailComProvider(BaseMailProvider):
+    """mail.com 邮箱池 provider。
+
+    邮箱池在应用配置里维护（mailboxes 字段，每行 email----password），
+    create_mailbox() 从池中取下一个未使用的邮箱，wait_for_code() 通过 HTTP 逆向
+    登录 mail.com 后读取最新邮件验证码。
+    """
+
+    name = "mail_com"
+
+    def __init__(self, entry: dict, conf: dict):
+        super().__init__(conf, str(entry.get("provider_ref") or ""))
+        self.label = str(entry.get("label") or self.provider_ref)
+        self.pool = self._parse_pool(entry.get("mailboxes") or entry.get("pool"))
+        self.message_limit = max(1, int(entry.get("message_limit") or 10))
+        self.session = _create_session(conf)
+
+    @staticmethod
+    def _parse_pool(value: Any) -> list[dict[str, str]]:
+        """邮箱池既支持纯文本（每行一条），也支持已解析的对象列表。"""
+        if isinstance(value, str):
+            return parse_mail_com_credentials(value)
+        if isinstance(value, list):
+            items: list[dict[str, str]] = []
+            for item in value:
+                if isinstance(item, str):
+                    items.extend(parse_mail_com_credentials(item))
+                elif isinstance(item, dict):
+                    email = str(item.get("email") or item.get("address") or "").strip()
+                    password = str(item.get("password") or "").strip()
+                    if "@" in email and password:
+                        items.append({"email": email, "password": password})
+            return items
+        return []
+
+    def create_mailbox(self, username: str | None = None) -> dict[str, Any]:
+        if not self.pool:
+            raise RuntimeError("mail.com 邮箱池为空，请在邮箱配置中导入 email----password")
+        with _mail_com_state_lock:
+            store = _load_mail_com_state()
+            credential = next(
+                (item for item in self.pool if _mail_com_entry_available(store.get(item["email"].strip().lower()))),
+                None,
+            )
+            if credential is None:
+                raise RuntimeError(
+                    f"[{self.label}] mail.com 邮箱池暂无可用邮箱"
+                    f"（共 {len(self.pool)} 个，已用尽或全部占用/失效），请导入新邮箱或重置池状态"
+                )
+            store[credential["email"].strip().lower()] = {
+                "state": "in_use",
+                "reason": "",
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            _save_mail_com_state(store)
+        return {
+            "provider": self.name,
+            "provider_ref": self.provider_ref,
+            "address": credential["email"],
+            "label": self.label,
+            "password": credential["password"],
+            "_mail_com_client": None,
+        }
+
+    def _get_client(self, mailbox: dict[str, Any]) -> _MailComHttpClient:
+        """获取或创建已登录的 HTTP 客户端，缓存在 mailbox 字典上。"""
+        cached = mailbox.get("_mail_com_client")
+        if isinstance(cached, _MailComHttpClient):
+            return cached
+        client = _MailComHttpClient(self.session)
+        client.login(mailbox["address"], mailbox["password"])
+        mailbox["_mail_com_client"] = client
+        return client
+
+    def fetch_recent_messages(self, mailbox: dict[str, Any]) -> list[dict[str, Any]]:
+        """拉取最近 N 封邮件（最新在前）。"""
+        client = self._get_client(mailbox)
+        mail_list = client.get_mail_list()[: self.message_limit]
+        messages: list[dict[str, Any]] = []
+        for item in mail_list:
+            mail_id = str(item.get("mailId") or "")
+            if not mail_id:
+                continue
+            html_content = client.read_mail(mail_id)
+            parsed_time = _parse_received_at(item.get("date") or item.get("internalDate"))
+            messages.append({
+                "provider": self.name,
+                "mailbox": mailbox["address"],
+                "message_id": mail_id,
+                "subject": str(item.get("subject") or ""),
+                "sender": str(item.get("from") or ""),
+                "text_content": "",
+                "html_content": html_content,
+                "received_at": parsed_time,
+                "raw": item,
+            })
+        return messages
+
+    def fetch_recent_message_ids(self, mailbox: dict[str, Any]) -> list[str]:
+        """快速获取最近邮件 ID 列表（不读正文），用于 skip_existing。"""
+        client = self._get_client(mailbox)
+        mail_list = client.get_mail_list()[: self.message_limit]
+        return [str(item["mailId"]) for item in mail_list if item.get("mailId")]
+
+    def pre_login_and_snapshot(self, mailbox: dict[str, Any]) -> None:
+        """预登录 mail.com 并快照已有邮件 ID，在 _send_otp 之前调用避免竞态。
+        缓存在 mailbox 上的 client 会被后续 wait_for_code 复用（同一 session）。
+        """
+        seen_value = mailbox.setdefault("_seen_code_message_refs", [])
+        if not isinstance(seen_value, list):
+            seen_value = []
+            mailbox["_seen_code_message_refs"] = seen_value
+        seen_refs = {str(item) for item in seen_value}
+        try:
+            for mid in self.fetch_recent_message_ids(mailbox):
+                ref = f"id:{self.name}:{mailbox['address']}:{mid}"
+                if ref not in seen_refs:
+                    seen_value.append(ref)
+                    seen_refs.add(ref)
+            print(f"  [mail.com] 预登录+快照: 标记 {len(seen_refs)} 封已有邮件")
+        except Exception as e:
+            print(f"  [mail.com] 预登录+快照失败: {e}")
+
+    def fetch_latest_message(self, mailbox: dict[str, Any]) -> dict[str, Any] | None:
+        messages = self.fetch_recent_messages(mailbox)
+        return messages[0] if messages else None
+
+    def wait_for_code(self, mailbox: dict[str, Any]) -> str | None:
+        """轮询收件箱，逐封扫描最近邮件提取验证码。
+        已有邮件通过 _seen_code_message_refs 过滤（在 pre_login_and_snapshot 中预填充）。
+        """
+        seen_value = mailbox.setdefault("_seen_code_message_refs", [])
+        if not isinstance(seen_value, list):
+            seen_value = []
+            mailbox["_seen_code_message_refs"] = seen_value
+        seen_refs = {str(item) for item in seen_value}
+
+        deadline = time.monotonic() + self.conf["wait_timeout"]
+        while time.monotonic() < deadline:
+            try:
+                for message in self.fetch_recent_messages(mailbox):
+                    ref = _message_tracking_ref(message)
+                    if ref in seen_refs:
+                        continue
+                    code = _extract_code(message)
+                    if code:
+                        seen_value.append(ref)
+                        return code
+                    seen_refs.add(ref)
+            except MailComError:
+                raise
+            except Exception:
+                pass
+            time.sleep(max(0.2, self.conf["wait_interval"]))
+        return None
+
+    def close(self) -> None:
+        self.session.close()
 
 
 class OutlookTokenProvider(BaseMailProvider):
@@ -1420,10 +1976,12 @@ def _create_provider(mail_config: dict, provider: str = "", provider_ref: str = 
         return YydsMailProvider(entry, conf)
     if entry["type"] == "outlook_token":
         return OutlookTokenProvider(entry, conf)
+    if entry["type"] == "mail_com":
+        return MailComProvider(entry, conf)
     raise RuntimeError(f"不支持的 mail.provider: {entry['type']}")
 
 
-def create_mailbox(mail_config: dict, username: str | None = None) -> dict:
+def create_mailbox(mail_config: dict, username: str | None = None, keep_alive: bool = False) -> dict:
     enabled = _enabled_entries(mail_config)
     tried: set[str] = set()
     last_error = ""
@@ -1435,17 +1993,28 @@ def create_mailbox(mail_config: dict, username: str | None = None) -> dict:
                 continue
             tried.add(provider_key)
             mailbox = provider.create_mailbox(username)
+            # keep_alive: 保留 provider 供后续 snapshot / wait_for_code 复用同一 session
+            if keep_alive:
+                mailbox["_provider"] = provider
+                # 对 mail.com 预登录 + 快照已有邮件 ID（在 _send_otp 之前，避免竞态）
+                if hasattr(provider, "pre_login_and_snapshot"):
+                    provider.pre_login_and_snapshot(mailbox)
             return mailbox
         except RuntimeError as error:
             last_error = str(error)
             if "DDG日上限已达" not in last_error:
                 raise
         finally:
-            provider.close()
+            if not keep_alive:
+                provider.close()
     raise RuntimeError(last_error or "所有启用的邮箱提供商均无法创建邮箱")
 
 
 def wait_for_code(mail_config: dict, mailbox: dict) -> str | None:
+    # 复用 keep_alive 模式下存储的 provider（同一 session，避免重复登录）
+    stored_provider = mailbox.get("_provider")
+    if stored_provider is not None:
+        return stored_provider.wait_for_code(mailbox)
     provider = _create_provider(mail_config, str(mailbox.get("provider") or ""), str(mailbox.get("provider_ref") or ""))
     try:
         return provider.wait_for_code(mailbox)
@@ -1456,29 +2025,43 @@ def wait_for_code(mail_config: dict, mailbox: dict) -> str | None:
 def mark_mailbox_result(mailbox: dict, *, success: bool, error: Exception | str | None = None) -> None:
     """注册流程结束后更新邮箱池状态。
 
-    仅对 outlook_token 邮箱生效：成功标记 used；失败时若是 token 失效标记 token_invalid，
+    对 outlook_token 和 mail_com 邮箱池生效：成功标记 used；失败时若是凭据失效标记 token_invalid，
     其余失败标记 failed（保留邮箱占用以便排查，可通过重置释放）。
     """
-    if str(mailbox.get("provider") or "") != OutlookTokenProvider.name:
-        return
+    provider_name = str(mailbox.get("provider") or "")
     address = str(mailbox.get("address") or "").strip()
     if not address:
         return
-    if success:
-        _set_outlook_token_state(address, "used")
+
+    if provider_name == OutlookTokenProvider.name:
+        if success:
+            _set_outlook_token_state(address, "used")
+            return
+        reason = str(error or "").strip()
+        if isinstance(error, OutlookTokenError) or "OutlookToken 刷新失败" in reason or "access_token" in reason:
+            _set_outlook_token_state(address, "token_invalid", reason[:300])
+        else:
+            _set_outlook_token_state(address, "failed", reason[:300])
         return
-    reason = str(error or "").strip()
-    if isinstance(error, OutlookTokenError) or "OutlookToken 刷新失败" in reason or "access_token" in reason:
-        _set_outlook_token_state(address, "token_invalid", reason[:300])
-    else:
-        _set_outlook_token_state(address, "failed", reason[:300])
+
+    if provider_name == MailComProvider.name:
+        if success:
+            _set_mail_com_state(address, "used")
+            return
+        reason = str(error or "").strip()
+        if isinstance(error, MailComError) or "mail.com 登录失败" in reason or "账号或密码错误" in reason:
+            _set_mail_com_state(address, "token_invalid", reason[:300])
+        else:
+            _set_mail_com_state(address, "failed", reason[:300])
 
 
 def release_mailbox(mailbox: dict) -> None:
-    """把 outlook_token 邮箱从 in_use 释放回未使用（用于流程主动放弃且未消费验证码时）。"""
-    if str(mailbox.get("provider") or "") != OutlookTokenProvider.name:
-        return
-    _release_outlook_token_state(str(mailbox.get("address") or ""))
+    """把 outlook_token / mail_com 邮箱从 in_use 释放回未使用（用于流程主动放弃且未消费验证码时）。"""
+    provider_name = str(mailbox.get("provider") or "")
+    if provider_name == OutlookTokenProvider.name:
+        _release_outlook_token_state(str(mailbox.get("address") or ""))
+    elif provider_name == MailComProvider.name:
+        _release_mail_com_state(str(mailbox.get("address") or ""))
 
 
 def get_existing_mailbox(mail_config: dict, email: str) -> dict:
