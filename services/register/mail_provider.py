@@ -13,6 +13,7 @@ from email.header import decode_header, make_header
 from email.utils import parsedate_to_datetime
 from threading import Lock
 from typing import Any, Callable, TypeVar
+from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 
 from curl_cffi import requests
 
@@ -1075,6 +1076,17 @@ def _clean_outlook_value(value: str) -> str:
     return str(value or "").replace("﻿", "").replace(" ", " ").strip()
 
 
+def _force_query_param(url: str, key: str, value: str) -> str:
+    """把 URL 上的某个 query 参数强制设为指定值（mailapi.icu 取件强制 type=html）。"""
+    try:
+        parts = urlsplit(url)
+        q = dict(parse_qsl(parts.query, keep_blank_values=True))
+        q[key] = value
+        return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(q), parts.fragment))
+    except Exception:
+        return url
+
+
 def parse_outlook_credentials(text: str) -> list[dict[str, str]]:
     """解析邮箱池文本，每行格式：email----password----client_id----refresh_token。"""
     credentials: list[dict[str, str]] = []
@@ -1084,6 +1096,13 @@ def parse_outlook_credentials(text: str) -> list[dict[str, str]]:
         if not line or "----" not in line:
             continue
         parts = [_clean_outlook_value(part) for part in line.split("----", 3)]
+        if len(parts) == 2 and "@" in parts[0] and parts[1].lower().startswith(("http://", "https://")):
+            key = parts[0].lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            credentials.append({"email": parts[0], "password": "", "client_id": "", "refresh_token": "", "read_url": parts[1]})
+            continue
         if len(parts) != 4:
             continue
         email, password, client_id, refresh_token = parts
@@ -1190,6 +1209,7 @@ class OutlookTokenProvider(BaseMailProvider):
             "label": self.label,
             "client_id": credential["client_id"],
             "refresh_token": credential["refresh_token"],
+            "read_url": credential.get("read_url", ""),
         }
 
     def _read_graph(self, access_token: str) -> list[dict[str, Any]]:
@@ -1313,6 +1333,9 @@ class OutlookTokenProvider(BaseMailProvider):
 
     def fetch_recent_messages(self, mailbox: dict[str, Any]) -> list[dict[str, Any]]:
         """拉取最近 N 封邮件（最新在前），供 wait_for_code 逐封扫描验证码。"""
+        read_url = str(mailbox.get("read_url") or "").strip()
+        if read_url:
+            return self._mailapi_messages(mailbox, read_url)
         client_id = str(mailbox.get("client_id") or "").strip()
         refresh_token = str(mailbox.get("refresh_token") or "").strip()
         if not client_id or not refresh_token:
@@ -1337,6 +1360,40 @@ class OutlookTokenProvider(BaseMailProvider):
         if errors:
             raise RuntimeError("; ".join(errors))
         return []
+
+    def _mailapi_messages(self, mailbox: dict[str, Any], read_url: str) -> list[dict[str, Any]]:
+        """mailapi.icu 取件：用 type=html 取完整邮件正文。
+
+        type=json 的 text 字段会被截断、且 verification_code 对 OpenAI 邮件常为空，故改用 type=html，
+        把完整 HTML 交给 _extract_code 抠取 6 位验证码（已自动排除 #hex 颜色等干扰）。
+        无邮件时接口返回 JSON {"error": ...}（常见 404），按"暂无邮件"返回空列表继续轮询。
+        """
+        url = _force_query_param(read_url, "type", "html")
+        try:
+            resp = self.session.get(
+                url,
+                headers={"User-Agent": self.conf["user_agent"]},
+                timeout=self.conf["request_timeout"],
+            )
+        except Exception as error:
+            raise RuntimeError(f"mailapi 取件请求失败: {error}")
+        body = resp.text or ""
+        stripped = body.lstrip()
+        if getattr(resp, "status_code", 200) == 404 or (stripped.startswith("{") and '"error"' in stripped[:200]):
+            return []
+        if not stripped:
+            return []
+        return [{
+            "provider": self.name,
+            "mailbox": mailbox.get("address"),
+            "message_id": "",
+            "subject": "",
+            "sender": "",
+            "text_content": "",
+            "html_content": body,
+            "received_at": None,
+            "raw": None,
+        }]
 
     def fetch_latest_message(self, mailbox: dict[str, Any]) -> dict[str, Any] | None:
         messages = self.fetch_recent_messages(mailbox)

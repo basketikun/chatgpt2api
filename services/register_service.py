@@ -17,9 +17,13 @@ REGISTER_FILE = DATA_DIR / "register.json"
 
 
 def _serialize_outlook_pool(credentials: list[dict]) -> str:
-    return "\n".join(
-        f'{c["email"]}----{c.get("password", "")}----{c["client_id"]}----{c["refresh_token"]}' for c in credentials
-    )
+    lines = []
+    for c in credentials:
+        if c.get("read_url"):
+            lines.append(f'{c["email"]}----{c["read_url"]}')
+        else:
+            lines.append(f'{c["email"]}----{c.get("password", "")}----{c["client_id"]}----{c["refresh_token"]}')
+    return "\n".join(lines)
 
 
 def _merge_outlook_pool(old_text: str, new_text: str) -> str:
