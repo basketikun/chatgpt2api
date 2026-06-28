@@ -29,8 +29,10 @@ import {
   type Model,
   type ImageTask,
 } from "@/lib/api";
+import { formatDisplayShortDateTime } from "@/lib/display-time";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { useSettingsStore } from "@/app/settings/store";
+import { useDisplayTimezone } from "@/lib/use-display-timezone";
 import {
   clearImageConversations,
   deleteImageConversation,
@@ -102,17 +104,8 @@ function buildConversationTitle(prompt: string) {
   return `${trimmed.slice(0, 12)}...`;
 }
 
-function formatConversationTime(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
+function formatConversationTime(value: string, timezone: string) {
+  return formatDisplayShortDateTime(value, timezone, "");
 }
 
 function formatAvailableQuota(accounts: Account[]) {
@@ -442,6 +435,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
   const scrollRestoreGenerationRef = useRef(0);
 
   const config = useSettingsStore((state) => state.config);
+  const displayTimezone = useDisplayTimezone();
   const imageTimeoutRetrySecs = Number(config?.image_timeout_retry_secs || 30);
 
   const [imagePrompt, setImagePrompt] = useState("");
@@ -489,6 +483,10 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
         return sum + stats.queued + stats.running;
       }, 0),
     [conversations],
+  );
+  const formatConversationTimeForDisplay = useCallback(
+    (value: string) => formatConversationTime(value, displayTimezone),
+    [displayTimezone],
   );
   const deleteConfirmTitle =
     deleteConfirm?.type === "all"
@@ -1595,7 +1593,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
             onSelectConversation={setSelectedConversationId}
             onDeleteConversation={openDeleteConversationConfirm}
             onRenameConversation={handleRenameConversation}
-            formatConversationTime={formatConversationTime}
+            formatConversationTime={formatConversationTimeForDisplay}
           />
         </div>
 
@@ -1623,7 +1621,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
                 }}
                 onDeleteConversation={openDeleteConversationConfirm}
                 onRenameConversation={handleRenameConversation}
-                formatConversationTime={formatConversationTime}
+                formatConversationTime={formatConversationTimeForDisplay}
                 hideActionButtons
               />
             </div>
@@ -1675,7 +1673,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
                 onRetryImage={handleRetryImage}
                 onTimeoutRetryContinue={handleTimeoutRetryContinue}
                 onDismissErrors={handleDismissErrors}
-                formatConversationTime={formatConversationTime}
+                formatConversationTime={formatConversationTimeForDisplay}
               />
             </div>
 

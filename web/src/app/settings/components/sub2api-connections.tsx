@@ -52,6 +52,8 @@ import {
   type Sub2APIRemoteGroup,
   type Sub2APIServer,
 } from "@/lib/api";
+import { formatDisplayDateTime } from "@/lib/display-time";
+import { useDisplayTimezone } from "@/lib/use-display-timezone";
 
 const PAGE_SIZE_OPTIONS = ["50", "100", "200"] as const;
 
@@ -80,6 +82,7 @@ function normalizeAccounts(items: Sub2APIRemoteAccount[]) {
 }
 
 export function Sub2APIConnections() {
+  const displayTimezone = useDisplayTimezone();
   const didLoadRef = useRef(false);
   const pollTimerRef = useRef<number | null>(null);
 
@@ -497,7 +500,7 @@ export function Sub2APIConnections() {
                                     状态 {importJob.status}，已处理 {importJob.completed}/{importJob.total}
                                   </div>
                                   <div className="truncate text-xs text-stone-400">
-                                    任务 {importJob.job_id.slice(0, 8)} · {importJob.created_at}
+                                    任务 {importJob.job_id.slice(0, 8)} · {formatDisplayDateTime(importJob.created_at, displayTimezone, importJob.created_at)}
                                   </div>
                                 </div>
                                 <Badge

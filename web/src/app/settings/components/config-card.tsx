@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import type { ImageStorageMode } from "@/lib/api";
 import { testProxy, type ProxyTestResult } from "@/lib/api";
+import { DISPLAY_TIMEZONE_CHOICES, DEFAULT_DISPLAY_TIMEZONE } from "@/lib/display-time";
 
 import { useSettingsStore } from "../store";
 
@@ -44,6 +45,7 @@ export function ConfigCard() {
   const isTestingImageStorage = useSettingsStore((state) => state.isTestingImageStorage);
   const isSyncingImageStorage = useSettingsStore((state) => state.isSyncingImageStorage);
   const saveConfig = useSettingsStore((state) => state.saveConfig);
+  const setDisplayTimezone = useSettingsStore((state) => state.setDisplayTimezone);
 
   const handleTestProxy = async () => {
     const candidate = String(config?.proxy || "").trim();
@@ -78,6 +80,13 @@ export function ConfigCard() {
     );
   }
 
+  const displayTimezone = String(config?.display_timezone || DEFAULT_DISPLAY_TIMEZONE);
+  const timezoneChoices: Array<{ value: string; label: string }> = DISPLAY_TIMEZONE_CHOICES.some(
+    (item) => item.value === displayTimezone,
+  )
+    ? [...DISPLAY_TIMEZONE_CHOICES]
+    : [{ value: displayTimezone, label: "当前自定义时区" }, ...DISPLAY_TIMEZONE_CHOICES];
+
   return (
     <Card className="rounded-2xl border-white/80 bg-white/90 shadow-sm">
       <CardContent className="space-y-4 p-6">
@@ -94,6 +103,24 @@ export function ConfigCard() {
               className="h-10 rounded-xl border-stone-200 bg-white"
             />
             <p className="text-xs text-stone-500">单位分钟，控制账号自动刷新频率。</p>
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm text-stone-700">显示时区</label>
+            <Select value={displayTimezone} onValueChange={setDisplayTimezone}>
+              <SelectTrigger className="h-10 rounded-xl border-stone-200 bg-white">
+                <SelectValue placeholder={DEFAULT_DISPLAY_TIMEZONE} />
+              </SelectTrigger>
+              <SelectContent className="max-h-72">
+                {timezoneChoices.map((item) => (
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label} · {item.value}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-stone-500">
+              选择常用 IANA 时区，只影响页面时间展示，不改变上游请求。
+            </p>
           </div>
           <div className="space-y-2">
             <label className="text-sm text-stone-700">全局代理</label>

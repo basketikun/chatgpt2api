@@ -15,7 +15,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { deleteSystemLogs, fetchSystemLogs, type SystemLog } from "@/lib/api";
+import { formatDisplayDateTime } from "@/lib/display-time";
 import { useAuthGuard } from "@/lib/use-auth-guard";
+import { useDisplayTimezone } from "@/lib/use-display-timezone";
 
 const LogType = {
   Call: "call",
@@ -49,7 +51,15 @@ function getStatus(item: SystemLog) {
   return "-";
 }
 
+function formatDetailValue(key: string, value: unknown, timezone: string) {
+  if (key === "time" || key.endsWith("_at")) {
+    return formatDisplayDateTime(value, timezone, String(value));
+  }
+  return String(value);
+}
+
 function LogsContent() {
+  const displayTimezone = useDisplayTimezone();
   const [items, setItems] = useState<SystemLog[]>([]);
   const [type, setType] = useState<string>(LogType.Call);
   const [startDate, setStartDate] = useState("");
@@ -211,7 +221,7 @@ function LogsContent() {
                       <TableCell>
                         <Checkbox checked={selectedSet.has(item.id)} onCheckedChange={(checked) => toggleIds([item.id], Boolean(checked))} />
                       </TableCell>
-                      <TableCell className="whitespace-nowrap">{item.time}</TableCell>
+                      <TableCell className="whitespace-nowrap">{formatDisplayDateTime(item.time, displayTimezone, item.time)}</TableCell>
                       <TableCell><Badge variant="secondary" className="rounded-md">{typeLabels[item.type] || item.type}</Badge></TableCell>
                       {isCallLog ? <TableCell>{getDetailText(item, "key_name")}</TableCell> : null}
                       {isCallLog ? <TableCell>{formatDuration(item)}</TableCell> : null}
@@ -289,7 +299,7 @@ function LogsContent() {
                   .map(([key, value]) => (
                     <div key={key} className="flex items-start justify-between gap-4">
                       <span className="text-stone-400">{key}</span>
-                      <span className="text-right font-medium break-all text-stone-700">{String(value)}</span>
+                      <span className="text-right font-medium break-all text-stone-700">{formatDetailValue(key, value, displayTimezone)}</span>
                     </div>
                   ))}
               </div>

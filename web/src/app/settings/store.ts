@@ -38,6 +38,7 @@ import {
   type SettingsConfig,
   type ThirdPartyAppsSettings,
 } from "@/lib/api";
+import { DEFAULT_DISPLAY_TIMEZONE, normalizeDisplayTimezone } from "@/lib/display-time";
 
 export const PAGE_SIZE_OPTIONS = ["50", "100", "200"] as const;
 
@@ -117,7 +118,7 @@ function normalizeProxyRuntime(value: unknown): ProxyRuntimeSettings {
 
 function normalizeThirdPartyApps(value: unknown): ThirdPartyAppsSettings {
   const source = typeof value === "object" && value !== null ? value as Partial<ThirdPartyAppsSettings> : {};
-  const canvas = typeof source.infinite_canvas === "object" && source.infinite_canvas
+  const canvas: Partial<ThirdPartyAppsSettings["infinite_canvas"]> = typeof source.infinite_canvas === "object" && source.infinite_canvas
     ? source.infinite_canvas
     : {};
   return {
@@ -174,6 +175,7 @@ function normalizeConfig(config: SettingsConfig): SettingsConfig {
   return {
     ...config,
     refresh_account_interval_minute: Number(config.refresh_account_interval_minute || 5),
+    display_timezone: normalizeDisplayTimezone(config.display_timezone || DEFAULT_DISPLAY_TIMEZONE),
     image_retention_days: Number(config.image_retention_days || 30),
     image_poll_timeout_secs: Number(config.image_poll_timeout_secs || 120),
     image_account_concurrency: Number(config.image_account_concurrency || 3),
@@ -298,6 +300,7 @@ type SettingsStore = {
   removeBackup: (key: string) => Promise<void>;
   testBackup: () => Promise<void>;
   setRefreshAccountIntervalMinute: (value: string) => void;
+  setDisplayTimezone: (value: string) => void;
   setImageRetentionDays: (value: string) => void;
   setImagePollTimeoutSecs: (value: string) => void;
   setImageAccountConcurrency: (value: string) => void;
@@ -444,6 +447,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       const data = await updateSettingsConfig({
         ...config,
         refresh_account_interval_minute: Math.max(1, Number(config.refresh_account_interval_minute) || 1),
+        display_timezone: normalizeDisplayTimezone(config.display_timezone || DEFAULT_DISPLAY_TIMEZONE),
         image_retention_days: Math.max(1, Number(config.image_retention_days) || 30),
         image_poll_timeout_secs: Math.max(1, Number(config.image_poll_timeout_secs) || 120),
         image_account_concurrency: Math.max(1, Number(config.image_account_concurrency) || 3),
@@ -538,6 +542,10 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         },
       };
     });
+  },
+
+  setDisplayTimezone: (value) => {
+    set((state) => state.config ? { config: { ...state.config, display_timezone: value } } : {});
   },
 
   setImageRetentionDays: (value) => {

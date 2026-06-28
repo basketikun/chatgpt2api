@@ -17,25 +17,17 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { createUserKey, deleteUserKey, fetchUserKeys, updateUserKey, type UserKey } from "@/lib/api";
+import { DEFAULT_DISPLAY_TIMEZONE, formatDisplayDateTime, normalizeDisplayTimezone } from "@/lib/display-time";
 
-function formatDateTime(value?: string | null) {
-  if (!value) {
-    return "—";
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
+import { useSettingsStore } from "../store";
+
+function formatDateTime(value: string | null | undefined, timezone: string) {
+  return formatDisplayDateTime(value, timezone, "—");
 }
 
 export function UserKeysCard() {
+  const config = useSettingsStore((state) => state.config);
+  const displayTimezone = normalizeDisplayTimezone(config?.display_timezone || DEFAULT_DISPLAY_TIMEZONE);
   const didLoadRef = useRef(false);
   const [items, setItems] = useState<UserKey[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -231,8 +223,8 @@ export function UserKeysCard() {
                         </Badge>
                       </div>
                       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-stone-500">
-                        <span>创建时间 {formatDateTime(item.created_at)}</span>
-                        <span>最近使用 {formatDateTime(item.last_used_at)}</span>
+                        <span>创建时间 {formatDateTime(item.created_at, displayTimezone)}</span>
+                        <span>最近使用 {formatDateTime(item.last_used_at, displayTimezone)}</span>
                       </div>
                     </div>
 

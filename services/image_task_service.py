@@ -4,7 +4,7 @@ import json
 import threading
 import time
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +12,7 @@ from services.config import DATA_DIR, config
 from services.content_filter import request_text
 from services.log_service import LOG_TYPE_CALL, log_service
 from services.protocol import openai_v1_image_edit, openai_v1_image_generations
+from services.time_utils import utc_now_iso, utc_timestamp_iso
 
 TASK_STATUS_QUEUED = "queued"
 TASK_STATUS_RUNNING = "running"
@@ -22,19 +23,28 @@ UNFINISHED_STATUSES = {TASK_STATUS_QUEUED, TASK_STATUS_RUNNING}
 
 
 def _now_iso() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return utc_now_iso()
 
 
 def _timestamp(value: object) -> float:
     if not isinstance(value, str) or not value.strip():
         return 0.0
+    raw = value.strip()
+    if raw.endswith("Z") or "+" in raw[10:] or "-" in raw[10:]:
+        try:
+            return datetime.fromisoformat(raw.replace("Z", "+00:00")).timestamp()
+        except Exception:
+            pass
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S"):
         try:
-            return datetime.strptime(value[:26], fmt).timestamp()
+            return datetime.strptime(raw[:26], fmt).replace(tzinfo=timezone.utc).timestamp()
         except ValueError:
             continue
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.timestamp()
     except Exception:
         return 0.0
 
@@ -328,7 +338,7 @@ class ImageTaskService:
             "role": identity.get("role"),
             "endpoint": endpoint,
             "model": model,
-            "started_at": datetime.fromtimestamp(started).strftime("%Y-%m-%d %H:%M:%S"),
+            "started_at": utc_timestamp_iso(started),
             "ended_at": _now_iso(),
             "duration_ms": int((time.time() - started) * 1000),
             "status": status,

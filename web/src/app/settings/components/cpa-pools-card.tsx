@@ -5,6 +5,7 @@ import { Import, LoaderCircle, Pencil, Plus, ServerCog, Trash2 } from "lucide-re
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { DEFAULT_DISPLAY_TIMEZONE, formatDisplayDateTime, normalizeDisplayTimezone } from "@/lib/display-time";
 
 import { useSettingsStore } from "../store";
 
@@ -17,6 +18,8 @@ export function CPAPoolsCard() {
   const openEditDialog = useSettingsStore((state) => state.openEditDialog);
   const deletePool = useSettingsStore((state) => state.deletePool);
   const browseFiles = useSettingsStore((state) => state.browseFiles);
+  const config = useSettingsStore((state) => state.config);
+  const displayTimezone = normalizeDisplayTimezone(config?.display_timezone || DEFAULT_DISPLAY_TIMEZONE);
 
   return (
     <Card className="rounded-2xl border-white/80 bg-white/90 shadow-sm">
@@ -120,7 +123,7 @@ export function CPAPoolsCard() {
                               状态 {importJob.status}，已处理 {importJob.completed}/{importJob.total}
                             </div>
                             <div className="truncate text-xs text-stone-400">
-                              任务 {importJob.job_id.slice(0, 8)} · {importJob.created_at}
+                              任务 {importJob.job_id.slice(0, 8)} · {formatDisplayDateTime(importJob.created_at, displayTimezone, importJob.created_at)}
                             </div>
                           </div>
                           <Badge

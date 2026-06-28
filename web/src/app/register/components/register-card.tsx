@@ -8,10 +8,13 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { formatDisplayTime } from "@/lib/display-time";
+import { useDisplayTimezone } from "@/lib/use-display-timezone";
 
 import { useSettingsStore } from "../../settings/store";
 
 export function RegisterCard() {
+  const displayTimezone = useDisplayTimezone();
   const config = useSettingsStore((state) => state.registerConfig);
   const isLoading = useSettingsStore((state) => state.isLoadingRegister);
   const isSaving = useSettingsStore((state) => state.isSavingRegister);
@@ -413,7 +416,7 @@ export function RegisterCard() {
               ) : (
                 logs.slice().reverse().map((item, index) => (
                   <div key={`${item.time}-${index}`} className={item.level === "red" ? "text-rose-600" : item.level === "green" ? "text-emerald-700" : item.level === "yellow" ? "text-amber-700" : "text-stone-700"}>
-                    <span className="text-stone-400">{new Date(item.time).toLocaleTimeString()}</span>
+                    <span className="text-stone-400">{formatDisplayTime(item.time, displayTimezone, item.time)}</span>
                     <span className="pl-2">{item.text}</span>
                   </div>
                 ))

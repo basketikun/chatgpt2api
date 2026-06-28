@@ -4,6 +4,7 @@ import copy
 from dataclasses import dataclass
 import json
 import os
+import re
 import sys
 from pathlib import Path
 import time
@@ -15,6 +16,8 @@ DATA_DIR = BASE_DIR / "data"
 CONFIG_FILE = BASE_DIR / "config.json"
 VERSION_FILE = BASE_DIR / "VERSION"
 BACKUP_STATE_FILE = DATA_DIR / "backup_state.json"
+DEFAULT_DISPLAY_TIMEZONE = "Asia/Shanghai"
+DISPLAY_TIMEZONE_PATTERN = re.compile(r"^[A-Za-z0-9_+\-./]{1,80}$")
 
 DEFAULT_BACKUP_INCLUDE = {
     "config": True,
@@ -103,6 +106,13 @@ def _normalize_positive_int(value: object, default: int, minimum: int = 0) -> in
     except (OverflowError, TypeError, ValueError):
         normalized = default
     return max(minimum, normalized)
+
+
+def _normalize_display_timezone(value: object) -> str:
+    timezone_name = str(value or DEFAULT_DISPLAY_TIMEZONE).strip()
+    if not timezone_name or not DISPLAY_TIMEZONE_PATTERN.fullmatch(timezone_name):
+        return DEFAULT_DISPLAY_TIMEZONE
+    return timezone_name
 
 
 def _normalize_backup_include(value: object) -> dict[str, bool]:
@@ -386,6 +396,10 @@ class ConfigStore:
             return 5
 
     @property
+    def display_timezone(self) -> str:
+        return _normalize_display_timezone(self.data.get("display_timezone"))
+
+    @property
     def image_retention_days(self) -> int:
         try:
             return max(1, int(self.data.get("image_retention_days", 30)))
@@ -542,6 +556,7 @@ class ConfigStore:
     def get(self) -> dict[str, object]:
         data = dict(self.data)
         data["refresh_account_interval_minute"] = self.refresh_account_interval_minute
+        data["display_timezone"] = self.display_timezone
         data["image_retention_days"] = self.image_retention_days
         data["image_poll_timeout_secs"] = self.image_poll_timeout_secs
         data["image_poll_interval_secs"] = self.image_poll_interval_secs
@@ -598,6 +613,8 @@ class ConfigStore:
             )
         if "third_party_apps" in next_data:
             next_data["third_party_apps"] = _normalize_third_party_apps_settings(next_data.get("third_party_apps"))
+        if "display_timezone" in next_data:
+            next_data["display_timezone"] = _normalize_display_timezone(next_data.get("display_timezone"))
         if "proxy_runtime" in next_data:
             incoming_runtime = next_data.get("proxy_runtime")
             if isinstance(incoming_runtime, dict):

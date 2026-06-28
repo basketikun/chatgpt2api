@@ -12,24 +12,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import webConfig from "@/constants/common-env";
 import { fetchBackupDetail, getBackupDownloadUrl, type BackupDetail, type BackupInclude } from "@/lib/api";
+import { DEFAULT_DISPLAY_TIMEZONE, formatDisplayDateTime, normalizeDisplayTimezone } from "@/lib/display-time";
 import { getStoredAuthKey } from "@/store/auth";
 import { useSettingsStore } from "../store";
 
-function formatDateTime(value?: string | null) {
-  if (!value) {
-    return "—";
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
+function formatDateTime(value: string | null | undefined, timezone: string) {
+  return formatDisplayDateTime(value, timezone, "—");
 }
 
 function formatBytes(value: number) {
@@ -95,6 +83,7 @@ export function BackupSettingsCard() {
   const testBackup = useSettingsStore((state) => state.testBackup);
   const setBackupField = useSettingsStore((state) => state.setBackupField);
   const setBackupInclude = useSettingsStore((state) => state.setBackupInclude);
+  const displayTimezone = normalizeDisplayTimezone(config?.display_timezone || DEFAULT_DISPLAY_TIMEZONE);
 
   if (isLoadingConfig) {
     return (
@@ -266,11 +255,11 @@ export function BackupSettingsCard() {
           <div className="grid gap-3 rounded-xl border border-stone-200 bg-stone-50 px-4 py-4 text-sm text-stone-600 md:grid-cols-3">
           <div>
             <div className="text-xs text-stone-500">最近开始</div>
-            <div className="mt-1 font-medium text-stone-800">{formatDateTime(backupState?.last_started_at)}</div>
+            <div className="mt-1 font-medium text-stone-800">{formatDateTime(backupState?.last_started_at, displayTimezone)}</div>
           </div>
           <div>
             <div className="text-xs text-stone-500">最近完成</div>
-            <div className="mt-1 font-medium text-stone-800">{formatDateTime(backupState?.last_finished_at)}</div>
+            <div className="mt-1 font-medium text-stone-800">{formatDateTime(backupState?.last_finished_at, displayTimezone)}</div>
           </div>
           <div>
             <div className="text-xs text-stone-500">最近对象</div>
@@ -332,7 +321,7 @@ export function BackupSettingsCard() {
                       </div>
                       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-stone-500">
                         <span>大小 {formatBytes(item.size)}</span>
-                        <span>更新时间 {formatDateTime(item.updated_at)}</span>
+                        <span>更新时间 {formatDateTime(item.updated_at, displayTimezone)}</span>
                         <span className="break-all">对象 key {item.key}</span>
                       </div>
                     </div>
@@ -394,7 +383,7 @@ export function BackupSettingsCard() {
                   </div>
                   <div>
                     <div className="text-xs text-stone-500">创建时间</div>
-                    <div className="mt-1 font-medium text-stone-800">{formatDateTime(detail.created_at)}</div>
+                    <div className="mt-1 font-medium text-stone-800">{formatDateTime(detail.created_at, displayTimezone)}</div>
                   </div>
                   <div>
                     <div className="text-xs text-stone-500">触发方式</div>

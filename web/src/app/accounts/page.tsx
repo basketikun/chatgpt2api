@@ -58,7 +58,9 @@ import {
   type Model,
   type RefreshProgressResponse,
 } from "@/lib/api";
+import { formatDisplayDateTime, formatDisplayShortDateTime, parseDisplayDate } from "@/lib/display-time";
 import { useAuthGuard } from "@/lib/use-auth-guard";
+import { useDisplayTimezone } from "@/lib/use-display-timezone";
 import { cn } from "@/lib/utils";
 
 import { AccountImportDialog } from "./components/account-import-dialog";
@@ -118,13 +120,13 @@ function formatQuota(account: Account) {
   return String(Math.max(0, account.quota));
 }
 
-function formatRestoreAt(value?: string | null) {
+function formatRestoreAt(value: string | null | undefined, timezone: string) {
   if (!value) {
     return { absolute: "—", relative: "" };
   }
 
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
+  const date = parseDisplayDate(value);
+  if (!date) {
     return { absolute: value, relative: "" };
   }
 
@@ -134,10 +136,7 @@ function formatRestoreAt(value?: string | null) {
   const hours = totalHours % 24;
   const relative = diffMs > 0 ? `剩余 ${days}d ${hours}h` : "已到恢复时间";
 
-  const pad = (num: number) => String(num).padStart(2, "0");
-  const absolute = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(
-    date.getHours(),
-  )}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  const absolute = formatDisplayDateTime(value, timezone, value);
 
   return { absolute, relative };
 }
@@ -187,6 +186,7 @@ function displayAccountSource(account: Account) {
 
 function AccountsPageContent() {
   const didLoadRef = useRef(false);
+  const displayTimezone = useDisplayTimezone();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [availableModels, setAvailableModels] = useState<Model[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -1150,15 +1150,7 @@ function AccountsPageContent() {
                           <div className="text-xs leading-5 text-stone-500">{account.email ?? "—"}</div>
                         </td>
                         <td className="px-4 py-3 text-xs leading-5 text-stone-500">
-                          {(() => {
-                            const raw = (account as any).created_at;
-                            if (!raw) return "—";
-                            try {
-                              const d = new Date(raw + "Z");
-                              if (isNaN(d.getTime())) return String(raw).slice(0, 10);
-                              return d.toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
-                            } catch { return String(raw).slice(0, 10); }
-                          })()}
+                          {formatDisplayShortDateTime(account.created_at, displayTimezone, "—")}
                         </td>
                         <td className="px-4 py-3">
                           <Badge variant="info" className="rounded-md">
@@ -1167,7 +1159,7 @@ function AccountsPageContent() {
                         </td>
                         <td className="px-4 py-3 text-xs leading-5 text-stone-500">
                           {(() => {
-                            const restore = formatRestoreAt(account.restore_at);
+                            const restore = formatRestoreAt(account.restore_at, displayTimezone);
                             return (
                               <div className="space-y-0.5">
                                 {restore.relative ? <div className="font-medium text-stone-700">{restore.relative}</div> : null}

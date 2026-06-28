@@ -114,8 +114,7 @@ class AccountService:
             ts = int(value)
         except (TypeError, ValueError):
             return ""
-        tz = timezone(timedelta(hours=8))
-        return datetime.fromtimestamp(ts, tz=timezone.utc).astimezone(tz).isoformat()
+        return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
 
     def _load_accounts(self) -> dict[str, dict]:
         accounts = self.storage.load_accounts()
@@ -1025,7 +1024,7 @@ class AccountService:
             if current is None:
                 return
             next_item = dict(current)
-            next_item["last_used_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            next_item["last_used_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
             account = self._normalize_account(next_item)
             if account is None:
                 return
@@ -1291,7 +1290,7 @@ class AccountService:
             if current is None:
                 return None
             next_item = dict(current)
-            next_item["last_used_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            next_item["last_used_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
             image_quota_unknown = bool(next_item.get("image_quota_unknown"))
             if success:
                 next_item["success"] = int(next_item.get("success") or 0) + 1

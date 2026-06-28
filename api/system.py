@@ -81,6 +81,11 @@ def create_router(app_version: str) -> APIRouter:
         require_admin(authorization)
         return {"config": config.get()}
 
+    @router.get("/api/display-settings")
+    async def get_display_settings(authorization: str | None = Header(default=None)):
+        require_identity(authorization)
+        return {"display_timezone": config.display_timezone}
+
     @router.get("/api/third-party-apps")
     async def get_third_party_apps(authorization: str | None = Header(default=None)):
         require_identity(authorization)

@@ -9,7 +9,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { formatDisplayDateTime } from "@/lib/display-time";
 import { httpRequest } from "@/lib/request";
+import { useDisplayTimezone } from "@/lib/use-display-timezone";
 import { cn } from "@/lib/utils";
 import {
   listDeletedEditableFileIds,
@@ -91,6 +93,7 @@ function ResultFile({ href, icon, label }: { href?: string; icon: ReactNode; lab
 }
 
 export function EditableFilePanel({ title, kind, endpoint, defaultPrompt, imageRequired }: Props) {
+  const displayTimezone = useDisplayTimezone();
   const [prompt, setPrompt] = useState(defaultPrompt);
   const [images, setImages] = useState<string[]>([]);
   const [tasks, setTasks] = useState<EditableFileTask[]>([]);
@@ -321,7 +324,7 @@ export function EditableFilePanel({ title, kind, endpoint, defaultPrompt, imageR
                     <div className="mt-2 flex items-center gap-2 text-xs text-stone-500 dark:text-stone-400">
                       <Clock3 className="size-3.5" />
                       <span className="tabular-nums">{formatElapsed(elapsedOf(task))}</span>
-                      <span className="truncate">{task.created_at || id}</span>
+                      <span className="truncate">{formatDisplayDateTime(task.created_at, displayTimezone, task.created_at || id)}</span>
                     </div>
                     {(task.prompt_preview || drafts[id]?.prompt) ? <div className="mt-2 line-clamp-2 text-xs leading-5 text-stone-500 dark:text-stone-400">{task.prompt_preview || drafts[id]?.prompt}</div> : null}
                   </button>
