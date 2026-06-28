@@ -114,6 +114,33 @@ def image_stream_error_message(message: str) -> str:
     return text or "image generation failed"
 
 
+def record_image_failure(
+    access_token: str,
+    reason: str,
+    event: str,
+    verify_free_account: bool = True,
+    force_free_cleanup: bool = False,
+) -> None:
+    account_service.mark_image_result(access_token, False)
+    if not verify_free_account:
+        account_service.update_account(access_token, {"consecutive_image_failures": 0}, quiet=True)
+        return
+    try:
+        account_service.verify_free_account_after_image_failure(
+            access_token,
+            event,
+            reason,
+            force=force_free_cleanup,
+        )
+    except Exception as exc:
+        logger.warning({
+            "event": "free_account_cleanup_check_failed",
+            "request_token": access_token,
+            "source": event,
+            "error": str(exc)[:300],
+        })
+
+
 REFERENCED_IMAGE_IDS_RE = re.compile(r'"referenced_image_ids"\s*:\s*\[([^\]]+)\]')
 # 检测模型返回的部分工具调用 JSON（如 {"size":"1920x1088","n":1}）
 # 这些 JSON 包含图片生成工具的参数，但没有实际生成图片
@@ -1295,10 +1322,10 @@ def _generate_single_image(
                 returned_result = returned_result or output.kind == "result"
                 outputs.append(output)
             if returned_message:
-                account_service.mark_image_result(token, False)
+                record_image_failure(token, "upstream returned text instead of image", "image_stream_text_reply")
                 return outputs
             if not returned_result:
-                account_service.mark_image_result(token, False)
+                record_image_failure(token, "upstream completed without generating images", "image_stream_no_image")
                 if emitted_for_token:
                     conv_id = outputs[-1].conversation_id if outputs else ""
                     raise ImageGenerationError(
@@ -1313,7 +1340,7 @@ def _generate_single_image(
             account_service.mark_image_result(token, True)
             return outputs
         except ImagePollTimeoutError as exc:
-            account_service.mark_image_result(token, False)
+            record_image_failure(token, str(exc), "image_poll_timeout")
             if account_email:
                 setattr(exc, "account_email", account_email)
             # 轮询超时：换账号重试
@@ -1339,7 +1366,7 @@ def _generate_single_image(
                 raise
             raise
         except ImageContentPolicyError as exc:
-            account_service.mark_image_result(token, False)
+            record_image_failure(token, str(exc), "image_content_policy", verify_free_account=False)
             logger.warning({
                 "event": "image_stream_content_policy_error",
                 "request_token": token,
@@ -1356,7 +1383,12 @@ def _generate_single_image(
                 conversation_id=getattr(exc, "conversation_id", ""),
             ) from exc
         except ImageGenerationError as exc:
-            account_service.mark_image_result(token, False)
+            record_image_failure(
+                token,
+                str(exc),
+                "image_generation_error",
+                verify_free_account=getattr(exc, "code", "") != "content_policy_violation",
+            )
             if account_email and not getattr(exc, "account_email", ""):
                 exc.account_email = account_email
             error_text = str(exc)
@@ -1398,7 +1430,6 @@ def _generate_single_image(
             })
             raise
         except Exception as exc:
-            account_service.mark_image_result(token, False)
             last_error = str(exc)
             logger.warning({
                 "event": "image_stream_fail",
@@ -1408,14 +1439,23 @@ def _generate_single_image(
                 "index": index,
             })
             if not emitted_for_token and is_token_invalid_error(last_error):
+                record_image_failure(token, last_error, "image_stream_invalid_token", verify_free_account=False)
                 refreshed_token = account_service.refresh_access_token(token, force=True, event="image_stream")
                 if refreshed_token and refreshed_token != token:
                     token = refreshed_token
                     continue
-                account_service.remove_invalid_token(token, "image_stream")
+                cleanup_result = account_service.verify_free_account_after_image_failure(
+                    token,
+                    "image_stream",
+                    last_error,
+                    force=True,
+                )
+                if not cleanup_result.get("checked"):
+                    account_service.remove_invalid_token(token, "image_stream")
                 continue
             # TLS/SSL 连接错误：自动重试
             if not emitted_for_token and is_tls_connection_error(last_error):
+                record_image_failure(token, last_error, "image_stream_tls", verify_free_account=False)
                 tls_retry_count += 1
                 if tls_retry_count <= MAX_TLS_RETRIES:
                     logger.warning({
@@ -1430,6 +1470,7 @@ def _generate_single_image(
                     continue
             # 连接超时错误（curl 28）：同账号短等待重试，不切换账号
             if not emitted_for_token and is_connection_timeout_error(last_error):
+                record_image_failure(token, last_error, "image_stream_timeout", verify_free_account=False)
                 conn_timeout_retry_count += 1
                 if conn_timeout_retry_count <= MAX_CONN_TIMEOUT_RETRIES:
                     wait_secs = min(3.0 * conn_timeout_retry_count, 9.0)
@@ -1444,6 +1485,8 @@ def _generate_single_image(
                     })
                     time.sleep(wait_secs)
                     continue
+            if not is_tls_connection_error(last_error) and not is_connection_timeout_error(last_error):
+                record_image_failure(token, last_error, "image_stream")
             raise ImageGenerationError(image_stream_error_message(last_error), account_email=account_email, conversation_id="") from exc
 
 

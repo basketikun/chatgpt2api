@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import os
 import tempfile
 import unittest
@@ -68,6 +69,19 @@ class AccountCapabilityTests(unittest.TestCase):
             self.assertEqual(updated["quota"], 0)
             self.assertEqual(updated["status"], "正常")
             self.assertTrue(updated["image_quota_unknown"])
+
+    def test_mark_image_result_tracks_consecutive_failures(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            service = AccountService(JSONStorageBackend(Path(tmp_dir) / "accounts.json"))
+            service.add_account_items([{"access_token": "token-1", "status": "正常", "quota": 3}])
+
+            first_failure = service.mark_image_result("token-1", success=False)
+            second_failure = service.mark_image_result("token-1", success=False)
+            success = service.mark_image_result("token-1", success=True)
+
+            self.assertEqual(first_failure["consecutive_image_failures"], 1)
+            self.assertEqual(second_failure["consecutive_image_failures"], 2)
+            self.assertEqual(success["consecutive_image_failures"], 0)
 
     def test_split_image_model_supports_plan_type_prefix(self) -> None:
         self.assertEqual(split_image_model("gpt-image-2"), (None, "gpt-image-2"))
@@ -145,6 +159,84 @@ class AccountCapabilityTests(unittest.TestCase):
                 config.data.pop("auto_remove_invalid_accounts", None)
             else:
                 config.data["auto_remove_invalid_accounts"] = original_value
+
+    def test_free_cleanup_verifies_after_failure_threshold_and_marks_invalid_account(self) -> None:
+        original_settings = copy.deepcopy(config.data.get("free_account_cleanup"))
+        original_auto_remove = config.data.get("auto_remove_invalid_accounts")
+        config.data["free_account_cleanup"] = {
+            "enabled": True,
+            "failure_threshold": 2,
+            "action": "mark_abnormal",
+        }
+        config.data["auto_remove_invalid_accounts"] = False
+        try:
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                service = AccountService(JSONStorageBackend(Path(tmp_dir) / "accounts.json"))
+                service.add_account_items([{"access_token": "invalid-token", "type": "free", "status": "正常", "quota": 5}])
+
+                service.mark_image_result("invalid-token", success=False)
+                below_threshold = service.verify_free_account_after_image_failure(
+                    "invalid-token",
+                    "image_generation_error",
+                    "first failure",
+                )
+
+                self.assertFalse(below_threshold["checked"])
+                self.assertEqual(service.get_account("invalid-token")["status"], "正常")
+
+                service.mark_image_result("invalid-token", success=False)
+                with patch(
+                    "services.openai_backend_api.OpenAIBackendAPI.get_user_info",
+                    side_effect=InvalidAccessTokenError("token invalidated (/backend-api/me)"),
+                ):
+                    result = service.verify_free_account_after_image_failure(
+                        "invalid-token",
+                        "image_generation_error",
+                        "second failure",
+                    )
+
+                account = service.get_account("invalid-token")
+                self.assertTrue(result["checked"])
+                self.assertIsNotNone(account)
+                self.assertEqual(account["status"], "异常")
+                self.assertEqual(account["quota"], 0)
+        finally:
+            if original_settings is None:
+                config.data.pop("free_account_cleanup", None)
+            else:
+                config.data["free_account_cleanup"] = original_settings
+            if original_auto_remove is None:
+                config.data.pop("auto_remove_invalid_accounts", None)
+            else:
+                config.data["auto_remove_invalid_accounts"] = original_auto_remove
+
+    def test_free_cleanup_does_not_touch_paid_accounts(self) -> None:
+        original_settings = copy.deepcopy(config.data.get("free_account_cleanup"))
+        config.data["free_account_cleanup"] = {
+            "enabled": True,
+            "failure_threshold": 1,
+            "action": "delete",
+        }
+        try:
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                service = AccountService(JSONStorageBackend(Path(tmp_dir) / "accounts.json"))
+                service.add_account_items([{"access_token": "plus-token", "type": "Plus", "status": "正常", "quota": 5}])
+                service.mark_image_result("plus-token", success=False)
+
+                result = service.verify_free_account_after_image_failure(
+                    "plus-token",
+                    "image_generation_error",
+                    "failure",
+                    force=True,
+                )
+
+                self.assertFalse(result["checked"])
+                self.assertIsNotNone(service.get_account("plus-token"))
+        finally:
+            if original_settings is None:
+                config.data.pop("free_account_cleanup", None)
+            else:
+                config.data["free_account_cleanup"] = original_settings
 
 
 class TokenLogTests(unittest.TestCase):

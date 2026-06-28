@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from threading import Event, Thread
+import time
 
 from fastapi import HTTPException, Request
 
@@ -80,34 +81,59 @@ def sanitize_sub2api_servers(servers: list[dict]) -> list[dict]:
 
 
 def start_limited_account_watcher(stop_event: Event) -> Thread:
-    interval_seconds = config.refresh_account_interval_minute * 60
-
     def worker() -> None:
+        last_refresh_at = 0.0
+        last_free_cleanup_at = 0.0
         while not stop_event.is_set():
+            refresh_interval_seconds = max(60, config.refresh_account_interval_minute * 60)
+            free_cleanup_settings = config.get_free_account_cleanup_settings()
+            free_cleanup_enabled = bool(free_cleanup_settings.get("enabled"))
+            free_cleanup_interval_seconds = max(60, int(free_cleanup_settings.get("interval_minutes") or 10) * 60)
+            now = time.monotonic()
             try:
-                limited_tokens = account_service.list_limited_tokens()
-                normal_tokens = account_service.list_normal_tokens()
-                expiring_tokens = account_service.list_expiring_access_tokens()
-                keepalive_tokens = account_service.list_refresh_token_keepalive_tokens()
-                tokens = list(dict.fromkeys([*limited_tokens, *normal_tokens, *expiring_tokens]))
-                expiring_token_set = set(expiring_tokens)
-                keepalive_tokens = [token for token in keepalive_tokens if token not in expiring_token_set]
-                if tokens:
-                    print(
-                        "[account-watcher] checking "
-                        f"{len(limited_tokens)} limited accounts, "
-                        f"{len(normal_tokens)} normal accounts, "
-                        f"{len(expiring_tokens)} expiring access tokens"
-                    )
-                    account_service.refresh_accounts(tokens)
-                if keepalive_tokens:
-                    print(f"[account-watcher] keepalive {len(keepalive_tokens)} refresh tokens")
-                    result = account_service.keepalive_refresh_tokens(keepalive_tokens)
-                    if result.get("errors"):
-                        print(f"[account-watcher] keepalive errors: {result['errors']}")
+                if now - last_refresh_at >= refresh_interval_seconds:
+                    limited_tokens = account_service.list_limited_tokens()
+                    normal_tokens = account_service.list_normal_tokens()
+                    expiring_tokens = account_service.list_expiring_access_tokens()
+                    keepalive_tokens = account_service.list_refresh_token_keepalive_tokens()
+                    tokens = list(dict.fromkeys([*limited_tokens, *normal_tokens, *expiring_tokens]))
+                    expiring_token_set = set(expiring_tokens)
+                    keepalive_tokens = [token for token in keepalive_tokens if token not in expiring_token_set]
+                    if tokens:
+                        print(
+                            "[account-watcher] checking "
+                            f"{len(limited_tokens)} limited accounts, "
+                            f"{len(normal_tokens)} normal accounts, "
+                            f"{len(expiring_tokens)} expiring access tokens"
+                        )
+                        account_service.refresh_accounts(tokens)
+                    if keepalive_tokens:
+                        print(f"[account-watcher] keepalive {len(keepalive_tokens)} refresh tokens")
+                        result = account_service.keepalive_refresh_tokens(keepalive_tokens)
+                        if result.get("errors"):
+                            print(f"[account-watcher] keepalive errors: {result['errors']}")
+                    last_refresh_at = now
+                if free_cleanup_enabled and now - last_free_cleanup_at >= free_cleanup_interval_seconds:
+                    result = account_service.refresh_normal_free_accounts("account_watcher_free_cleanup")
+                    checked = int(result.get("checked") or 0)
+                    if checked:
+                        print(
+                            "[account-watcher] free cleanup "
+                            f"checked {checked} normal free accounts, "
+                            f"refreshed {result.get('refreshed', 0)}, "
+                            f"errors {len(result.get('errors') or [])}"
+                        )
+                    last_free_cleanup_at = now
             except Exception as exc:
                 print(f"[account-watcher] fail {exc}")
-            stop_event.wait(interval_seconds)
+                last_refresh_at = now
+                if free_cleanup_enabled:
+                    last_free_cleanup_at = now
+            wait_candidates = [last_refresh_at + refresh_interval_seconds]
+            if free_cleanup_enabled:
+                wait_candidates.append(last_free_cleanup_at + free_cleanup_interval_seconds)
+            wait_seconds = max(1.0, min(wait_candidates) - time.monotonic())
+            stop_event.wait(wait_seconds)
 
     thread = Thread(target=worker, name="account-watcher", daemon=True)
     thread.start()

@@ -16,6 +16,16 @@ export type ImageStorageSettings = {
   public_base_url: string;
 };
 
+export type FreeAccountCleanupAction = "mark_abnormal" | "delete";
+
+export type FreeAccountCleanupSettings = {
+  enabled: boolean;
+  interval_minutes: number | string;
+  failure_threshold: number | string;
+  register_precheck_enabled: boolean;
+  action: FreeAccountCleanupAction;
+};
+
 export type Account = {
   access_token: string;
   type: AccountType;
@@ -176,6 +186,7 @@ export type SettingsConfig = {
   auto_remove_invalid_accounts?: boolean;
   auto_remove_rate_limited_accounts?: boolean;
   auto_relogin_after_refresh?: boolean;
+  free_account_cleanup?: FreeAccountCleanupSettings;
   log_levels?: string[];
   image_storage?: ImageStorageSettings;
   proxy_runtime?: ProxyRuntimeSettings;

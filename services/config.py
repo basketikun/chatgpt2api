@@ -83,6 +83,14 @@ DEFAULT_THIRD_PARTY_APPS = {
     },
 }
 
+DEFAULT_FREE_ACCOUNT_CLEANUP = {
+    "enabled": False,
+    "interval_minutes": 10,
+    "failure_threshold": 2,
+    "register_precheck_enabled": True,
+    "action": "mark_abnormal",
+}
+
 
 def _normalize_bool(value: object, default: bool = False) -> bool:
     if isinstance(value, str):
@@ -285,6 +293,31 @@ def _normalize_third_party_apps_settings(value: object) -> dict[str, object]:
             "enabled": _normalize_bool(canvas_source.get("enabled"), False),
             "url": str(canvas_source.get("url") or DEFAULT_THIRD_PARTY_APPS["infinite_canvas"]["url"]).strip(),
         },
+    }
+
+
+def _normalize_free_account_cleanup_settings(value: object) -> dict[str, object]:
+    source = value if isinstance(value, dict) else {}
+    action = str(source.get("action") or DEFAULT_FREE_ACCOUNT_CLEANUP["action"]).strip().lower()
+    if action not in {"mark_abnormal", "delete"}:
+        action = str(DEFAULT_FREE_ACCOUNT_CLEANUP["action"])
+    return {
+        "enabled": _normalize_bool(source.get("enabled"), bool(DEFAULT_FREE_ACCOUNT_CLEANUP["enabled"])),
+        "interval_minutes": _normalize_positive_int(
+            source.get("interval_minutes"),
+            int(DEFAULT_FREE_ACCOUNT_CLEANUP["interval_minutes"]),
+            1,
+        ),
+        "failure_threshold": _normalize_positive_int(
+            source.get("failure_threshold"),
+            int(DEFAULT_FREE_ACCOUNT_CLEANUP["failure_threshold"]),
+            1,
+        ),
+        "register_precheck_enabled": _normalize_bool(
+            source.get("register_precheck_enabled"),
+            bool(DEFAULT_FREE_ACCOUNT_CLEANUP["register_precheck_enabled"]),
+        ),
+        "action": action,
     }
 
 
@@ -560,6 +593,7 @@ class ConfigStore:
         data["chat_completion_cache"] = self.get_chat_completion_cache_settings()
         data["proxy_runtime"] = self.get_public_proxy_runtime_settings()
         data["third_party_apps"] = self.get_third_party_apps_settings()
+        data["free_account_cleanup"] = self.get_free_account_cleanup_settings()
         data.pop("auth-key", None)
         return data
 
@@ -584,6 +618,9 @@ class ConfigStore:
     def get_third_party_apps_settings(self) -> dict[str, object]:
         return _normalize_third_party_apps_settings(self.data.get("third_party_apps"))
 
+    def get_free_account_cleanup_settings(self) -> dict[str, object]:
+        return _normalize_free_account_cleanup_settings(self.data.get("free_account_cleanup"))
+
     def update(self, data: dict[str, object]) -> dict[str, object]:
         next_data = dict(self.data)
         next_data.update(dict(data or {}))
@@ -598,6 +635,10 @@ class ConfigStore:
             )
         if "third_party_apps" in next_data:
             next_data["third_party_apps"] = _normalize_third_party_apps_settings(next_data.get("third_party_apps"))
+        if "free_account_cleanup" in next_data:
+            next_data["free_account_cleanup"] = _normalize_free_account_cleanup_settings(
+                next_data.get("free_account_cleanup")
+            )
         if "proxy_runtime" in next_data:
             incoming_runtime = next_data.get("proxy_runtime")
             if isinstance(incoming_runtime, dict):

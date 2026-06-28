@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from services.account_service import account_service
-from services.config import DATA_DIR
+from services.config import DATA_DIR, config
 from services.register import mail_provider, openai_register
 
 
@@ -65,6 +65,7 @@ class RegisterService:
         self._lock = threading.RLock()
         self._runner: threading.Thread | None = None
         self._logs: list[dict] = []
+        self._last_free_pool_precheck_at = 0.0
         openai_register.register_log_sink = self._append_log
         self._config = self._load()
         if self._config["enabled"]:
@@ -177,6 +178,7 @@ class RegisterService:
             self._config["enabled"] = True
             self._drop_mail_proxy()
             self._logs = []
+            self._last_free_pool_precheck_at = 0.0
             metrics = self._pool_metrics()
             self._config["stats"] = {"job_id": uuid.uuid4().hex, "success": 0, "fail": 0, "done": 0, "running": 0, "threads": self._config["threads"], **metrics, "started_at": _now(), "updated_at": _now()}
             openai_register.config.update({k: self._config[k] for k in ("mail", "proxy", "total", "threads")})
@@ -236,8 +238,29 @@ class RegisterService:
             "current_available": len(normal),
         }
 
+    def _maybe_precheck_free_pool(self, mode: str) -> None:
+        if mode not in {"quota", "available"}:
+            return
+        settings = config.get_free_account_cleanup_settings()
+        if not bool(settings.get("enabled")) or not bool(settings.get("register_precheck_enabled")):
+            return
+        interval_seconds = max(60, int(settings.get("interval_minutes") or 10) * 60)
+        now = time.monotonic()
+        if now - self._last_free_pool_precheck_at < interval_seconds:
+            return
+        self._last_free_pool_precheck_at = now
+        result = account_service.refresh_normal_free_accounts("register_precheck")
+        checked = int(result.get("checked") or 0)
+        if checked:
+            errors = len(result.get("errors") or [])
+            self._append_log(
+                f"Free 号池强校验：检查 {checked} 个正常 Free 账号，刷新成功 {result.get('refreshed', 0)}，异常 {errors}",
+                "yellow",
+            )
+
     def _target_reached(self, cfg: dict, submitted: int) -> bool:
         mode = str(cfg.get("mode") or "total")
+        self._maybe_precheck_free_pool(mode)
         metrics = self._pool_metrics()
         self._bump(**metrics)
         if mode == "quota":

@@ -10,7 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import type { ImageStorageMode } from "@/lib/api";
+import type { FreeAccountCleanupAction, ImageStorageMode } from "@/lib/api";
 import { testProxy, type ProxyTestResult } from "@/lib/api";
 
 import { useSettingsStore } from "../store";
@@ -32,6 +32,7 @@ export function ConfigCard() {
   const setAutoRemoveInvalidAccounts = useSettingsStore((state) => state.setAutoRemoveInvalidAccounts);
   const setAutoRemoveRateLimitedAccounts = useSettingsStore((state) => state.setAutoRemoveRateLimitedAccounts);
   const setAutoReloginAfterRefresh = useSettingsStore((state) => state.setAutoReloginAfterRefresh);
+  const setFreeAccountCleanupField = useSettingsStore((state) => state.setFreeAccountCleanupField);
   const setLogLevel = useSettingsStore((state) => state.setLogLevel);
   const setProxy = useSettingsStore((state) => state.setProxy);
   const setBaseUrl = useSettingsStore((state) => state.setBaseUrl);
@@ -236,6 +237,70 @@ export function ConfigCard() {
             />
             自动移除限流账号
           </label>
+          <div className="space-y-4 rounded-xl border border-stone-200 bg-white px-4 py-3 md:col-span-2">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <label className="flex items-center gap-3 text-sm text-stone-700">
+                <Checkbox
+                  checked={Boolean(config?.free_account_cleanup?.enabled)}
+                  onCheckedChange={(checked) => setFreeAccountCleanupField("enabled", Boolean(checked))}
+                />
+                启用 Free 号池死号清理
+              </label>
+              <span className="rounded-lg bg-stone-100 px-2.5 py-1 text-xs text-stone-500">默认关闭</span>
+            </div>
+            <p className="text-xs leading-6 text-stone-500">
+              只处理 Free 账号：生图连续失败后强验证，注册补号判断前按间隔校准号池，避免死号继续占额度或被分配去生图。
+            </p>
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="space-y-2">
+                <label className="text-sm text-stone-700">定期强校验间隔</label>
+                <Input
+                  value={String(config?.free_account_cleanup?.interval_minutes || "10")}
+                  onChange={(event) => setFreeAccountCleanupField("interval_minutes", event.target.value)}
+                  placeholder="10"
+                  className="h-10 rounded-xl border-stone-200 bg-white disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={!config?.free_account_cleanup?.enabled}
+                />
+                <p className="text-xs text-stone-500">单位分钟，后台对正常 Free 账号做强刷新。</p>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm text-stone-700">生图失败阈值</label>
+                <Input
+                  value={String(config?.free_account_cleanup?.failure_threshold || "2")}
+                  onChange={(event) => setFreeAccountCleanupField("failure_threshold", event.target.value)}
+                  placeholder="2"
+                  className="h-10 rounded-xl border-stone-200 bg-white disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={!config?.free_account_cleanup?.enabled}
+                />
+                <p className="text-xs text-stone-500">连续失败达到阈值后强验证该账号。</p>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm text-stone-700">清理方式</label>
+                <Select
+                  value={String(config?.free_account_cleanup?.action || "mark_abnormal")}
+                  onValueChange={(value) => setFreeAccountCleanupField("action", value as FreeAccountCleanupAction)}
+                  disabled={!config?.free_account_cleanup?.enabled}
+                >
+                  <SelectTrigger className="h-10 rounded-xl border-stone-200 bg-white shadow-none disabled:cursor-not-allowed disabled:opacity-50">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="mark_abnormal">标记异常并额度归零</SelectItem>
+                    <SelectItem value="delete">直接删除</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-stone-500">直接删除适合一次性 Free 池。</p>
+              </div>
+            </div>
+            <label className="flex items-center gap-3 rounded-xl border border-stone-100 bg-stone-50 px-3 py-2 text-sm text-stone-700">
+              <Checkbox
+                checked={Boolean(config?.free_account_cleanup?.register_precheck_enabled !== false)}
+                onCheckedChange={(checked) => setFreeAccountCleanupField("register_precheck_enabled", Boolean(checked))}
+                disabled={!config?.free_account_cleanup?.enabled}
+              />
+              注册补号判断前强校验 Free 号池
+            </label>
+          </div>
           <div className="space-y-3 rounded-xl border border-stone-200 bg-white px-4 py-3">
             <div>
               <label className="text-sm text-stone-700">控制台日志级别</label>

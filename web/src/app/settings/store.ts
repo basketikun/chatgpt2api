@@ -29,6 +29,7 @@ import {
   type BackupState,
   type CPAPool,
   type CPARemoteFile,
+  type FreeAccountCleanupSettings,
   type ImageStorageMode,
   type ImageStorageSettings,
   type ProxyRuntimeClearanceMode,
@@ -71,6 +72,14 @@ const DEFAULT_THIRD_PARTY_APPS: ThirdPartyAppsSettings = {
     enabled: false,
     url: "https://canvas.best",
   },
+};
+
+const DEFAULT_FREE_ACCOUNT_CLEANUP: FreeAccountCleanupSettings = {
+  enabled: false,
+  interval_minutes: 10,
+  failure_threshold: 2,
+  register_precheck_enabled: true,
+  action: "mark_abnormal",
 };
 
 function normalizeProxyRuntime(value: unknown): ProxyRuntimeSettings {
@@ -117,7 +126,7 @@ function normalizeProxyRuntime(value: unknown): ProxyRuntimeSettings {
 
 function normalizeThirdPartyApps(value: unknown): ThirdPartyAppsSettings {
   const source = typeof value === "object" && value !== null ? value as Partial<ThirdPartyAppsSettings> : {};
-  const canvas = typeof source.infinite_canvas === "object" && source.infinite_canvas
+  const canvas: Partial<ThirdPartyAppsSettings["infinite_canvas"]> = typeof source.infinite_canvas === "object" && source.infinite_canvas
     ? source.infinite_canvas
     : {};
   return {
@@ -125,6 +134,17 @@ function normalizeThirdPartyApps(value: unknown): ThirdPartyAppsSettings {
       enabled: Boolean(canvas.enabled),
       url: String(canvas.url || DEFAULT_THIRD_PARTY_APPS.infinite_canvas.url),
     },
+  };
+}
+
+function normalizeFreeAccountCleanup(value: unknown): FreeAccountCleanupSettings {
+  const source = typeof value === "object" && value !== null ? value as Partial<FreeAccountCleanupSettings> : {};
+  return {
+    enabled: Boolean(source.enabled),
+    interval_minutes: Math.max(1, Number(source.interval_minutes) || Number(DEFAULT_FREE_ACCOUNT_CLEANUP.interval_minutes)),
+    failure_threshold: Math.max(1, Number(source.failure_threshold) || Number(DEFAULT_FREE_ACCOUNT_CLEANUP.failure_threshold)),
+    register_precheck_enabled: source.register_precheck_enabled !== false,
+    action: source.action === "delete" ? "delete" : "mark_abnormal",
   };
 }
 
@@ -184,6 +204,7 @@ function normalizeConfig(config: SettingsConfig): SettingsConfig {
     auto_remove_invalid_accounts: Boolean(config.auto_remove_invalid_accounts),
     auto_remove_rate_limited_accounts: Boolean(config.auto_remove_rate_limited_accounts),
     auto_relogin_after_refresh: Boolean(config.auto_relogin_after_refresh),
+    free_account_cleanup: normalizeFreeAccountCleanup(config.free_account_cleanup),
     log_levels: Array.isArray(config.log_levels) ? config.log_levels : [],
     proxy: typeof config.proxy === "string" ? config.proxy : "",
     base_url: typeof config.base_url === "string" ? config.base_url : "",
@@ -308,6 +329,7 @@ type SettingsStore = {
   setAutoRemoveInvalidAccounts: (value: boolean) => void;
   setAutoRemoveRateLimitedAccounts: (value: boolean) => void;
   setAutoReloginAfterRefresh: (value: boolean) => void;
+  setFreeAccountCleanupField: <K extends keyof FreeAccountCleanupSettings>(key: K, value: FreeAccountCleanupSettings[K]) => void;
   setLogLevel: (level: string, enabled: boolean) => void;
   setProxy: (value: string) => void;
   setBaseUrl: (value: string) => void;
@@ -454,6 +476,11 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         auto_remove_invalid_accounts: Boolean(config.auto_remove_invalid_accounts),
         auto_remove_rate_limited_accounts: Boolean(config.auto_remove_rate_limited_accounts),
         auto_relogin_after_refresh: Boolean(config.auto_relogin_after_refresh),
+        free_account_cleanup: {
+          ...normalizeFreeAccountCleanup(config.free_account_cleanup),
+          interval_minutes: Math.max(1, Number(config.free_account_cleanup?.interval_minutes) || 10),
+          failure_threshold: Math.max(1, Number(config.free_account_cleanup?.failure_threshold) || 2),
+        },
         proxy: config.proxy.trim(),
         base_url: String(config.base_url || "").trim(),
         global_system_prompt: String(config.global_system_prompt || "").trim(),
@@ -578,6 +605,24 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
 
   setAutoReloginAfterRefresh: (value) => {
     set((state) => state.config ? { config: { ...state.config, auto_relogin_after_refresh: value } } : {});
+  },
+
+  setFreeAccountCleanupField: (key, value) => {
+    set((state) => {
+      if (!state.config) {
+        return {};
+      }
+      const current = normalizeFreeAccountCleanup(state.config.free_account_cleanup);
+      return {
+        config: {
+          ...state.config,
+          free_account_cleanup: normalizeFreeAccountCleanup({
+            ...current,
+            [key]: value,
+          }),
+        },
+      };
+    });
   },
 
   setLogLevel: (level, enabled) => {

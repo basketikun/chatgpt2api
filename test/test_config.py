@@ -58,6 +58,35 @@ class ConfigLoadingTests(unittest.TestCase):
                 else:
                     module.os.environ["CHATGPT2API_AUTH_KEY"] = old_env_auth_key
 
+    def test_free_account_cleanup_settings_are_normalized(self) -> None:
+        module = self.config_module
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "config.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "auth-key": "test-auth",
+                        "free_account_cleanup": {
+                            "enabled": "yes",
+                            "interval_minutes": 0,
+                            "failure_threshold": "bad",
+                            "register_precheck_enabled": "off",
+                            "action": "remove-forever",
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            store = module.ConfigStore(path)
+            cleanup = store.get()["free_account_cleanup"]
+
+            self.assertTrue(cleanup["enabled"])
+            self.assertEqual(cleanup["interval_minutes"], 1)
+            self.assertEqual(cleanup["failure_threshold"], 2)
+            self.assertFalse(cleanup["register_precheck_enabled"])
+            self.assertEqual(cleanup["action"], "mark_abnormal")
+
 
 if __name__ == "__main__":
     unittest.main()
