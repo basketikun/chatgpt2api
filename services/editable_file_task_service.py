@@ -131,6 +131,7 @@ class EditableFileTaskService:
         token = ""
         account_email = ""
         self._update_task(key, status=TASK_STATUS_RUNNING, error="", started_ts=started)
+        backend = None
         try:
             if kind == "psd" and not base64_images:
                 raise ValueError("base64_images is empty")
@@ -148,6 +149,9 @@ class EditableFileTaskService:
             error = str(exc) or "editable file task failed"
             self._update_task(key, status=TASK_STATUS_ERROR, error=error, account_email=account_email, ended_ts=time.time())
             self._log_call(identity, kind, started, request_text(prompt), status="failed", error=error, account_email=account_email)
+        finally:
+            if backend is not None:
+                backend.close()
 
     def public_file_path(self, relative_path: str) -> Path:
         raw = str(relative_path or "").replace("\\", "/").lstrip("/")

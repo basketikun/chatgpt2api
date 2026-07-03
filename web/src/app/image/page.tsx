@@ -300,6 +300,23 @@ function deriveTurnStatus(turn: ImageTurn): Pick<ImageTurn, "status" | "error"> 
   return { status: "success", error: undefined };
 }
 
+function finalizeIdleQueuedTurn(turn: ImageTurn): ImageTurn {
+  if (
+    (turn.status !== "queued" && turn.status !== "generating") ||
+    turn.images.some((image) => image.status === "loading")
+  ) {
+    return turn;
+  }
+  const derived = deriveTurnStatus(turn);
+  if (derived.status === turn.status && derived.error === turn.error) {
+    return turn;
+  }
+  return {
+    ...turn,
+    ...derived,
+  };
+}
+
 async function syncConversationImageTasks(items: ImageConversation[]) {
   const taskIds = Array.from(
     new Set(
@@ -395,15 +412,16 @@ async function recoverConversationHistory(items: ImageConversation[]) {
           error: "页面刷新或任务中断，未找到可恢复的任务 ID",
         };
       });
-      const derived = deriveTurnStatus({ ...turn, images });
-      if (!turnChanged && derived.status === turn.status && derived.error === turn.error) {
+      const candidateTurn = turnChanged ? { ...turn, images } : turn;
+      const nextTurn = finalizeIdleQueuedTurn(candidateTurn);
+      const derived = turnChanged ? deriveTurnStatus(nextTurn) : { status: nextTurn.status, error: nextTurn.error };
+      if (!turnChanged && nextTurn === turn && derived.status === turn.status && derived.error === turn.error) {
         return turn;
       }
       changed = true;
       return {
-        ...turn,
+        ...nextTurn,
         ...derived,
-        images,
       };
     });
 
@@ -939,16 +957,24 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
         if (turn.id !== turnId) {
           return turn;
         }
+        const images =
+          part === "results"
+            ? turn.images.map((image) => ({ id: image.id, status: "error" as const, error: "生成结果已删除" }))
+            : turn.images;
+        const derived =
+          part === "results"
+            ? deriveTurnStatus({
+                ...turn,
+                images,
+              })
+            : { status: turn.status, error: turn.error };
         const nextTurn = {
           ...turn,
           prompt: part === "prompt" ? "" : turn.prompt,
           promptDeleted: part === "prompt" ? true : turn.promptDeleted,
           resultsDeleted: part === "results" ? true : turn.resultsDeleted,
-          status: part === "results" && turn.status === "generating" ? "error" as const : turn.status,
-          images:
-            part === "results"
-              ? turn.images.map((image) => ({ id: image.id, status: "error" as const, error: "生成结果已删除" }))
-              : turn.images,
+          ...derived,
+          images,
         };
         return nextTurn.promptDeleted && nextTurn.resultsDeleted ? null : nextTurn;
       })
@@ -1461,13 +1487,14 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
         turns: conversation.turns.map((turn) => {
           const hasLoading = turn.images.some((image) => image.status === "loading" && image.taskId === taskId);
           if (!hasLoading) return turn;
+          const images = turn.images.map((image) =>
+            image.taskId === taskId ? { ...image, status: "error" as const, error: taskError } : image,
+          );
+          const derived = deriveTurnStatus({ ...turn, images });
           return {
             ...turn,
-            status: "error" as const,
-            error: taskError,
-            images: turn.images.map((image) =>
-              image.taskId === taskId ? { ...image, status: "error" as const, error: taskError } : image,
-            ),
+            ...derived,
+            images,
           };
         }),
       };

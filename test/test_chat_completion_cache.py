@@ -7,7 +7,7 @@ import base64
 
 from services.config import config
 from services.protocol import openai_v1_chat_complete, openai_v1_response
-from services.protocol.chat_completion_cache import chat_completion_cache
+from services.protocol.chat_completion_cache import cache_key, chat_completion_cache
 from services.protocol.conversation import iter_conversation_payloads, sanitize_output_text
 from utils.helper import extract_image_from_message_content
 
@@ -65,6 +65,60 @@ class ChatCompletionCacheTests(unittest.TestCase):
             first["choices"][0]["message"]["content"],
             second["choices"][0]["message"]["content"],
         )
+
+    def test_cache_key_distinguishes_thinking_effort_inputs(self) -> None:
+        messages = [{"role": "user", "content": "same prompt"}]
+        base = {"model": "auto", "messages": messages}
+
+        default_key = cache_key(base, messages, stream=False)
+        thinking_key = cache_key({**base, "thinking_effort": "high"}, messages, stream=False)
+        reasoning_key = cache_key({**base, "reasoning": {"effort": "high"}}, messages, stream=False)
+
+        self.assertNotEqual(default_key, thinking_key)
+        self.assertNotEqual(default_key, reasoning_key)
+        self.assertNotEqual(thinking_key, reasoning_key)
+
+    def test_chat_completion_reasoning_effort_reaches_conversation_request(self) -> None:
+        captured_efforts: list[str] = []
+
+        def fake_collect_text(_backend, request):
+            captured_efforts.append(request.thinking_effort)
+            return "ok"
+
+        body = {
+            "model": "auto",
+            "reasoning_effort": "xhigh",
+            "messages": [{"role": "user", "content": "use more reasoning"}],
+        }
+
+        with (
+            mock.patch("services.protocol.openai_v1_chat_complete.text_backend", return_value=object()),
+            mock.patch("services.protocol.openai_v1_chat_complete.collect_text", side_effect=fake_collect_text),
+        ):
+            openai_v1_chat_complete.handle(body)
+
+        self.assertEqual(captured_efforts, ["extended"])
+
+    def test_responses_reasoning_effort_reaches_conversation_request(self) -> None:
+        captured_efforts: list[str] = []
+
+        def fake_stream_text_deltas(_backend, request):
+            captured_efforts.append(request.thinking_effort)
+            yield "ok"
+
+        body = {
+            "model": "auto",
+            "input": "use more reasoning",
+            "reasoning": {"effort": "xhigh"},
+        }
+
+        with (
+            mock.patch("services.protocol.openai_v1_response.text_backend", return_value=object()),
+            mock.patch("services.protocol.openai_v1_response.stream_text_deltas", side_effect=fake_stream_text_deltas),
+        ):
+            openai_v1_response.handle(body)
+
+        self.assertEqual(captured_efforts, ["extended"])
 
     def test_repeated_stream_text_completion_replays_cached_chunks(self) -> None:
         calls = 0
