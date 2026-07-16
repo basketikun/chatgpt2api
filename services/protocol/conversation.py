@@ -14,7 +14,12 @@ import tiktoken
 from services.account_service import account_service
 from services.config import config
 from services.image_storage_service import image_storage_service
-from services.openai_backend_api import ImageContentPolicyError, ImagePollTimeoutError, OpenAIBackendAPI
+from services.openai_backend_api import (
+    ImageContentPolicyError,
+    ImagePollTimeoutError,
+    ImageStreamTimeoutError,
+    OpenAIBackendAPI,
+)
 from utils.helper import (
     IMAGE_MODELS,
     extract_image_from_message_content,
@@ -1339,6 +1344,23 @@ def _generate_single_image(
                 return outputs
             account_service.mark_image_result(token, True)
             return outputs
+        except ImageStreamTimeoutError as exc:
+            account_service.mark_image_result(token, False)
+            logger.warning({
+                "event": "image_stream_timeout",
+                "request_token": token,
+                "account_email": account_email,
+                "timeout_secs": exc.timeout_secs,
+                "index": index,
+            })
+            raise ImageGenerationError(
+                f"Upstream image stream timed out after {exc.timeout_secs:g} seconds; "
+                "the account slot has been released. Please try again.",
+                status_code=504,
+                error_type="server_error",
+                code="upstream_timeout",
+                account_email=account_email,
+            ) from exc
         except ImagePollTimeoutError as exc:
             account_service.mark_image_result(token, False)
             if account_email:

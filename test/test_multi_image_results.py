@@ -5,9 +5,16 @@ import unittest
 from unittest import mock
 
 from services.config import config
-from services.openai_backend_api import OpenAIBackendAPI
-from services.protocol.conversation import ImageOutput, extract_conversation_ids
+from services.openai_backend_api import ImageStreamTimeoutError, OpenAIBackendAPI
+from services.protocol.conversation import (
+    ConversationRequest,
+    ImageGenerationError,
+    ImageOutput,
+    _generate_single_image,
+    extract_conversation_ids,
+)
 from services.protocol.openai_v1_response import stream_image_response
+from utils.helper import iter_sse_payloads
 
 
 def _conversation(file_ids: list[str], sediment_ids: list[str] | None = None) -> dict:
@@ -50,6 +57,71 @@ class FakeBackend(OpenAIBackendAPI):
 
 
 class MultiImageResultTests(unittest.TestCase):
+    def test_sse_reader_stops_when_heartbeats_exceed_total_duration(self) -> None:
+        response = mock.Mock()
+        response.iter_lines.return_value = iter([b": heartbeat", b": heartbeat"])
+
+        with mock.patch("utils.helper.time.monotonic", side_effect=[0.0, 0.2, 1.1]):
+            with self.assertRaisesRegex(TimeoutError, "SSE stream exceeded"):
+                list(iter_sse_payloads(response, max_duration_secs=1.0))
+
+    def test_image_stream_timeout_is_not_retried_as_a_connection_failure(self) -> None:
+        backend = mock.Mock()
+        request = ConversationRequest(model="gpt-image-2", prompt="draw a circle")
+
+        with (
+            mock.patch(
+                "services.protocol.conversation.account_service.get_available_access_token",
+                return_value="token-1",
+            ) as get_token,
+            mock.patch(
+                "services.protocol.conversation.account_service.get_account",
+                return_value={"email": "owner@example.test"},
+            ),
+            mock.patch("services.protocol.conversation.account_service.mark_image_result") as mark_result,
+            mock.patch("services.protocol.conversation.OpenAIBackendAPI", return_value=backend),
+            mock.patch(
+                "services.protocol.conversation.stream_image_outputs",
+                side_effect=ImageStreamTimeoutError(1.0),
+            ),
+        ):
+            with self.assertRaises(ImageGenerationError) as raised:
+                _generate_single_image(request, 1, 1)
+
+        self.assertEqual(raised.exception.status_code, 504)
+        self.assertEqual(raised.exception.code, "upstream_timeout")
+        get_token.assert_called_once()
+        mark_result.assert_called_once_with("token-1", False)
+        backend.close.assert_called_once()
+
+    def test_picture_stream_wraps_total_duration_timeout_and_closes_response(self) -> None:
+        backend = object.__new__(OpenAIBackendAPI)
+        backend.access_token = "token-1"
+        backend.progress_callback = None
+        backend._bootstrap = mock.Mock()
+        backend._get_chat_requirements = mock.Mock(return_value=mock.sentinel.requirements)
+        backend._prepare_image_conversation = mock.Mock(return_value="conduit-token")
+        response = mock.Mock()
+        response.iter_lines.return_value = iter([b": heartbeat", b": heartbeat"])
+        backend._start_image_generation = mock.Mock(return_value=response)
+
+        with (
+            mock.patch.dict(config.data, {"image_poll_timeout_secs": 1}),
+            mock.patch("time.monotonic", side_effect=[0.0, 0.1, 0.1, 0.2, 1.2]),
+        ):
+            with self.assertRaises(ImageStreamTimeoutError):
+                list(backend._stream_picture_conversation("draw a circle", "gpt-image-2", []))
+
+        backend._start_image_generation.assert_called_once_with(
+            "draw a circle",
+            mock.sentinel.requirements,
+            "conduit-token",
+            "gpt-image-2",
+            [],
+            timeout_secs=1.0,
+        )
+        response.close.assert_called_once()
+
     def test_stream_id_extractor_keeps_full_file_ids(self) -> None:
         payload = (
             '{"conversation_id":"conv-1"} '

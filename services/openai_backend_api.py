@@ -36,6 +36,12 @@ class ImagePollTimeoutError(RuntimeError):
     pass
 
 
+class ImageStreamTimeoutError(RuntimeError):
+    def __init__(self, timeout_secs: float) -> None:
+        self.timeout_secs = float(timeout_secs)
+        super().__init__(f"image generation stream timed out after {self.timeout_secs:g} seconds")
+
+
 class ImageContentPolicyError(RuntimeError):
     """Raised when image generation is blocked by content policy moderation."""
     pass
@@ -948,7 +954,8 @@ class OpenAIBackendAPI:
         }
 
     def _start_image_generation(self, prompt: str, requirements: ChatRequirements, conduit_token: str, model: str,
-                                references: Optional[list[Dict[str, Any]]] = None) -> requests.Response:
+                                references: Optional[list[Dict[str, Any]]] = None,
+                                timeout_secs: float = 300.0) -> requests.Response:
         """启动图片生成或编辑的 SSE 请求。"""
         references = references or []
         parts = [{
@@ -1014,7 +1021,7 @@ class OpenAIBackendAPI:
             self.base_url + path,
             headers=self._image_headers(path, requirements, conduit_token, "text/event-stream"),
             json=payload,
-            timeout=300,
+            timeout=timeout_secs,
             stream=True,
         )
         ensure_ok(response, path)
@@ -2587,10 +2594,29 @@ class OpenAIBackendAPI:
         self._report_progress("preparing_conversation")
         conduit_token = self._prepare_image_conversation(prompt, requirements, model)
         self._report_progress("starting_generation")
-        response = self._start_image_generation(prompt, requirements, conduit_token, model, references)
-        self._report_progress("generating")
+        stream_timeout_secs = float(config.image_poll_timeout_secs)
+        stream_started_at = time.monotonic()
         try:
-            yield from iter_sse_payloads(response)
+            response = self._start_image_generation(
+                prompt,
+                requirements,
+                conduit_token,
+                model,
+                references,
+                timeout_secs=stream_timeout_secs,
+            )
+        except (requests.exceptions.Timeout, TimeoutError) as exc:
+            raise ImageStreamTimeoutError(stream_timeout_secs) from exc
+        self._report_progress("generating")
+        remaining_secs = stream_timeout_secs - (time.monotonic() - stream_started_at)
+        if remaining_secs <= 0:
+            response.close()
+            raise ImageStreamTimeoutError(stream_timeout_secs)
+        try:
+            try:
+                yield from iter_sse_payloads(response, max_duration_secs=remaining_secs)
+            except TimeoutError as exc:
+                raise ImageStreamTimeoutError(stream_timeout_secs) from exc
         finally:
             response.close()
 

@@ -6,6 +6,12 @@ dist/
 wheels/
 *.egg-info
 web_dist
+node_modules/
+web/node_modules/
+web/.next/
+web/out/
+.bun-cache/
+.tmp/
 # Virtual environments
 .venv
 .idea
@@ -16,6 +22,7 @@ edit
 docker-compose-local.yml
 
 .claude/settings.local.json
+.codex/runtime/
 
 # Environment variables
 .env

@@ -24,6 +24,8 @@ from utils.helper import anonymize_token
 class AccountService:
     """账号池服务，使用 token -> account 的 dict 保存账号。"""
 
+    _IMAGE_ACCOUNT_CHECK_RETRIES = 3
+    _IMAGE_ACCOUNT_CHECK_RETRY_BACKOFF_SECONDS = 0.5
     _NEW_ACCOUNT_INVALID_GRACE_SECONDS = 10 * 60
     _INVALID_CONFIRM_SECONDS = 30
     _ACCESS_TOKEN_REFRESH_SKEW_SECONDS = 24 * 60 * 60
@@ -953,6 +955,35 @@ class AccountService:
                 self._image_inflight[access_token] = current_inflight - 1
             self._image_slot_condition.notify_all()
 
+    @staticmethod
+    def _is_transient_image_account_check_error(exc: Exception) -> bool:
+        if exc.__class__.__name__ == "InvalidAccessTokenError":
+            return False
+        status_code = getattr(exc, "status_code", None)
+        if status_code in {408, 409, 423, 425, 429, 500, 502, 503, 504}:
+            return True
+        if isinstance(status_code, int) and 400 <= status_code < 500:
+            return False
+        message = str(exc).lower()
+        return any(marker in message for marker in (
+            "failed to perform",
+            "curl:",
+            "tls",
+            "ssl",
+            "timeout",
+            "timed out",
+            "connection",
+            "http/2",
+            "temporarily unavailable",
+            "remote disconnected",
+            "unexpected eof",
+        ))
+
+    @staticmethod
+    def _account_check_error_message(exc: Exception, attempts: int) -> str:
+        detail = str(exc).strip() or exc.__class__.__name__
+        return f"image account availability check failed after {attempts} attempt(s): {detail}"
+
     def get_available_access_token(
             self,
             plan_type: str | None = None,
@@ -966,19 +997,64 @@ class AccountService:
         """
         max_attempts = 20  # 防止无限循环
         attempted_tokens: set[str] = set()
+        remote_errors: list[tuple[Exception, int]] = []
         for _attempt in range(max_attempts):
-            access_token = self._acquire_next_candidate_token(
-                excluded_tokens=attempted_tokens,
-                plan_type=plan_type,
-                source_type=source_type,
-                plan_types=plan_types,
-            )
-            attempted_tokens.add(access_token)
             try:
-                account = self.fetch_remote_info(access_token, "get_available_access_token")
-            except Exception:
+                access_token = self._acquire_next_candidate_token(
+                    excluded_tokens=attempted_tokens,
+                    plan_type=plan_type,
+                    source_type=source_type,
+                    plan_types=plan_types,
+                )
+            except RuntimeError:
+                if remote_errors:
+                    last_error, attempts = remote_errors[-1]
+                    raise RuntimeError(self._account_check_error_message(last_error, attempts)) from last_error
+                raise
+            attempted_tokens.add(access_token)
+
+            account = None
+            check_error: Exception | None = None
+            check_attempts = 0
+            for check_attempts in range(1, self._IMAGE_ACCOUNT_CHECK_RETRIES + 1):
+                try:
+                    account = self.fetch_remote_info(access_token, "get_available_access_token")
+                    check_error = None
+                    break
+                except Exception as exc:
+                    check_error = exc
+                    if (
+                            not self._is_transient_image_account_check_error(exc)
+                            or check_attempts >= self._IMAGE_ACCOUNT_CHECK_RETRIES
+                    ):
+                        break
+                    time.sleep(self._IMAGE_ACCOUNT_CHECK_RETRY_BACKOFF_SECONDS * (2 ** (check_attempts - 1)))
+
+            if check_error is not None:
+                if self._is_transient_image_account_check_error(check_error):
+                    cached_account = self.get_account(access_token) or {}
+                    if (
+                            self._is_image_account_available(cached_account)
+                            and self._account_matches_plan_type(cached_account, plan_type)
+                            and self._account_matches_any_plan_type(cached_account, plan_types)
+                            and self._account_matches_source_type(cached_account, source_type)
+                    ):
+                        cached_token = str(cached_account.get("access_token") or access_token)
+                        log_service.add(
+                            LOG_TYPE_ACCOUNT,
+                            "生图账号远程检查失败，使用缓存状态",
+                            {
+                                "source": "get_available_access_token",
+                                "token": anonymize_token(cached_token),
+                                "attempts": check_attempts,
+                                "error": str(check_error)[:500],
+                            },
+                        )
+                        return cached_token
+                remote_errors.append((check_error, check_attempts))
                 self.release_image_slot(access_token)
                 continue
+
             # fetch_remote_info 内部可能因 token rotation 导致 access_token 变化，
             # 把新 token 也加入排除列表，防止重复尝试
             resolved = str((account or {}).get("access_token") or "")
@@ -993,8 +1069,11 @@ class AccountService:
                 return str((account or {}).get("access_token") or access_token)
             self.release_image_slot(access_token)
         raise RuntimeError(
-            f"no available {plan_type or source_type or ''} image quota (tried {len(attempted_tokens)} tokens)".replace("  ", " ").strip()
-            if plan_type or source_type else f"no available image quota (tried {len(attempted_tokens)} tokens)"
+            self._account_check_error_message(*remote_errors[-1])
+            if remote_errors else (
+                f"no available {plan_type or source_type or ''} image quota (tried {len(attempted_tokens)} tokens)".replace("  ", " ").strip()
+                if plan_type or source_type else f"no available image quota (tried {len(attempted_tokens)} tokens)"
+            )
         )
 
     def get_text_access_token(self, excluded_tokens: set[str] | None = None) -> str:

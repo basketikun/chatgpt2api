@@ -226,8 +226,17 @@ def anthropic_sse_stream(items) -> Iterator[str]:
         yield f"data: {json.dumps(error, ensure_ascii=False)}\n\n"
 
 
-def iter_sse_payloads(response: requests.Response) -> Iterator[str]:
+def iter_sse_payloads(
+        response: requests.Response,
+        *,
+        max_duration_secs: float | None = None,
+) -> Iterator[str]:
+    deadline = None
+    if max_duration_secs is not None:
+        deadline = time.monotonic() + max(0.0, float(max_duration_secs))
     for raw_line in response.iter_lines():
+        if deadline is not None and time.monotonic() >= deadline:
+            raise TimeoutError(f"SSE stream exceeded {max_duration_secs:g} seconds")
         if not raw_line:
             continue
         line = raw_line.decode("utf-8", errors="ignore") if isinstance(raw_line, bytes) else str(raw_line)

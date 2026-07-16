@@ -4,7 +4,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 os.environ.setdefault("CHATGPT2API_AUTH_KEY", "test-auth")
 
@@ -95,6 +95,68 @@ class AccountCapabilityTests(unittest.TestCase):
 
             self.assertEqual(plus_token, "token-plus")
             self.assertEqual(pro_token, "token-pro")
+
+    def test_get_available_access_token_retries_transient_remote_check(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            service = AccountService(JSONStorageBackend(Path(tmp_dir) / "accounts.json"))
+            service.add_account_items(
+                [{"access_token": "token-pro", "type": "Pro", "status": "正常", "quota": 3}]
+            )
+            account = service.get_account("token-pro")
+            service.fetch_remote_info = Mock(side_effect=[
+                TimeoutError("connection timed out"),
+                TimeoutError("connection timed out"),
+                account,
+            ])
+
+            with patch("services.account_service.time.sleep") as sleep:
+                token = service.get_available_access_token()
+
+            service.release_image_slot(token)
+            self.assertEqual(token, "token-pro")
+            self.assertEqual(service.fetch_remote_info.call_count, 3)
+            self.assertEqual(sleep.call_count, 2)
+
+    def test_get_available_access_token_uses_cached_account_after_transient_failures(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            service = AccountService(JSONStorageBackend(Path(tmp_dir) / "accounts.json"))
+            service.add_account_items(
+                [{"access_token": "token-pro", "type": "Pro", "status": "正常", "quota": 3}]
+            )
+            service.fetch_remote_info = Mock(side_effect=TimeoutError("TLS connection closed"))
+
+            with patch("services.account_service.time.sleep"):
+                token = service.get_available_access_token()
+
+            service.release_image_slot(token)
+            self.assertEqual(token, "token-pro")
+            self.assertEqual(service.fetch_remote_info.call_count, 3)
+
+    def test_get_available_access_token_does_not_misreport_non_transient_check_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            service = AccountService(JSONStorageBackend(Path(tmp_dir) / "accounts.json"))
+            service.add_account_items(
+                [{"access_token": "token-pro", "type": "Pro", "status": "正常", "quota": 3}]
+            )
+            service.fetch_remote_info = Mock(side_effect=ValueError("invalid account response"))
+
+            with self.assertRaisesRegex(RuntimeError, "image account availability check failed after 1 attempt"):
+                service.get_available_access_token()
+
+            self.assertEqual(service.fetch_remote_info.call_count, 1)
+
+    def test_get_available_access_token_preserves_real_quota_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            service = AccountService(JSONStorageBackend(Path(tmp_dir) / "accounts.json"))
+            service.add_account_items(
+                [{"access_token": "token-pro", "type": "Pro", "status": "限流", "quota": 0}]
+            )
+            service.fetch_remote_info = Mock()
+
+            with self.assertRaisesRegex(RuntimeError, "no available image quota"):
+                service.get_available_access_token()
+
+            service.fetch_remote_info.assert_not_called()
 
     def test_refresh_accounts_can_remove_invalid_token_without_confirmation_delay(self) -> None:
         original_value = config.data.get("auto_remove_invalid_accounts")
