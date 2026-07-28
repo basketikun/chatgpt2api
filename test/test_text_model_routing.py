@@ -34,8 +34,11 @@ class TextAccountRoutingTests(unittest.TestCase):
         )
         self.service.refresh_access_token = lambda token, **_kwargs: token
 
-    def test_explicit_model_selects_only_advertising_account_type(self) -> None:
-        route = ModelRoute(account_types=frozenset({"Pro"}), allow_anonymous=False)
+    def test_explicit_model_selects_only_advertising_account(self) -> None:
+        self.service.add_account_items([
+            {"access_token": "pro-alt", "type": "Pro", "status": "正常"},
+        ])
+        route = ModelRoute(access_tokens=frozenset({"pro"}), allow_anonymous=False)
         with mock.patch(
             "services.model_service.model_catalog_service.route_for_model",
             return_value=route,
@@ -58,7 +61,7 @@ class TextAccountRoutingTests(unittest.TestCase):
         self.assertEqual(tokens, {"free", "plus", "pro"})
 
     def test_anonymous_model_uses_anonymous_backend(self) -> None:
-        route = ModelRoute(account_types=frozenset(), allow_anonymous=True)
+        route = ModelRoute(access_tokens=frozenset(), allow_anonymous=True)
         with mock.patch(
             "services.model_service.model_catalog_service.route_for_model",
             return_value=route,
@@ -68,7 +71,7 @@ class TextAccountRoutingTests(unittest.TestCase):
         self.assertEqual(token, "")
 
     def test_model_without_eligible_account_fails_closed(self) -> None:
-        route = ModelRoute(account_types=frozenset({"Team"}), allow_anonymous=False)
+        route = ModelRoute(access_tokens=frozenset(), allow_anonymous=False)
         with mock.patch(
             "services.model_service.model_catalog_service.route_for_model",
             return_value=route,
@@ -170,6 +173,36 @@ class TextProtocolRoutingTests(unittest.TestCase):
             excluded_tokens={"bad"},
             model="pro-only",
         )
+
+    def test_invalid_token_can_fall_back_to_anonymous_backend(self) -> None:
+        initial_backend = SimpleNamespace(access_token="bad")
+        request = conversation.ConversationRequest(
+            model="shared-model",
+            messages=[{"role": "user", "content": "hello"}],
+        )
+        attempted: list[str] = []
+
+        def backend_factory(access_token: str):
+            attempted.append(access_token)
+            return SimpleNamespace(access_token=access_token, close=lambda: None)
+
+        def fake_events(backend, **_kwargs):
+            if backend.access_token == "bad":
+                raise RuntimeError("token_invalidated")
+            yield {"type": "conversation.delta", "delta": "anonymous-ok"}
+
+        with (
+            mock.patch.object(conversation, "OpenAIBackendAPI", side_effect=backend_factory),
+            mock.patch.object(conversation, "conversation_events", side_effect=fake_events),
+            mock.patch.object(conversation.account_service, "refresh_access_token", return_value="bad"),
+            mock.patch.object(conversation.account_service, "remove_invalid_token"),
+            mock.patch.object(conversation.account_service, "get_text_access_token", return_value=""),
+            mock.patch.object(conversation.account_service, "mark_text_used"),
+        ):
+            result = list(conversation.stream_text_deltas(initial_backend, request))
+
+        self.assertEqual(result, ["anonymous-ok"])
+        self.assertEqual(attempted, ["bad", ""])
 
 
 if __name__ == "__main__":

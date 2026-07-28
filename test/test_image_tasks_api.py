@@ -62,9 +62,18 @@ class FakeImageTaskService:
 class ImageTasksApiTests(unittest.TestCase):
     def setUp(self):
         self.fake_service = FakeImageTaskService()
-        self.service_patcher = mock.patch.object(image_tasks_module, "image_task_service", self.fake_service)
-        self.service_patcher.start()
-        self.addCleanup(self.service_patcher.stop)
+        self.patchers = [
+            mock.patch.object(image_tasks_module, "image_task_service", self.fake_service),
+            mock.patch.object(
+                image_tasks_module,
+                "require_identity",
+                return_value={"id": "test-user", "name": "Test User", "role": "user"},
+            ),
+            mock.patch.object(image_tasks_module, "filter_or_log", mock.AsyncMock()),
+        ]
+        for patcher in self.patchers:
+            patcher.start()
+            self.addCleanup(patcher.stop)
         app = FastAPI()
         app.include_router(image_tasks_module.create_router())
         self.client = TestClient(app)
@@ -116,7 +125,7 @@ class ImageTasksApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(len(self.fake_service.edit_calls), 1)
         images = self.fake_service.edit_calls[0][1]["images"]
-        self.assertEqual(images, [(PNG_BYTES, "image_url.png", "image/png")])
+        self.assertEqual(images, [(PNG_BYTES, "image_1.png", "image/png")])
 
     def test_list_tasks_reports_missing_ids(self):
         response = self.client.get("/api/image-tasks?ids=task-1,missing", headers=AUTH_HEADERS)

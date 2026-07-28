@@ -43,9 +43,6 @@ DEFAULT_CHAT_COMPLETION_CACHE = {
     "max_entries": 256,
     "dedupe_inflight": True,
     "stream_cache": True,
-    "normalize_messages": True,
-    "drop_adjacent_duplicates": True,
-    "drop_assistant_history": False,
 }
 
 DEFAULT_PROXY_RUNTIME_USER_AGENT = (
@@ -182,18 +179,6 @@ def _normalize_chat_completion_cache_settings(value: object) -> dict[str, object
         "stream_cache": _normalize_bool(
             source.get("stream_cache"),
             bool(DEFAULT_CHAT_COMPLETION_CACHE["stream_cache"]),
-        ),
-        "normalize_messages": _normalize_bool(
-            source.get("normalize_messages"),
-            bool(DEFAULT_CHAT_COMPLETION_CACHE["normalize_messages"]),
-        ),
-        "drop_adjacent_duplicates": _normalize_bool(
-            source.get("drop_adjacent_duplicates"),
-            bool(DEFAULT_CHAT_COMPLETION_CACHE["drop_adjacent_duplicates"]),
-        ),
-        "drop_assistant_history": _normalize_bool(
-            source.get("drop_assistant_history"),
-            bool(DEFAULT_CHAT_COMPLETION_CACHE["drop_assistant_history"]),
         ),
     }
 

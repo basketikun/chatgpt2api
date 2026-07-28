@@ -75,28 +75,6 @@ def cache_key(body: dict[str, Any], messages: list[dict[str, Any]], *, stream: b
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _message_signature(message: dict[str, Any]) -> str:
-    return json.dumps(_json_safe(message), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-
-
-def normalize_text_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    settings = config.get_chat_completion_cache_settings()
-    if not settings.get("normalize_messages"):
-        return messages
-
-    normalized: list[dict[str, Any]] = []
-    previous_signature = ""
-    for message in messages:
-        if settings.get("drop_assistant_history") and str(message.get("role") or "") == "assistant":
-            continue
-        signature = _message_signature(message)
-        if settings.get("drop_adjacent_duplicates") and signature == previous_signature:
-            continue
-        normalized.append(message)
-        previous_signature = signature
-    return normalized
-
-
 class ChatCompletionCache:
     def __init__(self) -> None:
         self._lock = threading.RLock()

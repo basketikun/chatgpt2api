@@ -356,7 +356,11 @@ class AccountService:
         from curl_cffi import requests
         from services.proxy_service import proxy_settings
 
-        session = requests.Session(**proxy_settings.build_session_kwargs(account=account, impersonate="chrome110", verify=True))
+        session = requests.Session(**proxy_settings.build_session_kwargs(
+            account=account,
+            impersonate="chrome110",
+            require_tls_verification=True,
+        ))
         try:
             response = session.post(
                 self._OAUTH_TOKEN_URL,
@@ -585,6 +589,7 @@ class AccountService:
     def _login_with_password(self, email: str, password: str) -> dict:
         """通过邮箱+密码登录，返回 {access_token, refresh_token, id_token, ...}"""
         from curl_cffi import requests
+        from services.proxy_service import proxy_settings
         
         # 常量
         auth_base = "https://auth.openai.com"
@@ -595,10 +600,11 @@ class AccountService:
         user_agent = self._OAUTH_USER_AGENT
         
         # 创建 session
-        session_kwargs = {"impersonate": "chrome110", "verify": False}
-        proxy = config.get_proxy_settings()
-        if proxy:
-            session_kwargs["proxy"] = proxy
+        session_kwargs = proxy_settings.build_session_kwargs(
+            proxy=config.get_proxy_settings(),
+            impersonate="chrome110",
+            require_tls_verification=True,
+        )
         session = requests.Session(**session_kwargs)
         
         try:
@@ -774,7 +780,6 @@ class AccountService:
                     "code": auth_code,
                     "redirect_uri": platform_oauth_redirect_uri,
                 },
-                verify=False,
                 timeout=60,
             )
             
@@ -1014,11 +1019,11 @@ class AccountService:
                 token
                 for account in self._accounts.values()
                 if account.get("status") not in {"禁用", "异常"}
+                   and (token := account.get("access_token") or "")
                    and (
                        route is None
-                       or self._normalize_account_type(account.get("type")) in route.account_types
+                       or token in route.access_tokens
                    )
-                   and (token := account.get("access_token") or "")
                    and token not in excluded
             ]
             if not candidates:
@@ -1026,9 +1031,7 @@ class AccountService:
                     return ""
                 from services.model_service import ModelUnavailableError
 
-                raise ModelUnavailableError(
-                    f"model {requested_model!r} is not available to any active account"
-                )
+                raise ModelUnavailableError(requested_model)
             access_token = candidates[self._index % len(candidates)]
             self._index += 1
         return self.refresh_access_token(access_token, event="get_text_access_token") or access_token

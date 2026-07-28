@@ -5,6 +5,7 @@ import unittest
 from unittest import mock
 
 import requests
+import pytest
 
 from services.protocol import openai_v1_models
 
@@ -62,12 +63,14 @@ class ModelListTests(unittest.TestCase):
         self.assertNotIn("codex-gpt-image-2", ids)
         self.assertNotIn("plus-codex-gpt-image-2", ids)
 
+    @pytest.mark.live
     def test_list_models_function(self):
         """测试直接调用服务层获取模型列表。"""
         result = openai_v1_models.list_models()
         print("function result:")
         print(json.dumps(result, ensure_ascii=False, indent=2))
 
+    @pytest.mark.live
     def test_list_models_http(self):
         """测试通过 HTTP 接口获取模型列表。"""
         response = requests.get(

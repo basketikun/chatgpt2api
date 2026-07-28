@@ -27,9 +27,6 @@ class ChatCompletionCacheTests(unittest.TestCase):
             "max_entries": 32,
             "dedupe_inflight": True,
             "stream_cache": True,
-            "normalize_messages": True,
-            "drop_adjacent_duplicates": True,
-            "drop_assistant_history": False,
         }
         chat_completion_cache.clear()
 
@@ -150,7 +147,7 @@ class ChatCompletionCacheTests(unittest.TestCase):
         content = "".join(str(chunk["choices"][0]["delta"].get("content") or "") for chunk in second)
         self.assertEqual(content, "streamed answer")
 
-    def test_adjacent_duplicate_messages_are_removed_before_upstream_call(self) -> None:
+    def test_adjacent_duplicate_messages_are_preserved_before_upstream_call(self) -> None:
         captured_messages = []
 
         def fake_collect_text(_backend, request):
@@ -176,6 +173,7 @@ class ChatCompletionCacheTests(unittest.TestCase):
         self.assertEqual(
             captured_messages,
             [
+                {"role": "user", "content": "repeat me"},
                 {"role": "user", "content": "repeat me"},
                 {"role": "assistant", "content": "old answer"},
                 {"role": "user", "content": "next prompt"},
@@ -545,12 +543,10 @@ class ChatCompletionCacheTests(unittest.TestCase):
         self.assertIn("plain text answer", response["choices"][0]["message"]["content"])
 
     def test_chat_completions_accepts_remote_image_url(self) -> None:
-        class FakeImageResponse:
-            status_code = 200
-            headers = {"content-type": "image/png", "content-length": str(len(PNG_1X1))}
-            content = PNG_1X1
-
-        with mock.patch("utils.helper.requests.get", return_value=FakeImageResponse()) as request_get:
+        with mock.patch(
+            "utils.helper.download_public_image",
+            return_value=(PNG_1X1, "/image.png", "image/png"),
+        ) as image_download:
             model, messages = openai_v1_chat_complete.text_chat_parts({
                 "model": "auto",
                 "messages": [{
@@ -562,7 +558,7 @@ class ChatCompletionCacheTests(unittest.TestCase):
                 }],
             })
 
-        request_get.assert_called_once()
+        image_download.assert_called_once()
         self.assertEqual(model, "auto")
         content = messages[0]["content"]
         self.assertEqual(content[0], {"type": "text", "text": "Describe this"})
@@ -600,12 +596,10 @@ class ChatCompletionCacheTests(unittest.TestCase):
         self.assertGreater(response["usage"]["input_tokens_details"]["image_tokens"], 0)
 
     def test_responses_text_request_accepts_remote_input_image_url(self) -> None:
-        class FakeImageResponse:
-            status_code = 200
-            headers = {"content-type": "image/png", "content-length": str(len(PNG_1X1))}
-            content = PNG_1X1
-
-        with mock.patch("utils.helper.requests.get", return_value=FakeImageResponse()) as request_get:
+        with mock.patch(
+            "utils.helper.download_public_image",
+            return_value=(PNG_1X1, "/image.png", "image/png"),
+        ) as image_download:
             _model, messages = openai_v1_response.text_response_parts({
                 "model": "auto",
                 "input": [{
@@ -618,7 +612,7 @@ class ChatCompletionCacheTests(unittest.TestCase):
                 }],
             })
 
-        request_get.assert_called_once()
+        image_download.assert_called_once()
         content = messages[0]["content"]
         self.assertEqual(content[0], {"type": "text", "text": "Describe this"})
         self.assertEqual(content[1]["type"], "image")

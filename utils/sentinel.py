@@ -132,7 +132,6 @@ def build_sentinel_token(
             "sec-ch-ua-platform": '"Windows"',
         },
         timeout=20,
-        verify=False,
     )
 
     try:

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
-from threading import RLock
+from threading import Condition, RLock, Thread
 from typing import Any
 
 from services.account_service import AccountService, account_service
@@ -14,16 +14,30 @@ from utils.log import logger
 
 @dataclass(frozen=True)
 class ModelRoute:
-    account_types: frozenset[str]
+    access_tokens: frozenset[str]
     allow_anonymous: bool = False
 
 
 class ModelUnavailableError(RuntimeError):
-    pass
+    status_code = 400
+
+    def __init__(self, model: str) -> None:
+        self.model = str(model or "").strip()
+        super().__init__(f"model {self.model!r} is not available to any active account")
+
+    def to_openai_error(self) -> dict[str, Any]:
+        return {
+            "error": {
+                "message": str(self),
+                "type": "invalid_request_error",
+                "param": "model",
+                "code": "model_not_available",
+            }
+        }
 
 
 class ModelCatalogService:
-    """Caches the model catalogs advertised to each active account type."""
+    """Caches the model catalog advertised by each active account."""
 
     def __init__(
         self,
@@ -32,16 +46,30 @@ class ModelCatalogService:
         backend_factory: Callable[..., Any] = OpenAIBackendAPI,
         cache_ttl_seconds: float = 300,
         clock: Callable[[], float] = time.monotonic,
+        max_workers: int = 4,
+        max_pending_requests: int = 32,
+        request_timeout_seconds: float = 10,
+        initial_wait_seconds: float = 15,
     ) -> None:
         self._accounts = accounts
         self._backend_factory = backend_factory
         self._cache_ttl_seconds = max(1.0, float(cache_ttl_seconds))
         self._clock = clock
+        self._max_workers = max(1, int(max_workers))
+        self._max_pending_requests = max(
+            self._max_workers,
+            int(max_pending_requests),
+        )
+        self._request_timeout_seconds = max(1.0, float(request_timeout_seconds))
+        self._initial_wait_seconds = max(0.0, float(initial_wait_seconds))
         self._lock = RLock()
+        self._condition = Condition(self._lock)
         self._expires_at = 0.0
-        self._account_signature: tuple[tuple[str, int], ...] = ()
+        self._account_signature: tuple[tuple[str, str], ...] = ()
         self._anonymous_models: dict[str, dict[str, Any]] = {}
-        self._models_by_account_type: dict[str, dict[str, dict[str, Any]]] = {}
+        self._models_by_access_token: dict[str, dict[str, dict[str, Any]]] = {}
+        self._initialized = False
+        self._refreshing = False
 
     @staticmethod
     def _model_map(result: object) -> dict[str, dict[str, Any]]:
@@ -68,96 +96,271 @@ class ModelCatalogService:
         return groups
 
     @staticmethod
-    def _signature(groups: dict[str, list[str]]) -> tuple[tuple[str, int], ...]:
+    def _signature(groups: dict[str, list[str]]) -> tuple[tuple[str, str], ...]:
         return tuple(
-            (account_type, len(tokens))
-            for account_type, tokens in sorted(groups.items())
+            sorted(
+                (account_type, access_token)
+                for account_type, access_tokens in groups.items()
+                for access_token in access_tokens
+            )
         )
 
-    def _fetch_models(self, access_token: str = "") -> dict[str, dict[str, Any]]:
-        backend = self._backend_factory(access_token=access_token)
-        try:
-            return self._model_map(backend.list_models())
-        finally:
-            backend.close()
-
-    def _fetch_account_type_models(
+    def _fetch_models(
         self,
-        account_type: str,
-        access_tokens: list[str],
-    ) -> dict[str, dict[str, Any]] | None:
-        attempted_tokens: set[str] = set()
-        last_error: Exception | None = None
-        for access_token in access_tokens:
-            try:
-                resolved_token = self._accounts.refresh_access_token(
-                    access_token,
-                    event="list_models",
-                ) or access_token
-                if resolved_token in attempted_tokens:
-                    continue
-                attempted_tokens.add(resolved_token)
-                return self._fetch_models(resolved_token)
-            except Exception as exc:  # noqa: BLE001 - try the next account for any upstream failure
-                last_error = exc
-        if last_error is not None:
-            logger.warning({
-                "event": "model_catalog_account_type_failed",
-                "account_type": account_type,
-                "error_type": type(last_error).__name__,
-            })
-        return None
-
-    def _refresh(self, groups: dict[str, list[str]], signature: tuple[tuple[str, int], ...]) -> None:
-        models_by_account_type: dict[str, dict[str, dict[str, Any]]] = {}
-        with ThreadPoolExecutor(max_workers=min(4, len(groups) + 1)) as executor:
-            anonymous_future = executor.submit(self._fetch_models)
-            account_futures = {
-                account_type: executor.submit(
-                    self._fetch_account_type_models,
-                    account_type,
-                    access_tokens,
+        access_token: str = "",
+    ) -> tuple[str, dict[str, dict[str, Any]] | None, str | None]:
+        resolved_token = access_token
+        try:
+            if access_token:
+                resolved_token = (
+                    self._accounts.refresh_access_token(
+                        access_token,
+                        event="model_catalog",
+                    )
+                    or access_token
                 )
-                for account_type, access_tokens in groups.items()
-            }
+            backend = self._backend_factory(access_token=resolved_token)
             try:
-                anonymous_models = anonymous_future.result()
-            except Exception as exc:  # noqa: BLE001 - retain cached models on upstream failure
-                logger.warning({
-                    "event": "model_catalog_anonymous_failed",
-                    "error_type": type(exc).__name__,
-                })
-                anonymous_models = self._anonymous_models
+                models = self._model_map(
+                    backend.list_models(timeout_secs=self._request_timeout_seconds)
+                )
+            finally:
+                backend.close()
+        except Exception as exc:  # noqa: BLE001 - report account failure to the worker
+            return resolved_token, None, type(exc).__name__
+        return resolved_token, models, None
 
-            for account_type, future in account_futures.items():
-                models = future.result()
-                if models is not None:
-                    models_by_account_type[account_type] = models
-                elif account_type in self._models_by_account_type:
-                    models_by_account_type[account_type] = self._models_by_account_type[account_type]
+    @staticmethod
+    def _accounts_for_refresh(groups: dict[str, list[str]]) -> list[tuple[str, str]]:
+        accounts: list[tuple[str, str]] = []
+        for account_type in sorted(groups):
+            accounts.extend(
+                (account_type, access_token)
+                for access_token in dict.fromkeys(groups[account_type])
+            )
+        return accounts
 
-        self._anonymous_models = anonymous_models
-        self._models_by_account_type = models_by_account_type
-        self._account_signature = signature
-        self._expires_at = self._clock() + self._cache_ttl_seconds
+    def _publish_partial_account(
+        self,
+        original_token: str,
+        resolved_token: str,
+        models: dict[str, dict[str, Any]] | None,
+    ) -> None:
+        with self._condition:
+            stale_models = None
+            if original_token != resolved_token:
+                stale_models = self._models_by_access_token.pop(original_token, None)
+            if models is not None:
+                self._models_by_access_token[resolved_token] = models
+            elif stale_models is not None:
+                self._models_by_access_token[resolved_token] = stale_models
+            self._condition.notify_all()
 
-    def _ensure_catalog(self) -> None:
+    def _resolved_access_token(self, access_token: str) -> str:
+        account = self._accounts.get_account(access_token)
+        if not account:
+            return access_token
+        return str(account.get("access_token") or access_token).strip() or access_token
+
+    def _refresh_worker(
+        self,
+        groups: dict[str, list[str]],
+        accounts_to_refresh: list[tuple[str, str]],
+    ) -> None:
+        active_tokens = {
+            access_token
+            for access_tokens in groups.values()
+            for access_token in access_tokens
+        }
+        with self._condition:
+            self._models_by_access_token = {
+                access_token: models
+                for access_token, models in self._models_by_access_token.items()
+                if access_token in active_tokens
+            }
+
+        pending: dict[
+            Future[tuple[str, dict[str, dict[str, Any]] | None, str | None]],
+            tuple[str | None, str],
+        ] = {}
+        processed_tokens: set[str] = set()
+        try:
+            jobs = iter([(None, ""), *accounts_to_refresh])
+            worker_count = min(self._max_workers, len(accounts_to_refresh) + 1)
+            with ThreadPoolExecutor(max_workers=max(1, worker_count)) as executor:
+                def fill_pending() -> None:
+                    while len(pending) < self._max_pending_requests:
+                        try:
+                            account_type, access_token = next(jobs)
+                        except StopIteration:
+                            return
+                        pending[executor.submit(self._fetch_models, access_token)] = (
+                            account_type,
+                            access_token,
+                        )
+
+                fill_pending()
+                while pending:
+                    completed, _ = wait(pending, return_when=FIRST_COMPLETED)
+                    for future in completed:
+                        account_type, access_token = pending.pop(future)
+                        try:
+                            resolved_token, models, error_type = future.result()
+                        except Exception as exc:  # noqa: BLE001 - retain the last good catalog
+                            if account_type is not None:
+                                resolved_token = self._resolved_access_token(access_token)
+                                processed_tokens.add(resolved_token)
+                                self._publish_partial_account(
+                                    access_token,
+                                    resolved_token,
+                                    None,
+                                )
+                            logger.warning({
+                                "event": (
+                                    "model_catalog_anonymous_failed"
+                                    if account_type is None
+                                    else "model_catalog_account_failed"
+                                ),
+                                **({"account_type": account_type} if account_type is not None else {}),
+                                "error_type": type(exc).__name__,
+                            })
+                            continue
+                        if error_type is not None:
+                            if account_type is not None:
+                                processed_tokens.add(resolved_token)
+                                self._publish_partial_account(
+                                    access_token,
+                                    resolved_token,
+                                    None,
+                                )
+                            logger.warning({
+                                "event": (
+                                    "model_catalog_anonymous_failed"
+                                    if account_type is None
+                                    else "model_catalog_account_failed"
+                                ),
+                                **({"account_type": account_type} if account_type is not None else {}),
+                                "error_type": error_type,
+                            })
+                            continue
+                        if account_type is None:
+                            assert models is not None
+                            with self._condition:
+                                self._anonymous_models = models
+                                self._condition.notify_all()
+                        else:
+                            assert models is not None
+                            processed_tokens.add(resolved_token)
+                            self._publish_partial_account(
+                                access_token,
+                                resolved_token,
+                                models,
+                            )
+                    fill_pending()
+        except Exception as exc:  # noqa: BLE001 - always release waiters after worker failure
+            logger.warning({
+                "event": "model_catalog_refresh_failed",
+                "error_type": type(exc).__name__,
+            })
+        finally:
+            current_groups = self._active_accounts_by_type()
+            current_signature = self._signature(current_groups)
+            current_tokens = {
+                access_token
+                for access_tokens in current_groups.values()
+                for access_token in access_tokens
+            }
+            with self._condition:
+                self._models_by_access_token = {
+                    access_token: models
+                    for access_token, models in self._models_by_access_token.items()
+                    if access_token in current_tokens
+                }
+                self._account_signature = current_signature
+                self._expires_at = (
+                    self._clock()
+                    if current_tokens - processed_tokens
+                    else self._clock() + self._cache_ttl_seconds
+                )
+                self._initialized = True
+                self._refreshing = False
+                self._condition.notify_all()
+
+    def _route_locked(self, model: str) -> ModelRoute:
+        return ModelRoute(
+            access_tokens=frozenset(
+                access_token
+                for access_token, models in self._models_by_access_token.items()
+                if model in models
+            ),
+            allow_anonymous=model in self._anonymous_models,
+        )
+
+    def _ensure_catalog(self, requested_model: str = "") -> None:
         groups = self._active_accounts_by_type()
         signature = self._signature(groups)
-        with self._lock:
-            if signature == self._account_signature and self._clock() < self._expires_at:
+        with self._condition:
+            active_tokens = {
+                access_token
+                for access_tokens in groups.values()
+                for access_token in access_tokens
+            }
+            if set(self._models_by_access_token) - active_tokens:
+                self._models_by_access_token = {
+                    access_token: models
+                    for access_token, models in self._models_by_access_token.items()
+                    if access_token in active_tokens
+                }
+            fresh = (
+                self._initialized
+                and signature == self._account_signature
+                and self._clock() < self._expires_at
+            )
+            if not fresh and not self._refreshing:
+                accounts_to_refresh = self._accounts_for_refresh(groups)
+                self._refreshing = True
+                worker = Thread(
+                    target=self._refresh_worker,
+                    args=(groups, accounts_to_refresh),
+                    name="model-catalog-refresh",
+                    daemon=True,
+                )
+                try:
+                    worker.start()
+                except Exception:
+                    self._refreshing = False
+                    self._condition.notify_all()
+                    raise
+
+            if self._initial_wait_seconds <= 0:
                 return
-            self._refresh(groups, signature)
+            route_available = lambda: (
+                bool(self._route_locked(requested_model).access_tokens)
+                or self._route_locked(requested_model).allow_anonymous
+            )
+            if not self._initialized:
+                self._condition.wait_for(
+                    lambda: self._initialized or (bool(requested_model) and route_available()),
+                    timeout=self._initial_wait_seconds,
+                )
+            elif requested_model and self._refreshing and not route_available():
+                self._condition.wait_for(
+                    lambda: (
+                        route_available()
+                        or not self._refreshing
+                    ),
+                    timeout=self._initial_wait_seconds,
+                )
 
     def list_models(self) -> dict[str, Any]:
         self._ensure_catalog()
-        with self._lock:
+        with self._condition:
             union: dict[str, dict[str, Any]] = {
                 model_id: dict(item)
                 for model_id, item in self._anonymous_models.items()
             }
-            for account_type in sorted(self._models_by_account_type):
-                for model_id, item in self._models_by_account_type[account_type].items():
+            for access_token in sorted(self._models_by_access_token):
+                for model_id, item in self._models_by_access_token[access_token].items():
                     union.setdefault(model_id, dict(item))
         return {
             "object": "list",
@@ -166,17 +369,9 @@ class ModelCatalogService:
 
     def route_for_model(self, model: str) -> ModelRoute:
         model = str(model or "").strip()
-        self._ensure_catalog()
-        with self._lock:
-            account_types = frozenset(
-                account_type
-                for account_type, models in self._models_by_account_type.items()
-                if model in models
-            )
-            return ModelRoute(
-                account_types=account_types,
-                allow_anonymous=model in self._anonymous_models,
-            )
+        self._ensure_catalog(model)
+        with self._condition:
+            return self._route_locked(model)
 
 
 model_catalog_service = ModelCatalogService(account_service)
