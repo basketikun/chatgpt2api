@@ -359,7 +359,7 @@ class AccountService:
         session = requests.Session(**proxy_settings.build_session_kwargs(
             account=account,
             impersonate="chrome110",
-            require_tls_verification=True,
+            verify=True,
         ))
         try:
             response = session.post(
@@ -603,7 +603,7 @@ class AccountService:
         session_kwargs = proxy_settings.build_session_kwargs(
             proxy=config.get_proxy_settings(),
             impersonate="chrome110",
-            require_tls_verification=True,
+            verify=False,
         )
         session = requests.Session(**session_kwargs)
         

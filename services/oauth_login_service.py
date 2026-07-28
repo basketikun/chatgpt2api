@@ -195,7 +195,7 @@ class OAuthLoginService:
         """调用 /api/accounts/oauth/token 用 code+verifier 换 token 三件套。"""
         kwargs = proxy_settings.build_session_kwargs(
             impersonate="chrome",
-            require_tls_verification=True,
+            verify=False,
         )
         session = requests.Session(**kwargs)
         try:

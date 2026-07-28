@@ -223,15 +223,12 @@ class ProxySettingsStore:
         proxy: str = "",
         resource: bool = False,
         upstream: bool = False,
-        require_tls_verification: bool = False,
         **session_kwargs,
     ) -> dict[str, object]:
         profile = self.get_profile(account=account, proxy=proxy, resource=resource, upstream=upstream)
         if profile.proxy_url:
             session_kwargs["proxy"] = profile.proxy_url
-        if require_tls_verification:
-            session_kwargs["verify"] = True
-        elif profile.runtime_enabled and profile.skip_ssl_verify:
+        if profile.runtime_enabled and profile.skip_ssl_verify:
             session_kwargs["verify"] = False
         return session_kwargs
 

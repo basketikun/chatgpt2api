@@ -9,6 +9,7 @@ from services.account_service import AccountService
 from services.oauth_login_service import OAuthLoginService
 from services.proxy_service import ProxyRuntimeProfile, proxy_settings
 from services.storage.json_storage import JSONStorageBackend
+from utils.sentinel import SentinelTokenGenerator, build_sentinel_token
 
 
 class FakeTokenResponse:
@@ -38,26 +39,49 @@ class FakeTokenSession:
 
 
 class AccountTLSVerificationTests(unittest.TestCase):
-    def test_required_tls_overrides_proxy_skip_verify(self) -> None:
+    def test_proxy_skip_verify_overrides_caller_default(self) -> None:
         profile = ProxyRuntimeProfile(
             proxy_url="http://proxy.example:8080",
             runtime_enabled=True,
             skip_ssl_verify=True,
         )
         with mock.patch.object(proxy_settings, "get_profile", return_value=profile):
-            kwargs = proxy_settings.build_session_kwargs(require_tls_verification=True)
+            kwargs = proxy_settings.build_session_kwargs(verify=True)
 
         self.assertEqual(kwargs["proxy"], "http://proxy.example:8080")
-        self.assertIs(kwargs["verify"], True)
-        self.assertNotIn("require_tls_verification", kwargs)
+        self.assertIs(kwargs["verify"], False)
 
-    def test_oauth_code_exchange_uses_verified_session(self) -> None:
+    def test_access_token_refresh_keeps_original_verified_default(self) -> None:
+        session = FakeTokenSession()
+        account = {"access_token": "old-access"}
+        with tempfile.TemporaryDirectory() as directory:
+            service = AccountService(JSONStorageBackend(Path(directory) / "accounts.json"))
+            with (
+                mock.patch.object(
+                    proxy_settings,
+                    "build_session_kwargs",
+                    return_value={"verify": True},
+                ) as kwargs_builder,
+                mock.patch("curl_cffi.requests.Session", return_value=session) as session_factory,
+            ):
+                result = service._request_access_token_refresh("old-refresh", account)
+
+        kwargs_builder.assert_called_once_with(
+            account=account,
+            impersonate="chrome110",
+            verify=True,
+        )
+        session_factory.assert_called_once_with(verify=True)
+        self.assertTrue(session.closed)
+        self.assertEqual(result["access_token"], "access")
+
+    def test_oauth_code_exchange_keeps_original_unverified_default(self) -> None:
         session = FakeTokenSession()
         with (
             mock.patch.object(
                 proxy_settings,
                 "build_session_kwargs",
-                return_value={"verify": True},
+                return_value={"verify": False},
             ) as kwargs_builder,
             mock.patch("services.oauth_login_service.requests.Session", return_value=session) as session_factory,
         ):
@@ -65,21 +89,21 @@ class AccountTLSVerificationTests(unittest.TestCase):
 
         kwargs_builder.assert_called_once_with(
             impersonate="chrome",
-            require_tls_verification=True,
+            verify=False,
         )
-        session_factory.assert_called_once_with(verify=True)
+        session_factory.assert_called_once_with(verify=False)
         self.assertNotIn("verify", session.post_kwargs or {})
         self.assertTrue(session.closed)
         self.assertEqual(result["access_token"], "access")
 
-    def test_password_login_constructs_a_verified_proxy_session(self) -> None:
+    def test_password_login_keeps_original_unverified_default(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             service = AccountService(JSONStorageBackend(Path(directory) / "accounts.json"))
             with (
                 mock.patch.object(
                     proxy_settings,
                     "build_session_kwargs",
-                    return_value={"impersonate": "chrome110", "verify": True},
+                    return_value={"impersonate": "chrome110", "verify": False},
                 ) as kwargs_builder,
                 mock.patch("services.account_service.config.get_proxy_settings", return_value=""),
                 mock.patch("curl_cffi.requests.Session", side_effect=RuntimeError("session-created")) as session_factory,
@@ -90,9 +114,22 @@ class AccountTLSVerificationTests(unittest.TestCase):
         kwargs_builder.assert_called_once_with(
             proxy="",
             impersonate="chrome110",
-            require_tls_verification=True,
+            verify=False,
         )
-        session_factory.assert_called_once_with(impersonate="chrome110", verify=True)
+        session_factory.assert_called_once_with(impersonate="chrome110", verify=False)
+
+    def test_sentinel_request_keeps_original_unverified_override(self) -> None:
+        response = mock.Mock(status_code=200, text="token response")
+        response.json.return_value = {"token": "challenge", "proofofwork": {"required": False}}
+        session = mock.Mock()
+        session.post.return_value = response
+
+        with mock.patch.object(SentinelTokenGenerator, "generate_requirements_token", return_value="proof"):
+            sentinel_value, cookie_value = build_sentinel_token(session, "device", "password_verify")
+
+        self.assertIn('"c":"challenge"', sentinel_value)
+        self.assertEqual(cookie_value, "0challenge")
+        self.assertIs(session.post.call_args.kwargs["verify"], False)
 
 
 if __name__ == "__main__":

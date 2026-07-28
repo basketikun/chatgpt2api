@@ -134,7 +134,11 @@ class ImageInputSecurityTests(unittest.TestCase):
         with (
             mock.patch.object(remote_image.socket, "getaddrinfo", return_value=PUBLIC_DNS_RESULT),
             mock.patch.object(remote_image.requests, "Session", return_value=session) as session_factory,
-            mock.patch.object(remote_image.proxy_settings, "build_session_kwargs", return_value={}) as session_kwargs,
+            mock.patch.object(
+                remote_image.proxy_settings,
+                "build_session_kwargs",
+                return_value={"verify": False},
+            ) as session_kwargs,
             mock.patch.object(remote_image.requests, "get", return_value=response) as legacy_get,
         ):
             data, filename, mime_type = image_inputs._download_image_url(
@@ -145,8 +149,10 @@ class ImageInputSecurityTests(unittest.TestCase):
         self.assertEqual(filename, "photo.png")
         self.assertEqual(mime_type, "image/png")
         legacy_get.assert_not_called()
-        session_kwargs.assert_called_once_with(require_tls_verification=True)
+        session_kwargs.assert_called_once_with(resource=True, upstream=True, verify=True)
         session_factory.assert_called_once()
+        self.assertIs(session_factory.call_args.kwargs["verify"], False)
+        self.assertIn(remote_image.CurlOpt.RESOLVE, session_factory.call_args.kwargs["curl_options"])
         self.assertTrue(session.calls[0][1]["stream"])
         self.assertFalse(session.calls[0][1]["allow_redirects"])
         self.assertTrue(response.closed)

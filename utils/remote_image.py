@@ -111,7 +111,9 @@ def download_public_image(
     for redirect_count in range(MAX_REDIRECTS + 1):
         parsed, resolve_entries = _public_target(current_url)
         session_kwargs = proxy_settings.build_session_kwargs(
-            require_tls_verification=True,
+            resource=True,
+            upstream=True,
+            verify=True,
         )
         if resolve_entries:
             curl_options = dict(session_kwargs.pop("curl_options", {}) or {})
