@@ -1,0 +1,100 @@
+name: Test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.13"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen --group dev
+
+      - name: Run offline tests
+        run: uv run --frozen pytest -m "not live" -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build frontend
+        run: bun run build
+
+  docker:
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build application image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          target: app
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: chatgpt2api:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test application image
+        shell: bash
+        run: |
+          set -euo pipefail
+          container="chatgpt2api-smoke-${GITHUB_RUN_ID}"
+          cleanup() {
+            status=$?
+            if [ "$status" -ne 0 ]; then
+              docker logs "$container" || true
+            fi
+            docker rm -f "$container" >/dev/null 2>&1 || true
+            return "$status"
+          }
+          trap cleanup EXIT
+
+          docker run -d --name "$container" \
+            -e CHATGPT2API_AUTH_KEY=ci-smoke-test \
+            chatgpt2api:test
+
+          for _ in $(seq 1 30); do
+            if docker exec "$container" /app/.venv/bin/python -c \
+              'import urllib.request; urllib.request.urlopen("http://127.0.0.1/openapi.json", timeout=2).read(1)'; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
