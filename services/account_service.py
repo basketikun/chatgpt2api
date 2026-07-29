@@ -1107,6 +1107,102 @@ class AccountService:
         return str(item.get("access_token") or item.get("accessToken") or "").strip()
 
     @staticmethod
+    def _first_nonempty_text(*values: object) -> str:
+        for value in values:
+            text = str(value or "").strip()
+            if text:
+                return text
+        return ""
+
+    @classmethod
+    def _account_identity_key(cls, item: dict) -> tuple[str, str] | None:
+        if not isinstance(item, dict):
+            return None
+
+        access_payload = cls._decode_jwt_payload(cls._account_payload_token(item))
+        id_payload = cls._decode_jwt_payload(str(item.get("id_token") or "").strip())
+        access_auth = access_payload.get("https://api.openai.com/auth")
+        access_auth = access_auth if isinstance(access_auth, dict) else {}
+        id_auth = id_payload.get("https://api.openai.com/auth")
+        id_auth = id_auth if isinstance(id_auth, dict) else {}
+        access_profile = access_payload.get("https://api.openai.com/profile")
+        access_profile = access_profile if isinstance(access_profile, dict) else {}
+        id_profile = id_payload.get("https://api.openai.com/profile")
+        id_profile = id_profile if isinstance(id_profile, dict) else {}
+
+        # Account IDs identify workspaces; subject and email are fallbacks only.
+        account_id = cls._first_nonempty_text(
+            access_auth.get("chatgpt_account_id"),
+            id_auth.get("chatgpt_account_id"),
+            item.get("account_id"),
+            item.get("chatgpt_account_id"),
+        )
+        if account_id:
+            return "account_id", account_id
+
+        subject = cls._first_nonempty_text(
+            access_payload.get("sub"),
+            id_payload.get("sub"),
+            access_auth.get("user_id"),
+            id_auth.get("user_id"),
+            item.get("user_id"),
+        )
+        if subject:
+            return "subject", subject
+
+        email = cls._first_nonempty_text(
+            access_profile.get("email"),
+            id_profile.get("email"),
+            access_payload.get("email"),
+            id_payload.get("email"),
+            item.get("email"),
+        )
+        return ("email", email.casefold()) if email else None
+
+    @classmethod
+    def _access_token_rank(cls, token: str) -> tuple[int, int]:
+        payload = cls._decode_jwt_payload(token)
+
+        def as_int(value: object) -> int:
+            try:
+                return int(value or 0)
+            except (TypeError, ValueError):
+                return 0
+
+        return as_int(payload.get("exp")), as_int(payload.get("iat"))
+
+    @staticmethod
+    def _has_import_value(value: object) -> bool:
+        return value is not None and (not isinstance(value, str) or bool(value.strip()))
+
+    @classmethod
+    def _merge_duplicate_payloads(cls, current: dict, incoming: dict) -> dict:
+        current_token = cls._account_payload_token(current)
+        incoming_token = cls._account_payload_token(incoming)
+        incoming_wins = (
+            incoming_token == current_token
+            or cls._access_token_rank(incoming_token) >= cls._access_token_rank(current_token)
+        )
+        preferred, fallback = (incoming, current) if incoming_wins else (current, incoming)
+        merged = dict(fallback)
+        for key, value in preferred.items():
+            if key not in merged or cls._has_import_value(value):
+                merged[key] = value
+
+        preferred_token = cls._account_payload_token(preferred)
+        merged["access_token"] = preferred_token
+        merged.pop("accessToken", None)
+
+        dated_values = [
+            (parsed, str(item.get("created_at") or "").strip())
+            for item in (current, incoming)
+            if (parsed := cls._parse_time(item.get("created_at"))) is not None
+        ]
+        if dated_values:
+            merged["created_at"] = min(dated_values, key=lambda value: value[0])[1]
+        return merged
+
+    @staticmethod
     def _prepare_account_payload(item: dict) -> dict | None:
         if not isinstance(item, dict):
             return None
@@ -1145,24 +1241,52 @@ class AccountService:
         ])
 
     def _add_account_payloads(self, payloads: list[dict]) -> dict:
-        deduped: dict[str, dict] = {}
+        deduped: dict[tuple[str, str], dict] = {}
+        batch_tokens: dict[tuple[str, str], set[str]] = {}
+        valid_payloads = 0
         for payload in payloads:
             if not isinstance(payload, dict):
                 continue
             access_token = self._account_payload_token(payload)
             if not access_token:
                 continue
-            current = deduped.get(access_token, {})
-            deduped[access_token] = {**current, **payload, "access_token": access_token}
+            valid_payloads += 1
+            prepared = {**payload, "access_token": access_token}
+            identity_key = self._account_identity_key(prepared)
+            dedupe_key = identity_key or ("access_token", access_token)
+            batch_tokens.setdefault(dedupe_key, set()).add(access_token)
+            current = deduped.get(dedupe_key)
+            if current is None:
+                deduped[dedupe_key] = prepared
+                continue
+
+            deduped[dedupe_key] = self._merge_duplicate_payloads(current, prepared)
 
         if not deduped:
             return {"added": 0, "skipped": 0, "items": self.list_accounts()}
 
         with self._lock:
             added = 0
-            skipped = 0
-            for access_token, payload in deduped.items():
-                current = self._accounts.get(access_token)
+            skipped = max(0, valid_payloads - len(deduped))
+            identity_index: dict[tuple[str, str], str] = {}
+            for existing_token, existing_account in self._accounts.items():
+                identity_key = self._account_identity_key(existing_account)
+                if identity_key is None:
+                    continue
+                indexed_token = identity_index.get(identity_key)
+                if (
+                    indexed_token is None
+                    or self._access_token_rank(existing_token) >= self._access_token_rank(indexed_token)
+                ):
+                    identity_index[identity_key] = existing_token
+
+            for dedupe_key, payload in deduped.items():
+                incoming_token = self._account_payload_token(payload)
+                identity_key = self._account_identity_key(payload)
+                current_token = incoming_token if incoming_token in self._accounts else None
+                if current_token is None and identity_key is not None:
+                    current_token = identity_index.get(identity_key)
+                current = self._accounts.get(current_token) if current_token else None
                 if current is None:
                     added += 1
                     self._cumulative_total += 1
@@ -1170,19 +1294,34 @@ class AccountService:
                     current = {"created_at": self._now()}
                 else:
                     skipped += 1
-                incoming = dict(payload)
+
+                incoming = self._merge_duplicate_payloads(current, payload)
+                access_token = self._account_payload_token(incoming)
                 if not incoming.get("created_at"):
                     incoming.pop("created_at", None)
                 account = self._normalize_account(
                     {
-                        **current,
                         **incoming,
                         "access_token": access_token,
-                        "type": str(incoming.get("type") or current.get("type") or "free"),
+                        "type": str(incoming.get("type") or "free"),
                     }
                 )
                 if account is not None:
+                    if current_token and current_token != access_token:
+                        self._accounts.pop(current_token, None)
+                        self._token_aliases[current_token] = access_token
+                        old_inflight = int(self._image_inflight.pop(current_token, 0))
+                        if old_inflight:
+                            current_inflight = int(self._image_inflight.get(access_token, 0))
+                            self._image_inflight[access_token] = current_inflight + old_inflight
                     self._accounts[access_token] = account
+                    if incoming_token != access_token:
+                        self._token_aliases[incoming_token] = access_token
+                    for duplicate_token in batch_tokens[dedupe_key]:
+                        if duplicate_token != access_token:
+                            self._token_aliases[duplicate_token] = access_token
+                    if identity_key is not None:
+                        identity_index[identity_key] = access_token
             self._save_accounts()
             items = [dict(item) for item in self._accounts.values()]
             log_service.add(LOG_TYPE_ACCOUNT, f"新增 {added} 个账号，跳过 {skipped} 个",
@@ -1486,7 +1625,12 @@ class AccountService:
         progress_id: str | None = None,
         defer_invalid_removal: bool = True,
     ) -> dict[str, Any]:
-        access_tokens = list(dict.fromkeys(token for token in access_tokens if token))
+        with self._lock:
+            access_tokens = list(dict.fromkeys(
+                self._resolve_access_token_locked(token)
+                for token in access_tokens
+                if token
+            ))
         if not access_tokens:
             items = self.list_accounts()
             result = {"refreshed": 0, "errors": [], "items": items, "relogined": 0}
