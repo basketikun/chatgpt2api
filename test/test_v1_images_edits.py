@@ -6,12 +6,14 @@ import unittest
 from pathlib import Path
 
 import requests
+import pytest
 
 from test.utils import save_image
 from utils.log import logger
 
 AUTH_KEY = "chatgpt2api"
 BASE_URL = "http://localhost:8000"
+pytestmark = pytest.mark.live
 ASSETS_DIR = Path(__file__).resolve().parents[1] / "assets"
 
 

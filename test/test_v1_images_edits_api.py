@@ -23,9 +23,18 @@ class ImagesEditsApiTests(unittest.TestCase):
             self.handle_calls.append(payload)
             return {"created": 1, "data": [{"b64_json": base64.b64encode(b"out").decode("ascii")}]}
 
-        self.handler_patcher = mock.patch.object(ai_module.openai_v1_image_edit, "handle", fake_handle)
-        self.handler_patcher.start()
-        self.addCleanup(self.handler_patcher.stop)
+        self.patchers = [
+            mock.patch.object(ai_module.openai_v1_image_edit, "handle", fake_handle),
+            mock.patch.object(
+                ai_module,
+                "require_identity",
+                return_value={"id": "test-user", "name": "Test User", "role": "user"},
+            ),
+            mock.patch.object(ai_module, "filter_or_log", mock.AsyncMock()),
+        ]
+        for patcher in self.patchers:
+            patcher.start()
+            self.addCleanup(patcher.stop)
         app = FastAPI()
         app.include_router(ai_module.create_router())
         self.client = TestClient(app)
@@ -49,7 +58,7 @@ class ImagesEditsApiTests(unittest.TestCase):
         payload = self.handle_calls[0]
         self.assertEqual(payload["prompt"], "edit")
         self.assertEqual(payload["n"], 1)
-        self.assertEqual(payload["images"], [(PNG_BYTES, "image_url.png", "image/png")])
+        self.assertEqual(payload["images"], [(PNG_BYTES, "image_1.png", "image/png")])
 
     def test_edit_rejects_file_id_reference(self):
         """测试图片编辑接口对暂不支持的 file_id 返回明确错误。"""

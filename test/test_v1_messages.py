@@ -5,10 +5,12 @@ import time
 import unittest
 
 import requests
+import pytest
 
 AUTH_KEY = "chatgpt2api"
 BASE_URL = "http://localhost:8000"
 MODEL = "auto"
+pytestmark = pytest.mark.live
 
 
 class AnthropicMessagesTests(unittest.TestCase):

@@ -6,7 +6,7 @@ from typing import Any, Iterable, Iterator
 
 from fastapi import HTTPException
 
-from services.protocol.chat_completion_cache import cache_key, chat_completion_cache, normalize_text_messages
+from services.protocol.chat_completion_cache import cache_key, chat_completion_cache
 from services.protocol.conversation import (
     ConversationRequest,
     ImageOutput,
@@ -290,7 +290,7 @@ def response_completed(
 
 def text_response_parts(body: dict[str, Any]) -> tuple[str, list[dict[str, Any]]]:
     model = str(body.get("model") or "auto").strip() or "auto"
-    messages = normalize_text_messages(normalize_messages(messages_from_input(body.get("input"), body.get("instructions"))))
+    messages = normalize_messages(messages_from_input(body.get("input"), body.get("instructions")))
     if has_unsupported_response_tools(body):
         messages.insert(0, {"role": "system", "content": TOOL_UNAVAILABLE_SYSTEM_MESSAGE})
     return model, messages

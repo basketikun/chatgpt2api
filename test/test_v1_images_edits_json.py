@@ -27,10 +27,17 @@ class ImageEditsJsonApiTests(unittest.TestCase):
 
         self.handle_patcher = mock.patch.object(ai_module.openai_v1_image_edit, "handle", fake_handle)
         self.filter_patcher = mock.patch.object(ai_module, "filter_or_log", mock.AsyncMock())
+        self.identity_patcher = mock.patch.object(
+            ai_module,
+            "require_identity",
+            return_value={"id": "test-user", "name": "Test User", "role": "user"},
+        )
         self.handle_patcher.start()
         self.filter_patcher.start()
+        self.identity_patcher.start()
         self.addCleanup(self.handle_patcher.stop)
         self.addCleanup(self.filter_patcher.stop)
+        self.addCleanup(self.identity_patcher.stop)
 
         app = FastAPI()
         app.include_router(ai_module.create_router())
@@ -109,16 +116,22 @@ class ImageEditsJsonApiTests(unittest.TestCase):
     def test_image_edit_rejects_json_without_image(self):
         response = self.client.post("/v1/images/edits", headers=AUTH_HEADERS, json={"prompt": "缺少图片"})
         self.assertEqual(response.status_code, 400, response.text)
-        self.assertIn("image file is required", response.text)
+        self.assertIn("image file or image_url is required", response.text)
 
-    def test_image_edit_rejects_remote_json_url(self):
-        response = self.client.post(
-            "/v1/images/edits",
-            headers=AUTH_HEADERS,
-            json={"prompt": "不允许远程拉图", "images": [{"image_url": "https://example.com/a.png"}]},
-        )
-        self.assertEqual(response.status_code, 400, response.text)
-        self.assertIn("remote image URLs are not supported", response.text)
+    def test_image_edit_accepts_remote_json_url_via_safe_downloader(self):
+        with mock.patch(
+            "api.image_inputs.download_public_image",
+            return_value=(b"remote-png", "/a.png", "image/png"),
+        ) as downloader:
+            response = self.client.post(
+                "/v1/images/edits",
+                headers=AUTH_HEADERS,
+                json={"prompt": "远程拉图", "images": [{"image_url": "https://example.com/a.png"}]},
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(self.calls[0]["images"], [(b"remote-png", "a.png", "image/png")])
+        downloader.assert_called_once()
 
     def test_image_edit_rejects_json_n_out_of_range(self):
         response = self.client.post("/v1/images/edits", headers=AUTH_HEADERS, json={"prompt": "n 越界", "n": 5, "image": PNG_DATA_URL})

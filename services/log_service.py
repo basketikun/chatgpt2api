@@ -201,6 +201,16 @@ def _image_error_response(exc: Exception) -> JSONResponse:
 
 
 def _protocol_error_response(exc: Exception, status_code: int, sse: str) -> JSONResponse:
+    exception_status = getattr(exc, "status_code", status_code)
+    try:
+        status_code = int(exception_status)
+    except (TypeError, ValueError):
+        status_code = 502
+    if not 400 <= status_code <= 599:
+        status_code = 502
+    to_openai_error = getattr(exc, "to_openai_error", None)
+    if sse != "anthropic" and callable(to_openai_error):
+        return JSONResponse(status_code=status_code, content=to_openai_error())
     message = str(exc)
     if sse == "anthropic":
         return anthropic_error_response(message, status_code)

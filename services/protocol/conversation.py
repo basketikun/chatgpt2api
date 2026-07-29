@@ -749,8 +749,8 @@ def stream_text_deltas(backend: OpenAIBackendAPI, request: ConversationRequest) 
                         excluded_tokens=set(attempted_tokens),
                         model=request.model,
                     )
-                if token:
-                    continue
+                # An empty token is the valid anonymous backend, not a failed selection.
+                continue
             raise
         finally:
             if active_backend is not None:

@@ -119,7 +119,15 @@ class MultiImageResultTests(unittest.TestCase):
         ])
 
         with (
-            mock.patch.dict(config.data, {"image_poll_initial_wait_secs": 0, "image_poll_interval_secs": 0.5}),
+            mock.patch.dict(
+                config.data,
+                {
+                    "image_poll_initial_wait_secs": 0,
+                    "image_poll_interval_secs": 0.5,
+                    "image_settle_enabled": True,
+                    "image_check_before_hit_enabled": True,
+                },
+            ),
             mock.patch("services.openai_backend_api.time.sleep", lambda _seconds: None),
         ):
             file_ids, sediment_ids = backend._poll_image_results("conv-1", timeout_secs=10)

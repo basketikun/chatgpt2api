@@ -3,18 +3,16 @@ from __future__ import annotations
 import base64
 import binascii
 import json
-import mimetypes
 import re
 from pathlib import PurePosixPath
 from typing import Any, TypeGuard
-from urllib.parse import unquote, unquote_to_bytes, urlparse
+from urllib.parse import unquote, unquote_to_bytes
 
-from curl_cffi import requests
 from fastapi import HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
 
-from services.proxy_service import proxy_settings
+from utils.remote_image import download_public_image
 
 ImageInput = tuple[bytes, str, str]
 ImageSource = str | UploadFile | ImageInput
@@ -215,7 +213,7 @@ def _safe_filename(name: str, mime_type: str, fallback: str) -> str:
     return cleaned
 
 
-def _decode_data_url(url: str) -> ImageInput:
+def _decode_data_url(url: str, fallback_name: str = "image_url") -> ImageInput:
     """解码 data URL：把内联图片转成标准图片输入元组。"""
     header, separator, payload = url.partition(",")
     if not separator:
@@ -231,66 +229,33 @@ def _decode_data_url(url: str) -> ImageInput:
         raise HTTPException(status_code=400, detail={"error": "image URL is empty"})
     if len(data) > MAX_IMAGE_REFERENCE_BYTES:
         raise HTTPException(status_code=400, detail={"error": "image URL exceeds 50MB limit"})
-    return data, f"image_url.{_extension_from_mime(mime_type)}", mime_type
+    return data, _safe_filename(fallback_name, mime_type, "image_url"), mime_type
 
 
-def _response_mime_type(response: requests.Response, parsed_path: str) -> str:
-    """识别下载图片类型：优先响应头，必要时按 URL 后缀推断。"""
-    header_type = str(response.headers.get("content-type") or "").split(";", 1)[0].strip().lower()
-    guessed_type = mimetypes.guess_type(parsed_path)[0] or ""
-    if header_type.startswith("image/"):
-        return header_type
-    if header_type and header_type not in {"application/octet-stream", "binary/octet-stream"}:
-        raise HTTPException(status_code=400, detail={"error": "image_url must point to an image"})
-    if guessed_type.startswith("image/"):
-        return guessed_type
-    if not header_type or header_type in {"application/octet-stream", "binary/octet-stream"}:
-        return "image/png"
-    raise HTTPException(status_code=400, detail={"error": "image_url must point to an image"})
-
-
-def _filename_from_url(parsed_path: str, mime_type: str) -> str:
+def _filename_from_url(parsed_path: str, mime_type: str, fallback_name: str = "image_url") -> str:
     """生成 URL 图片文件名：从链接路径提取名称并做安全化。"""
     raw_name = PurePosixPath(unquote(parsed_path)).name
-    return _safe_filename(raw_name, mime_type, "image_url")
+    return _safe_filename(raw_name, mime_type, fallback_name)
 
 
-def _download_image_url(url: str) -> ImageInput:
+def _download_image_url(url: str, fallback_name: str = "image_url") -> ImageInput:
     """下载远程图片：把 http/https 图片链接转成标准图片输入元组。"""
     source = _clean(url)
     if source.startswith("data:"):
-        return _decode_data_url(source)
-    parsed = urlparse(source)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        raise HTTPException(status_code=400, detail={"error": "image_url must be an http or https URL"})
-    try:
-        response = requests.get(
-            source,
-            headers={"Accept": "image/*,*/*;q=0.8", "User-Agent": "chatgpt2api image fetcher"},
-            timeout=60,
-            allow_redirects=True,
-            **proxy_settings.build_session_kwargs(),
-        )
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail={"error": f"image_url fetch failed: {exc}"}) from exc
-    if not 200 <= response.status_code < 300:
-        raise HTTPException(status_code=400, detail={"error": f"image_url fetch failed: HTTP {response.status_code}"})
-    content_length = _clean(response.headers.get("content-length"))
-    if content_length and content_length.isdigit() and int(content_length) > MAX_IMAGE_REFERENCE_BYTES:
-        raise HTTPException(status_code=400, detail={"error": "image_url exceeds 50MB limit"})
-    data = response.content
-    if not data:
-        raise HTTPException(status_code=400, detail={"error": "image_url returned empty content"})
-    if len(data) > MAX_IMAGE_REFERENCE_BYTES:
-        raise HTTPException(status_code=400, detail={"error": "image_url exceeds 50MB limit"})
-    mime_type = _response_mime_type(response, parsed.path)
-    return data, _filename_from_url(parsed.path, mime_type), mime_type
+        return _decode_data_url(source, fallback_name)
+    data, parsed_path, mime_type = download_public_image(
+        source,
+        max_bytes=MAX_IMAGE_REFERENCE_BYTES,
+        timeout_seconds=60,
+        user_agent="chatgpt2api image fetcher",
+    )
+    return data, _filename_from_url(parsed_path, mime_type, fallback_name), mime_type
 
 
 async def read_image_sources(sources: list[ImageSource]) -> list[ImageInput]:
     """读取图片来源：上传文件直接读取，URL 下载后统一返回图片元组。"""
     images: list[ImageInput] = []
-    for source in sources:
+    for index, source in enumerate(sources, start=1):
         if isinstance(source, tuple):
             images.append(source)
             continue
@@ -303,7 +268,7 @@ async def read_image_sources(sources: list[ImageSource]) -> list[ImageInput]:
                 raise HTTPException(status_code=400, detail={"error": "image file is empty"})
             images.append((image_data, source.filename or "image.png", source.content_type or "image/png"))
             continue
-        images.append(await run_in_threadpool(_download_image_url, source))
+        images.append(await run_in_threadpool(_download_image_url, source, f"image_{index}"))
     if not images:
         raise HTTPException(status_code=400, detail={"error": "image file or image_url is required"})
     return images

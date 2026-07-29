@@ -88,10 +88,7 @@
     "ttl_seconds": 60,
     "max_entries": 256,
     "dedupe_inflight": true,
-    "stream_cache": true,
-    "normalize_messages": true,
-    "drop_adjacent_duplicates": true,
-    "drop_assistant_history": false
+    "stream_cache": true
   },
   "image_settle_enabled": false,
   "image_check_before_hit_enabled": false,

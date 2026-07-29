@@ -2649,12 +2649,13 @@ class OpenAIBackendAPI:
             except Exception:
                 pass
 
-    def _bootstrap(self) -> None:
+    def _bootstrap(self, timeout_secs: float = 30) -> None:
         """预热首页，并提取 PoW 相关脚本引用。"""
+        timeout = max(1.0, float(timeout_secs))
         response = self.session.get(
             self.base_url + "/",
             headers=self._bootstrap_headers(),
-            timeout=30,
+            timeout=timeout,
         )
         ensure_ok(response, "bootstrap")
         self.pow_script_sources, self.pow_data_build = parse_pow_resources(response.text)
@@ -2727,9 +2728,10 @@ class OpenAIBackendAPI:
             return "/backend-api/conversation", "Asia/Shanghai"
         return "/backend-anon/conversation", "America/Los_Angeles"
 
-    def list_models(self) -> Dict[str, Any]:
+    def list_models(self, timeout_secs: float = 30) -> Dict[str, Any]:
         """返回当前模式下可用模型，格式对齐 OpenAI `/v1/models`。"""
-        self._bootstrap()
+        timeout = max(1.0, float(timeout_secs))
+        self._bootstrap(timeout_secs=timeout)
         path = "/backend-api/models?history_and_training_disabled=false" if self.access_token else (
             "/backend-anon/models?iim=false&is_gizmo=false"
         )
@@ -2738,7 +2740,7 @@ class OpenAIBackendAPI:
         response = self.session.get(
             self.base_url + path,
             headers=self._headers(route),
-            timeout=30,
+            timeout=timeout,
         )
         ensure_ok(response, context)
         data = []
