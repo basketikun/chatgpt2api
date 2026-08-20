@@ -154,6 +154,7 @@ environment:
 ### 实验性 / 规划中
 
 - 详细状态说明见：[功能清单](./docs/feature-status.en.md)
+- GenBox Push 扩展集成提案：[docs/genbox-push-extension-proposal.md](./docs/genbox-push-extension-proposal.md) (Proposed)
 
 ## 效果展示
 
