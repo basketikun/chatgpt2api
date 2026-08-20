@@ -372,4 +372,4 @@ curl http://localhost:8000/v1/responses \
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/chart?repos=basketikun/chatgpt2api&type=date&legend=top-left)](https://www.star-history.com/?repos=basketikun%2Fchatgpt2api&type=date&legend=top-left)
+[![Star History Chart](https://star-history.dera.page/svg?repos=basketikun/chatgpt2api&type=date&legend=top-left)](https://star-history.dera.page/#basketikun/chatgpt2api&type=date&legend=top-left)
