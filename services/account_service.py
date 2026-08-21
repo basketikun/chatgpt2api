@@ -18,7 +18,7 @@ from services.log_service import (
     log_service,
 )
 from services.storage.base import StorageBackend
-from utils.helper import anonymize_token
+from utils.helper import anonymize_token, is_codex_image_model, split_image_model
 
 
 class AccountService:
@@ -54,8 +54,16 @@ class AccountService:
         self._index = 0
         self._accounts = self._load_accounts()
         self._image_inflight: dict[str, int] = {}
+        self._conversation_binding_locks: dict[str, Lock] = {}
         self._token_aliases: dict[str, str] = {}
         self._cumulative_total = self._load_cumulative_total()
+
+    def conversation_binding_lock(self, binding_id: str) -> Lock:
+        expected = str(binding_id or "").strip()
+        if not expected:
+            raise RuntimeError("conversation binding unavailable: binding id is required")
+        with self._lock:
+            return self._conversation_binding_locks.setdefault(expected, Lock())
 
     def _get_cumulative_file(self) -> Path:
         from services.config import DATA_DIR
@@ -996,6 +1004,110 @@ class AccountService:
             f"no available {plan_type or source_type or ''} image quota (tried {len(attempted_tokens)} tokens)".replace("  ", " ").strip()
             if plan_type or source_type else f"no available image quota (tried {len(attempted_tokens)} tokens)"
         )
+
+    def _conversation_binding_for_token_locked(self, access_token: str) -> str:
+        resolved = self._resolve_access_token_locked(access_token)
+        account = self._accounts.get(resolved)
+        if account is None:
+            raise RuntimeError("conversation binding unavailable: account missing")
+        binding_id = f"cb_{uuid.uuid4().hex}"
+        account = dict(account)
+        bindings = {
+            str(item).strip()
+            for item in account.get("conversation_binding_ids") or []
+            if str(item).strip()
+        }
+        legacy = str(account.get("conversation_binding_id") or "").strip()
+        if legacy:
+            bindings.add(legacy)
+        bindings.add(binding_id)
+        account["conversation_binding_ids"] = sorted(bindings)
+        account.pop("conversation_binding_id", None)
+        self._accounts[resolved] = account
+        self._save_accounts()
+        return binding_id
+
+    def _bound_token_locked(self, binding_id: str) -> str:
+        expected = str(binding_id or "").strip()
+        if not expected:
+            raise RuntimeError("conversation binding unavailable: binding id is required")
+        matches = [
+            token
+            for token, account in self._accounts.items()
+            if (
+                str(account.get("conversation_binding_id") or "").strip() == expected
+                or expected
+                in {
+                    str(item).strip()
+                    for item in account.get("conversation_binding_ids") or []
+                }
+            )
+        ]
+        if len(matches) != 1:
+            raise RuntimeError("conversation binding unavailable: bound account missing")
+        return matches[0]
+
+    @staticmethod
+    def _image_route(model: str) -> tuple[str | None, str | None, tuple[str, ...] | None]:
+        plan_type, _ = split_image_model(model)
+        codex_model = is_codex_image_model(model)
+        return (
+            plan_type,
+            "codex" if codex_model else None,
+            ("plus", "team", "pro") if codex_model and not plan_type else None,
+        )
+
+    def create_conversation_binding(self, *, image_model: str) -> tuple[str, str]:
+        plan_type, source_type, plan_types = self._image_route(image_model)
+        access_token = self.get_available_access_token(
+            plan_type=plan_type,
+            source_type=source_type,
+            plan_types=plan_types,
+        )
+        with self._lock:
+            binding_id = self._conversation_binding_for_token_locked(access_token)
+        return binding_id, access_token
+
+    def acquire_bound_image_access_token(
+            self,
+            binding_id: str,
+            *,
+            image_model: str,
+    ) -> str:
+        plan_type, source_type, plan_types = self._image_route(image_model)
+        max_concurrency = max(1, int(config.image_account_concurrency or 1))
+        with self._image_slot_condition:
+            while True:
+                access_token = self._bound_token_locked(binding_id)
+                account = self._accounts.get(access_token) or {}
+                if (
+                        not self._is_image_account_available(account)
+                        or not self._account_matches_plan_type(account, plan_type)
+                        or not self._account_matches_any_plan_type(account, plan_types)
+                        or not self._account_matches_source_type(account, source_type)
+                ):
+                    raise RuntimeError("conversation binding unavailable: bound account cannot generate images")
+                if int(self._image_inflight.get(access_token, 0)) < max_concurrency:
+                    self._image_inflight[access_token] = int(self._image_inflight.get(access_token, 0)) + 1
+                    return access_token
+                self._image_slot_condition.wait(timeout=1.0)
+
+    def get_bound_text_access_token(self, binding_id: str, *, model: str) -> str:
+        with self._lock:
+            access_token = self._bound_token_locked(binding_id)
+            account = self._accounts.get(access_token) or {}
+            if account.get("status") in {"禁用", "异常"}:
+                raise RuntimeError("conversation binding unavailable: bound account cannot serve text")
+            if model and model != "auto":
+                from services.model_service import model_catalog_service
+
+                route = model_catalog_service.route_for_model(model)
+                if self._normalize_account_type(account.get("type")) not in route.account_types:
+                    raise RuntimeError("conversation binding unavailable: bound account cannot serve model")
+        refreshed = self.refresh_access_token(access_token, event="conversation_binding_text")
+        if not refreshed:
+            raise RuntimeError("conversation binding unavailable: bound account token refresh failed")
+        return refreshed
 
     def get_text_access_token(
             self,

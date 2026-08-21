@@ -26,6 +26,43 @@ def wait_for_task(service: ImageTaskService, identity: dict[str, object], task_i
 
 
 class ImageTaskServiceTests(unittest.TestCase):
+    def test_image_task_preserves_conversation_continuation_contract(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            captured = {}
+
+            def handler(payload):
+                captured.update(payload)
+                return {
+                    "data": [{"url": "http://example.test/image.png"}],
+                    "_provider_binding_id": "cb_account_a",
+                    "_conversation_id": "conversation-1",
+                    "_parent_message_id": "message-2",
+                }
+
+            service = self.make_service(Path(tmp_dir) / "image_tasks.json", handler)
+            service.submit_generation(
+                OWNER,
+                client_task_id="bound-task",
+                prompt="continue",
+                model="gpt-image-2",
+                size=None,
+                base_url="http://local.test",
+                provider_binding_id="cb_account_a",
+                conversation_id="conversation-1",
+                parent_message_id="message-1",
+                retain_conversation=True,
+            )
+
+            task = wait_for_task(service, OWNER, "bound-task", "success")
+
+            self.assertEqual(captured["provider_binding_id"], "cb_account_a")
+            self.assertEqual(captured["conversation_id"], "conversation-1")
+            self.assertEqual(captured["parent_message_id"], "message-1")
+            self.assertTrue(captured["retain_conversation"])
+            self.assertEqual(task["provider_binding_id"], "cb_account_a")
+            self.assertEqual(task["conversation_id"], "conversation-1")
+            self.assertEqual(task["parent_message_id"], "message-2")
+
     def make_service(self, path: Path, handler=None) -> ImageTaskService:
         return ImageTaskService(
             path,
@@ -143,6 +180,12 @@ class ImageTaskServiceTests(unittest.TestCase):
 
             self.assertEqual([item["status"] for item in result["items"]], ["error", "error"])
             self.assertTrue(all("已中断" in item.get("error", "") for item in result["items"]))
+            self.assertTrue(
+                all(
+                    item.get("error_code") == "CONVERSATION_OUTCOME_UNKNOWN"
+                    for item in result["items"]
+                )
+            )
 
 
 if __name__ == "__main__":
