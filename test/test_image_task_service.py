@@ -35,6 +35,7 @@ class ImageTaskServiceTests(unittest.TestCase):
                 return {
                     "data": [{"url": "http://example.test/image.png"}],
                     "_provider_binding_id": "cb_account_a",
+                    "_provider_account_identity": "account_opaque_a",
                     "_conversation_id": "conversation-1",
                     "_parent_message_id": "message-2",
                 }
@@ -48,6 +49,8 @@ class ImageTaskServiceTests(unittest.TestCase):
                 size=None,
                 base_url="http://local.test",
                 provider_binding_id="cb_account_a",
+                provider_account_identity="account_opaque_a",
+                client_conversation_id="workbench-conversation-1",
                 conversation_id="conversation-1",
                 parent_message_id="message-1",
                 retain_conversation=True,
@@ -56,10 +59,13 @@ class ImageTaskServiceTests(unittest.TestCase):
             task = wait_for_task(service, OWNER, "bound-task", "success")
 
             self.assertEqual(captured["provider_binding_id"], "cb_account_a")
+            self.assertEqual(captured["provider_account_identity"], "account_opaque_a")
+            self.assertEqual(captured["client_conversation_id"], "workbench-conversation-1")
             self.assertEqual(captured["conversation_id"], "conversation-1")
             self.assertEqual(captured["parent_message_id"], "message-1")
             self.assertTrue(captured["retain_conversation"])
             self.assertEqual(task["provider_binding_id"], "cb_account_a")
+            self.assertEqual(task["provider_account_identity"], "account_opaque_a")
             self.assertEqual(task["conversation_id"], "conversation-1")
             self.assertEqual(task["parent_message_id"], "message-2")
 

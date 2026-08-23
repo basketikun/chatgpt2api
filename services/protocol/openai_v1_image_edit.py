@@ -75,6 +75,8 @@ def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
         message_as_error=True,
         progress_callback=progress_callback,
         provider_binding_id=str(body.get("provider_binding_id") or ""),
+        provider_account_identity=str(body.get("provider_account_identity") or ""),
+        client_conversation_id=str(body.get("client_conversation_id") or ""),
         conversation_id=str(body.get("conversation_id") or ""),
         parent_message_id=str(body.get("parent_message_id") or ""),
         retain_conversation=bool(body.get("retain_conversation")),

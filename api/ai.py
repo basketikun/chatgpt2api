@@ -62,6 +62,8 @@ class ConversationBindingTextRequest(BaseModel):
     messages: list[dict[str, object]]
     thinking_effort: str = "standard"
     provider_binding_id: str | None = None
+    provider_account_identity: str | None = None
+    client_conversation_id: str
     conversation_id: str | None = None
     parent_message_id: str | None = None
 
@@ -188,9 +190,22 @@ def create_router() -> APIRouter:
         try:
             return await run_in_threadpool(conversation_binding_service.complete_text, payload)
         except ConversationBindingError as exc:
+            detail = {"code": exc.code, "error": str(exc)}
+            for key in (
+                "provider_binding_id",
+                "provider_account_identity",
+                "conversation_id",
+                "parent_message_id",
+            ):
+                value = str(getattr(exc, key, "") or "").strip()
+                if value:
+                    detail[key] = value
+            detail["binding_status"] = (
+                "unknown" if exc.code == "CONVERSATION_OUTCOME_UNKNOWN" else "unavailable"
+            )
             raise HTTPException(
                 status_code=409,
-                detail={"code": exc.code, "error": str(exc)},
+                detail=detail,
             ) from exc
 
     @router.post("/v1/messages")
