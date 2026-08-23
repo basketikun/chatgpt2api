@@ -49,6 +49,17 @@ class RemoveImageConversationGateTests(unittest.TestCase):
         _remove_image_conversation_later(backend, "", success=False)
         self.assertFalse(backend.called.wait(0.2))
 
+    def test_retained_workbench_conversation_is_never_removed(self) -> None:
+        config.data = dict(self._saved, image_remove_conversation_always=True)
+        backend = FakeBackend()
+        _remove_image_conversation_later(
+            backend,
+            "conv-1",
+            success=True,
+            retain_conversation=True,
+        )
+        self.assertFalse(backend.called.wait(0.2))
+
 
 if __name__ == "__main__":
     unittest.main()

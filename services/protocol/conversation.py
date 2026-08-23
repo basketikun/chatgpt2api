@@ -36,6 +36,9 @@ class ImageGenerationError(Exception):
         param: str | None = None,
         account_email: str = "",
         conversation_id: str = "",
+        provider_binding_id: str = "",
+        provider_account_identity: str = "",
+        parent_message_id: str = "",
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
@@ -44,6 +47,9 @@ class ImageGenerationError(Exception):
         self.param = param
         self.account_email = account_email
         self.conversation_id = conversation_id
+        self.provider_binding_id = provider_binding_id
+        self.provider_account_identity = provider_account_identity
+        self.parent_message_id = parent_message_id
 
     def to_openai_error(self) -> dict[str, Any]:
         error_dict = {
@@ -307,6 +313,12 @@ class ConversationRequest:
     base_url: str | None = None
     message_as_error: bool = False
     progress_callback: Any = None  # Callable[[str], None] | None
+    provider_binding_id: str = ""
+    provider_account_identity: str = ""
+    client_conversation_id: str = ""
+    conversation_id: str = ""
+    parent_message_id: str = ""
+    retain_conversation: bool = False
 
 
 @dataclass
@@ -333,6 +345,9 @@ class ImageOutput:
     data: list[dict[str, Any]] = field(default_factory=list)
     account_email: str = ""
     conversation_id: str = ""
+    provider_binding_id: str = ""
+    provider_account_identity: str = ""
+    parent_message_id: str = ""
 
     def to_chunk(self) -> dict[str, Any]:
         chunk: dict[str, Any] = {
@@ -349,6 +364,12 @@ class ImageOutput:
             chunk["_account_email"] = self.account_email
         if self.conversation_id:
             chunk["_conversation_id"] = self.conversation_id
+        if self.provider_binding_id:
+            chunk["_provider_binding_id"] = self.provider_binding_id
+        if self.provider_account_identity:
+            chunk["_provider_account_identity"] = self.provider_account_identity
+        if self.parent_message_id:
+            chunk["_parent_message_id"] = self.parent_message_id
         if self.kind == "message":
             chunk.update({
                 "object": "image.generation.message",
@@ -689,6 +710,8 @@ def conversation_events(
     size: str | None = None,
     quality: str = "auto",
     thinking_effort: str = "",
+    conversation_id: str = "",
+    parent_message_id: str = "",
 ) -> Iterator[dict[str, Any]]:
     normalized = normalize_messages(messages or ([{"role": "user", "content": prompt}] if prompt else []))
     image_model = is_supported_image_model(model)
@@ -702,6 +725,8 @@ def conversation_events(
         images=images if image_model else None,
         system_hints=["picture_v2"] if image_model else None,
         thinking_effort=thinking_effort if not image_model else "",
+        conversation_id=conversation_id,
+        parent_message_id=parent_message_id,
     )
     yield from iter_conversation_payloads(payloads, history_text, history_messages)
 
@@ -815,7 +840,10 @@ def _remove_image_conversation_later(
         conversation_id: str,
         *,
         success: bool,
+        retain_conversation: bool = False,
 ) -> None:
+    if retain_conversation:
+        return
     if not conversation_id:
         return
     if not (config.image_remove_conversation_always or (success and config.image_remove_conversation_after_result)):
@@ -849,6 +877,8 @@ def stream_image_outputs(
             images=request.images or [],
             size=request.size,
             quality=request.quality,
+            conversation_id=request.conversation_id,
+            parent_message_id=request.parent_message_id,
     ):
         last = event
         if event.get("type") == "conversation.delta":
@@ -1287,6 +1317,160 @@ def stream_codex_image_outputs(
     raise ImageGenerationError("No image result found in response")
 
 
+def _generate_bound_single_image(
+        request: ConversationRequest,
+        index: int,
+        total: int,
+) -> list[ImageOutput]:
+    """Run one durable conversation step without account or conversation failover."""
+    if is_codex_image_model(request.model):
+        raise ImageGenerationError(
+            "conversation binding is not supported for the selected image model",
+            code="CONVERSATION_BINDING_UNSUPPORTED",
+            provider_binding_id=request.provider_binding_id,
+            conversation_id=request.conversation_id,
+            parent_message_id=request.parent_message_id,
+        )
+    if bool(request.conversation_id) != bool(request.parent_message_id):
+        raise ImageGenerationError(
+            "conversation continuation requires conversation_id and parent_message_id",
+            code="CONVERSATION_BINDING_CONTRACT_INVALID",
+            provider_binding_id=request.provider_binding_id,
+            conversation_id=request.conversation_id,
+            parent_message_id=request.parent_message_id,
+        )
+    if not request.client_conversation_id:
+        raise ImageGenerationError(
+            "client_conversation_id is required for retained conversation binding",
+            code="CONVERSATION_BINDING_CONTRACT_INVALID",
+            provider_binding_id=request.provider_binding_id,
+            provider_account_identity=request.provider_account_identity,
+            conversation_id=request.conversation_id,
+            parent_message_id=request.parent_message_id,
+        )
+    token = ""
+    binding_id = request.provider_binding_id
+    account_identity = request.provider_account_identity
+    try:
+        if binding_id:
+            authoritative_identity = account_service.get_bound_account_identity(binding_id)
+            if not account_identity or authoritative_identity != account_identity:
+                raise ImageGenerationError(
+                    "provider account identity changed",
+                    code="CONVERSATION_BINDING_MISMATCH",
+                    provider_binding_id=binding_id,
+                    provider_account_identity=account_identity,
+                    conversation_id=request.conversation_id,
+                    parent_message_id=request.parent_message_id,
+                )
+            token = account_service.acquire_bound_image_access_token(
+                binding_id,
+                image_model=request.model,
+            )
+        else:
+            binding_id, account_identity, token = account_service.create_conversation_binding(
+                image_model=request.model,
+            )
+            request.provider_binding_id = binding_id
+            request.provider_account_identity = account_identity
+    except RuntimeError as exc:
+        raise ImageGenerationError(
+            str(exc) or "conversation binding unavailable",
+            code="CONVERSATION_BINDING_UNAVAILABLE",
+            provider_binding_id=binding_id,
+            provider_account_identity=account_identity,
+            conversation_id=request.conversation_id,
+            parent_message_id=request.parent_message_id,
+        ) from exc
+
+    account = account_service.get_account(token) or {}
+    account_email = str(account.get("email") or "").strip()
+    backend: OpenAIBackendAPI | None = None
+    outputs: list[ImageOutput] = []
+    last_conversation_id = request.conversation_id
+    try:
+        with account_service.conversation_binding_lock(binding_id, request.client_conversation_id):
+            backend = OpenAIBackendAPI(access_token=token)
+            if request.progress_callback:
+                backend.progress_callback = request.progress_callback
+            try:
+                for output in stream_image_outputs(backend, request, index, total):
+                    last_conversation_id = output.conversation_id or last_conversation_id
+                    output.account_email = output.account_email or account_email
+                    output.provider_binding_id = binding_id
+                    output.provider_account_identity = account_identity
+                    if output.kind == "message" and request.message_as_error:
+                        raise ImageGenerationError(
+                            output.text or "Image generation was rejected by upstream policy.",
+                            status_code=400,
+                            error_type="invalid_request_error",
+                            code="content_policy_violation",
+                            account_email=account_email,
+                            provider_binding_id=binding_id,
+                            conversation_id=last_conversation_id,
+                        )
+                    outputs.append(output)
+                if not last_conversation_id:
+                    raise ImageGenerationError(
+                        "upstream response has no conversation_id",
+                        code="CONVERSATION_OUTCOME_UNKNOWN",
+                        account_email=account_email,
+                        provider_binding_id=binding_id,
+                    )
+                if request.conversation_id and last_conversation_id != request.conversation_id:
+                    raise ImageGenerationError(
+                        "upstream conversation identity changed",
+                        code="CONVERSATION_BINDING_MISMATCH",
+                        account_email=account_email,
+                        provider_binding_id=binding_id,
+                        conversation_id=last_conversation_id,
+                    )
+                if not any(output.kind == "result" for output in outputs):
+                    raise ImageGenerationError(
+                        "upstream completed without generating images",
+                        code="no_image_generated",
+                        account_email=account_email,
+                        provider_binding_id=binding_id,
+                        conversation_id=last_conversation_id,
+                    )
+                next_parent_message_id = backend.get_conversation_parent_message_id(last_conversation_id)
+                for output in outputs:
+                    output.provider_binding_id = binding_id
+                    output.provider_account_identity = account_identity
+                    output.conversation_id = last_conversation_id
+                    output.parent_message_id = next_parent_message_id
+                account_service.mark_image_result(token, True)
+                return outputs
+            except Exception as exc:
+                account_service.mark_image_result(token, False)
+                conversation_id = str(getattr(exc, "conversation_id", "") or last_conversation_id)
+                parent_message_id = str(getattr(exc, "parent_message_id", "") or "")
+                if conversation_id and backend is not None and not parent_message_id:
+                    try:
+                        parent_message_id = backend.get_conversation_parent_message_id(conversation_id)
+                    except Exception:
+                        pass
+                if isinstance(exc, ImageGenerationError):
+                    exc.provider_binding_id = binding_id
+                    exc.provider_account_identity = account_identity
+                    exc.conversation_id = conversation_id
+                    exc.parent_message_id = parent_message_id
+                    raise
+                raise ImageGenerationError(
+                    image_stream_error_message(str(exc)),
+                    code="CONVERSATION_OUTCOME_UNKNOWN" if conversation_id else "CONVERSATION_BINDING_UNAVAILABLE",
+                    account_email=account_email,
+                    provider_binding_id=binding_id,
+                    provider_account_identity=account_identity,
+                    conversation_id=conversation_id,
+                    parent_message_id=parent_message_id,
+                ) from exc
+    finally:
+        if backend is not None:
+            backend.close()
+        account_service.release_image_slot(token)
+
+
 def _generate_single_image(
         request: ConversationRequest,
         index: int,
@@ -1297,6 +1481,9 @@ def _generate_single_image(
     该函数在独立线程中运行，每个线程使用不同的账号，
     实现并行生图，避免串行超时阻塞。
     """
+    if request.retain_conversation:
+        return _generate_bound_single_image(request, index, total)
+
     # 模型返回文本而非图片的最大重试次数
     MAX_TEXT_REPLY_RETRIES = 3
     # TLS 连接错误最大重试次数
@@ -1623,10 +1810,18 @@ def collect_image_outputs(outputs: Iterable[ImageOutput]) -> dict[str, Any]:
     message = ""
     progress_parts: list[str] = []
     account_email = ""
+    provider_binding_id = ""
+    provider_account_identity = ""
+    conversation_id = ""
+    parent_message_id = ""
     for output in outputs:
         created = created or output.created
         if output.account_email and not account_email:
             account_email = output.account_email
+        provider_binding_id = output.provider_binding_id or provider_binding_id
+        provider_account_identity = output.provider_account_identity or provider_account_identity
+        conversation_id = output.conversation_id or conversation_id
+        parent_message_id = output.parent_message_id or parent_message_id
         if output.kind == "progress" and output.text:
             progress_parts.append(output.text)
         elif output.kind == "message":
@@ -1641,4 +1836,12 @@ def collect_image_outputs(outputs: Iterable[ImageOutput]) -> dict[str, Any]:
             result["message"] = text
     if account_email:
         result["_account_email"] = account_email
+    if provider_binding_id:
+        result["_provider_binding_id"] = provider_binding_id
+    if provider_account_identity:
+        result["_provider_account_identity"] = provider_account_identity
+    if conversation_id:
+        result["_conversation_id"] = conversation_id
+    if parent_message_id:
+        result["_parent_message_id"] = parent_message_id
     return result
