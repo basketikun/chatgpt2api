@@ -30,7 +30,7 @@ class AccountCapabilityTests(unittest.TestCase):
                 lambda access_token, event="fetch_remote_info": service.get_account(access_token)
             )
 
-            binding_id, first_token = service.create_conversation_binding(
+            binding_id, account_identity, first_token = service.create_conversation_binding(
                 image_model="gpt-image-2"
             )
             service.release_image_slot(first_token)
@@ -42,6 +42,7 @@ class AccountCapabilityTests(unittest.TestCase):
 
             self.assertTrue(binding_id.startswith("cb_"))
             self.assertEqual(bound_token, first_token)
+            self.assertEqual(service.get_bound_account_identity(binding_id), account_identity)
             service.update_account(first_token, {"status": "异常", "quota": 0})
             with self.assertRaisesRegex(RuntimeError, "conversation binding unavailable"):
                 service.acquire_bound_image_access_token(
@@ -59,11 +60,11 @@ class AccountCapabilityTests(unittest.TestCase):
                 lambda access_token, event="fetch_remote_info": service.get_account(access_token)
             )
 
-            first_binding, first_token = service.create_conversation_binding(
+            first_binding, _, first_token = service.create_conversation_binding(
                 image_model="gpt-image-2"
             )
             service.release_image_slot(first_token)
-            second_binding, second_token = service.create_conversation_binding(
+            second_binding, _, second_token = service.create_conversation_binding(
                 image_model="gpt-image-2"
             )
             service.release_image_slot(second_token)

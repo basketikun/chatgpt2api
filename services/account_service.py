@@ -58,12 +58,14 @@ class AccountService:
         self._token_aliases: dict[str, str] = {}
         self._cumulative_total = self._load_cumulative_total()
 
-    def conversation_binding_lock(self, binding_id: str) -> Lock:
+    def conversation_binding_lock(self, binding_id: str, client_conversation_id: str = "") -> Lock:
         expected = str(binding_id or "").strip()
         if not expected:
             raise RuntimeError("conversation binding unavailable: binding id is required")
+        conversation_key = str(client_conversation_id or "").strip()
+        lock_key = f"{expected}:{conversation_key}" if conversation_key else expected
         with self._lock:
-            return self._conversation_binding_locks.setdefault(expected, Lock())
+            return self._conversation_binding_locks.setdefault(lock_key, Lock())
 
     def _get_cumulative_file(self) -> Path:
         from services.config import DATA_DIR
@@ -1027,6 +1029,21 @@ class AccountService:
         self._save_accounts()
         return binding_id
 
+    def _provider_account_identity_for_token_locked(self, access_token: str) -> str:
+        resolved = self._resolve_access_token_locked(access_token)
+        account = self._accounts.get(resolved)
+        if account is None:
+            raise RuntimeError("conversation binding unavailable: account missing")
+        identity = str(account.get("provider_account_identity") or "").strip()
+        if identity:
+            return identity
+        identity = f"account_{uuid.uuid4().hex}"
+        account = dict(account)
+        account["provider_account_identity"] = identity
+        self._accounts[resolved] = account
+        self._save_accounts()
+        return identity
+
     def _bound_token_locked(self, binding_id: str) -> str:
         expected = str(binding_id or "").strip()
         if not expected:
@@ -1057,7 +1074,7 @@ class AccountService:
             ("plus", "team", "pro") if codex_model and not plan_type else None,
         )
 
-    def create_conversation_binding(self, *, image_model: str) -> tuple[str, str]:
+    def create_conversation_binding(self, *, image_model: str) -> tuple[str, str, str]:
         plan_type, source_type, plan_types = self._image_route(image_model)
         access_token = self.get_available_access_token(
             plan_type=plan_type,
@@ -1066,7 +1083,13 @@ class AccountService:
         )
         with self._lock:
             binding_id = self._conversation_binding_for_token_locked(access_token)
-        return binding_id, access_token
+            account_identity = self._provider_account_identity_for_token_locked(access_token)
+        return binding_id, account_identity, access_token
+
+    def get_bound_account_identity(self, binding_id: str) -> str:
+        with self._lock:
+            access_token = self._bound_token_locked(binding_id)
+            return self._provider_account_identity_for_token_locked(access_token)
 
     def acquire_bound_image_access_token(
             self,

@@ -18,6 +18,8 @@ class ImageGenerationTaskRequest(BaseModel):
     size: str | None = None
     quality: str = "auto"
     provider_binding_id: str = ""
+    provider_account_identity: str = ""
+    client_conversation_id: str = ""
     conversation_id: str = ""
     parent_message_id: str = ""
     retain_conversation: bool = False
@@ -69,6 +71,8 @@ def create_router() -> APIRouter:
                 quality=body.quality,
                 base_url=resolve_image_base_url(request),
                 provider_binding_id=body.provider_binding_id,
+                provider_account_identity=body.provider_account_identity,
+                client_conversation_id=body.client_conversation_id,
                 conversation_id=body.conversation_id,
                 parent_message_id=body.parent_message_id,
                 retain_conversation=body.retain_conversation,
@@ -104,6 +108,8 @@ def create_router() -> APIRouter:
                 images=images,
                 masks=masks,
                 provider_binding_id=str(payload.get("provider_binding_id") or ""),
+                provider_account_identity=str(payload.get("provider_account_identity") or ""),
+                client_conversation_id=str(payload.get("client_conversation_id") or ""),
                 conversation_id=str(payload.get("conversation_id") or ""),
                 parent_message_id=str(payload.get("parent_message_id") or ""),
                 retain_conversation=bool(payload.get("retain_conversation")),

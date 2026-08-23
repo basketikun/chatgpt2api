@@ -74,7 +74,13 @@ def _public_task(task: dict[str, Any]) -> dict[str, Any]:
     }
     if task.get("conversation_id"):
         item["conversation_id"] = task.get("conversation_id")
-    for field in ("provider_binding_id", "parent_message_id", "binding_status", "error_code"):
+    for field in (
+        "provider_binding_id",
+        "provider_account_identity",
+        "parent_message_id",
+        "binding_status",
+        "error_code",
+    ):
         if task.get(field):
             item[field] = task.get(field)
     if task.get("data") is not None:
@@ -133,6 +139,8 @@ class ImageTaskService:
         quality: str = "auto",
         base_url: str = "",
         provider_binding_id: str = "",
+        provider_account_identity: str = "",
+        client_conversation_id: str = "",
         conversation_id: str = "",
         parent_message_id: str = "",
         retain_conversation: bool = False,
@@ -146,6 +154,8 @@ class ImageTaskService:
             "response_format": "url",
             "base_url": base_url,
             "provider_binding_id": provider_binding_id,
+            "provider_account_identity": provider_account_identity,
+            "client_conversation_id": client_conversation_id,
             "conversation_id": conversation_id,
             "parent_message_id": parent_message_id,
             "retain_conversation": retain_conversation,
@@ -165,6 +175,8 @@ class ImageTaskService:
         images: list[tuple[bytes, str, str]] | None = None,
         masks: list[tuple[bytes, str, str]] | None = None,
         provider_binding_id: str = "",
+        provider_account_identity: str = "",
+        client_conversation_id: str = "",
         conversation_id: str = "",
         parent_message_id: str = "",
         retain_conversation: bool = False,
@@ -180,6 +192,8 @@ class ImageTaskService:
             "response_format": "url",
             "base_url": base_url,
             "provider_binding_id": provider_binding_id,
+            "provider_account_identity": provider_account_identity,
+            "client_conversation_id": client_conversation_id,
             "conversation_id": conversation_id,
             "parent_message_id": parent_message_id,
             "retain_conversation": retain_conversation,
@@ -244,6 +258,7 @@ class ImageTaskService:
                 "updated_at": now,
                 "created_ts": time.time(),
                 "provider_binding_id": _clean(payload.get("provider_binding_id")),
+                "provider_account_identity": _clean(payload.get("provider_account_identity")),
                 "conversation_id": _clean(payload.get("conversation_id")),
                 "parent_message_id": _clean(payload.get("parent_message_id")),
                 "binding_status": "bound" if payload.get("provider_binding_id") else "unbound",
@@ -287,6 +302,7 @@ class ImageTaskService:
             data = result.get("data")
             account_email = _clean(result.get("_account_email") or result.get("account_email"))
             provider_binding_id = _clean(result.get("_provider_binding_id"))
+            provider_account_identity = _clean(result.get("_provider_account_identity"))
             conversation_id = _clean(result.get("_conversation_id"))
             parent_message_id = _clean(result.get("_parent_message_id"))
             if not isinstance(data, list) or not data:
@@ -301,7 +317,11 @@ class ImageTaskService:
                 raise error
             usage = result.get("usage")
             duration_ms = int((time.time() - started) * 1000)
-            if bool(provider_binding_id) != bool(conversation_id) or bool(provider_binding_id) != bool(parent_message_id):
+            if (
+                bool(provider_binding_id) != bool(provider_account_identity)
+                or bool(provider_binding_id) != bool(conversation_id)
+                or bool(provider_binding_id) != bool(parent_message_id)
+            ):
                 raise RuntimeError("bound image result is missing authoritative conversation state")
             self._update_task(
                 key,
@@ -311,6 +331,7 @@ class ImageTaskService:
                 error="",
                 duration_ms=duration_ms,
                 provider_binding_id=provider_binding_id,
+                provider_account_identity=provider_account_identity,
                 conversation_id=conversation_id,
                 parent_message_id=parent_message_id,
                 binding_status="bound" if provider_binding_id else "unbound",
@@ -330,12 +351,14 @@ class ImageTaskService:
             account_email = _clean(getattr(exc, "account_email", ""))
             conversation_id = _clean(getattr(exc, "conversation_id", ""))
             provider_binding_id = _clean(getattr(exc, "provider_binding_id", ""))
+            provider_account_identity = _clean(getattr(exc, "provider_account_identity", ""))
             parent_message_id = _clean(getattr(exc, "parent_message_id", ""))
             error_code = _clean(getattr(exc, "code", ""))
             duration_ms = int((time.time() - started) * 1000)
             self._update_task(key, status=TASK_STATUS_ERROR, error=error_message, data=[],
                               duration_ms=duration_ms,
                               **({"provider_binding_id": provider_binding_id} if provider_binding_id else {}),
+                              **({"provider_account_identity": provider_account_identity} if provider_account_identity else {}),
                               **({"conversation_id": conversation_id} if conversation_id else {}),
                               **({"parent_message_id": parent_message_id} if parent_message_id else {}),
                               **(
@@ -452,6 +475,7 @@ class ImageTaskService:
                 "started_ts": item.get("started_ts"),
                 "duration_ms": item.get("duration_ms"),
                 "provider_binding_id": _clean(item.get("provider_binding_id")),
+                "provider_account_identity": _clean(item.get("provider_account_identity")),
                 "conversation_id": _clean(item.get("conversation_id")),
                 "parent_message_id": _clean(item.get("parent_message_id")),
                 "binding_status": _clean(item.get("binding_status"), "unbound"),

@@ -76,7 +76,13 @@ def _payload_from_fields(fields: dict[str, Any]) -> dict[str, Any]:
     }
     if "client_task_id" in fields:
         payload["client_task_id"] = _clean(fields.get("client_task_id"))
-    for field in ("provider_binding_id", "conversation_id", "parent_message_id"):
+    for field in (
+        "provider_binding_id",
+        "provider_account_identity",
+        "client_conversation_id",
+        "conversation_id",
+        "parent_message_id",
+    ):
         if field in fields:
             payload[field] = _clean(fields.get(field))
     if "retain_conversation" in fields:
