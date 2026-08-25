@@ -1071,6 +1071,16 @@ class OpenAIBackendAPI:
             timeout=300,
             stream=True,
         )
+        if response.status_code == 404:
+            response.close()
+            path = "/backend-api/conversation"
+            response = self.session.post(
+                self.base_url + path,
+                headers=self._image_headers(path, requirements, conduit_token, "text/event-stream"),
+                json=payload,
+                timeout=300,
+                stream=True,
+            )
         ensure_ok(response, path)
         return response
 

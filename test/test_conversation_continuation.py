@@ -4,7 +4,7 @@ import unittest
 from contextlib import nullcontext
 from unittest import mock
 
-from services.openai_backend_api import OpenAIBackendAPI
+from services.openai_backend_api import ChatRequirements, OpenAIBackendAPI
 from services.conversation_binding_service import ConversationBindingError, ConversationBindingService
 from services.protocol.conversation import (
     ConversationRequest,
@@ -15,6 +15,54 @@ from services.protocol.conversation import (
 
 
 class ConversationContinuationPayloadTests(unittest.TestCase):
+    def test_image_conversation_falls_back_from_removed_f_route(self) -> None:
+        class FakeResponse:
+            def __init__(self, status_code: int) -> None:
+                self.status_code = status_code
+                self.text = ""
+                self.headers = {}
+                self.closed = False
+
+            def close(self) -> None:
+                self.closed = True
+
+            def json(self):
+                return {}
+
+        class FakeSession:
+            def __init__(self) -> None:
+                self.responses = [FakeResponse(404), FakeResponse(200)]
+                self.calls = []
+
+            def post(self, url, **kwargs):
+                self.calls.append((url, kwargs))
+                return self.responses[len(self.calls) - 1]
+
+        backend = object.__new__(OpenAIBackendAPI)
+        backend.base_url = "https://chatgpt.test"
+        backend.session = FakeSession()
+        backend._image_headers = lambda path, *_args: {"x-test-path": path}
+
+        response = backend._start_image_generation(
+            "make an image",
+            ChatRequirements(token="requirements"),
+            "conduit",
+            "gpt-image-2",
+            conversation_id="conversation-1",
+            parent_message_id="message-1",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(backend.session.responses[0].closed)
+        self.assertEqual(
+            [call[0] for call in backend.session.calls],
+            [
+                "https://chatgpt.test/backend-api/f/conversation",
+                "https://chatgpt.test/backend-api/conversation",
+            ],
+        )
+        self.assertEqual(backend.session.calls[0][1]["json"], backend.session.calls[1][1]["json"])
+
     def test_continuation_sends_exact_conversation_and_parent(self) -> None:
         backend = object.__new__(OpenAIBackendAPI)
 

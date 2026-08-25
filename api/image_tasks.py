@@ -131,6 +131,7 @@ def create_router() -> APIRouter:
                 identity,
                 task_id,
                 body.extra_timeout_secs,
+                resolve_image_base_url(request),
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
