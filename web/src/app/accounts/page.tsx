@@ -15,6 +15,7 @@ import {
   LoaderCircle,
   LogIn,
   Pencil,
+  ReceiptText,
   RefreshCw,
   Search,
   Trash2,
@@ -62,6 +63,7 @@ import { useAuthGuard } from "@/lib/use-auth-guard";
 import { cn } from "@/lib/utils";
 
 import { AccountImportDialog } from "./components/account-import-dialog";
+import { InvoiceDialog } from "./components/invoice-dialog";
 
 const accountStatusOptions: { label: string; value: AccountStatus | "all" }[] = [
   { label: "全部状态", value: "all" },
@@ -176,6 +178,7 @@ function AccountsPageContent() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState("10");
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
+  const [invoiceAccount, setInvoiceAccount] = useState<Account | null>(null);
   const [editStatus, setEditStatus] = useState<AccountStatus>("正常");
   const [editProxy, setEditProxy] = useState("");
   const [isTestingProxy, setIsTestingProxy] = useState(false);
@@ -845,6 +848,14 @@ function AccountsPageContent() {
         </DialogContent>
       </Dialog>
 
+      <InvoiceDialog
+        account={invoiceAccount}
+        open={Boolean(invoiceAccount)}
+        onOpenChange={(open) => {
+          if (!open) setInvoiceAccount(null);
+        }}
+      />
+
       <section className="space-y-3">
         <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
           {metricCards.map((item) => {
@@ -1171,6 +1182,15 @@ function AccountsPageContent() {
                         <td className="px-4 py-3 text-stone-500">{account.fail}</td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1 text-stone-400">
+                            <button
+                              type="button"
+                              className="rounded-lg p-2 transition hover:bg-blue-50 hover:text-blue-600"
+                              onClick={() => setInvoiceAccount(account)}
+                              title="查看发票"
+                            >
+                              <ReceiptText className="size-4" />
+                              <span className="sr-only">查看发票</span>
+                            </button>
                             <button
                               type="button"
                               className="rounded-lg p-2 transition hover:bg-stone-100 hover:text-stone-700"

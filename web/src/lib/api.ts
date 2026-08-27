@@ -18,6 +18,7 @@ export type ImageStorageSettings = {
 
 export type Account = {
   access_token: string;
+  account_id?: string | null;
   type: AccountType;
   source_type?: string | null;
   status: AccountStatus;
