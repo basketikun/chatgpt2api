@@ -39,6 +39,32 @@ export type Account = {
   proxy?: string | null;
 };
 
+export type InvoiceAccount = {
+  account_id: string;
+  email?: string | null;
+  plan?: string | null;
+  status?: string | null;
+};
+
+export type InvoiceItem = {
+  id: string;
+  created_at: string;
+  amount: number;
+  currency: string;
+  status: string;
+  product: {
+    type?: string;
+    plan?: string;
+  };
+  invoice_url?: string | null;
+};
+
+export type InvoiceListResponse = {
+  account_id: string;
+  items: InvoiceItem[];
+  next_cursor?: string | null;
+};
+
 export type AccountImportPayload = {
   access_token: string;
   accessToken?: string;
@@ -333,6 +359,20 @@ export async function login(authKey: string) {
 
 export async function fetchAccounts() {
   return httpRequest<AccountListResponse>("/api/accounts");
+}
+
+export async function fetchInvoiceAccounts() {
+  return httpRequest<{ items: InvoiceAccount[] }>("/api/invoices/accounts");
+}
+
+export async function fetchInvoices(accountId: string, limit = 20, cursor = "") {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (cursor) {
+    params.set("cursor", cursor);
+  }
+  return httpRequest<InvoiceListResponse>(
+    `/api/invoices/${encodeURIComponent(accountId)}?${params.toString()}`,
+  );
 }
 
 export async function fetchModels() {

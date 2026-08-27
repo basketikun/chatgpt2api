@@ -33,6 +33,16 @@ class InvalidAccessTokenError(RuntimeError):
     pass
 
 
+class BillingAPIError(RuntimeError):
+    """Typed, body-free failure from the private ChatGPT billing endpoint."""
+
+    def __init__(self, code: str, status_code: int, retry_after: str = "") -> None:
+        super().__init__(code)
+        self.code = code
+        self.status_code = status_code
+        self.retry_after = retry_after
+
+
 class ImageTaskError(RuntimeError):
     """图片生成异常基类，携带上游会话 ID 供调用方清理对话。"""
 
@@ -374,6 +384,112 @@ class OpenAIBackendAPI:
             "status": result.get("status"),
         })
         return result
+
+    @staticmethod
+    def _normalize_invoice_url(value: object) -> str:
+        raw = str(value or "").strip()
+        if not raw:
+            return ""
+        try:
+            parsed = urlparse(raw)
+            port = parsed.port
+        except (TypeError, ValueError):
+            raise BillingAPIError("BILLING_SCHEMA_CHANGED", 502) from None
+        if (
+            parsed.scheme != "https"
+            or parsed.hostname != "invoice.stripe.com"
+            or parsed.username is not None
+            or parsed.password is not None
+            or port not in {None, 443}
+        ):
+            raise BillingAPIError("UNTRUSTED_INVOICE_URL", 502)
+        return raw
+
+    @classmethod
+    def _normalize_invoice_transaction(cls, value: object) -> Dict[str, Any] | None:
+        if not isinstance(value, dict) or value.get("type") != "invoice":
+            return None
+        invoice_id = str(value.get("id") or "").strip()
+        created_at = str(value.get("created_at") or "").strip()
+        currency = str(value.get("currency") or "").strip().lower()
+        status = str(value.get("status") or "").strip()
+        amount = value.get("amount")
+        product = value.get("product")
+        if (
+            not invoice_id
+            or len(invoice_id) > 128
+            or not created_at
+            or isinstance(amount, bool)
+            or not isinstance(amount, int)
+            or amount < 0
+            or not re.fullmatch(r"[a-z]{3}", currency)
+            or not status
+            or not isinstance(product, dict)
+        ):
+            raise BillingAPIError("BILLING_SCHEMA_CHANGED", 502)
+        return {
+            "type": "invoice",
+            "id": invoice_id,
+            "created_at": created_at,
+            "amount": amount,
+            "currency": currency,
+            "status": status,
+            "invoice_url": cls._normalize_invoice_url(value.get("invoice_url")),
+            "product": {
+                "type": str(product.get("type") or "").strip(),
+                "plan": str(product.get("plan") or "").strip(),
+            },
+        }
+
+    def list_transactions(self, account_id: str, limit: int = 20, cursor: str = "") -> Dict[str, Any]:
+        """List normalized invoice transactions for the authenticated account.
+
+        The path and headers are fixed here so callers cannot turn this into a
+        generic authenticated ChatGPT Web proxy.
+        """
+        normalized_account_id = str(account_id or "").strip()
+        normalized_cursor = str(cursor or "").strip()
+        if not self.access_token:
+            raise BillingAPIError("BILLING_AUTH_REQUIRED", 502)
+        if not normalized_account_id or len(normalized_account_id) > 128:
+            raise ValueError("account_id is invalid")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
+            raise ValueError("limit must be between 1 and 100")
+        if len(normalized_cursor) > 2048:
+            raise ValueError("cursor is too long")
+
+        path = "/backend-api/payments/transaction-history"
+        params: Dict[str, Any] = {"account_id": normalized_account_id, "limit": limit}
+        if normalized_cursor:
+            params["cursor"] = normalized_cursor
+        response = self.session.get(
+            self.base_url + path,
+            headers=self._headers(path, {"Accept": "application/json"}),
+            params=params,
+            timeout=20,
+        )
+        if response.status_code != 200:
+            code = {
+                401: "BILLING_AUTH_REQUIRED",
+                403: "BILLING_FORBIDDEN",
+                429: "BILLING_RATE_LIMITED",
+            }.get(response.status_code, "BILLING_UPSTREAM_ERROR")
+            raise BillingAPIError(code, response.status_code, str(response.headers.get("Retry-After") or ""))
+        try:
+            payload = response.json()
+        except Exception:
+            raise BillingAPIError("BILLING_SCHEMA_CHANGED", 502) from None
+        if not isinstance(payload, dict) or not isinstance(payload.get("transactions"), list):
+            raise BillingAPIError("BILLING_SCHEMA_CHANGED", 502)
+        next_cursor = payload.get("next_cursor")
+        if next_cursor is not None and (not isinstance(next_cursor, str) or len(next_cursor) > 2048):
+            raise BillingAPIError("BILLING_SCHEMA_CHANGED", 502)
+        invoices = []
+        for transaction in payload["transactions"]:
+            invoice = self._normalize_invoice_transaction(transaction)
+            if invoice is not None:
+                invoices.append(invoice)
+        return {"items": invoices, "next_cursor": next_cursor}
 
     def _bootstrap_headers(self) -> Dict[str, str]:
         """构造首页预热请求头。"""
