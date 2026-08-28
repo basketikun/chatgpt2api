@@ -15,6 +15,7 @@ import {
   LoaderCircle,
   LogIn,
   Pencil,
+  ReceiptText,
   RefreshCw,
   Search,
   Trash2,
@@ -62,6 +63,7 @@ import { useAuthGuard } from "@/lib/use-auth-guard";
 import { cn } from "@/lib/utils";
 
 import { AccountImportDialog } from "./components/account-import-dialog";
+import { InvoiceDialog } from "./components/invoice-dialog";
 
 const accountStatusOptions: { label: string; value: AccountStatus | "all" }[] = [
   { label: "全部状态", value: "all" },
@@ -128,6 +130,49 @@ function formatRestoreAt(value?: string | null) {
   return { absolute, relative };
 }
 
+function formatSubscriptionRenewal(account: Account) {
+  const value = account.cancels_at || account.renews_at;
+  if (!value) {
+    if (account.has_active_subscription === false) {
+      return { primary: "无有效订阅", secondary: "" };
+    }
+    return { primary: "待账号刷新", secondary: "" };
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return {
+      primary: value,
+      secondary: account.cancels_at ? "已安排取消" : "",
+    };
+  }
+
+  const absolute = date.toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  if (account.cancels_at) {
+    return { primary: absolute, secondary: "已安排取消" };
+  }
+
+  const diffMs = date.getTime() - Date.now();
+  const totalHours = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60)));
+  const days = Math.floor(totalHours / 24);
+  const hours = totalHours % 24;
+  const relative = diffMs > 0 ? `${days}d ${hours}h 后` : "已到续费时间";
+  const period =
+    account.billing_period === "monthly"
+      ? "月付"
+      : ["annual", "yearly"].includes(account.billing_period || "")
+        ? "年付"
+        : "";
+  return { primary: absolute, secondary: [period, relative].filter(Boolean).join(" · ") };
+}
+
 function formatQuotaSummary(accounts: Account[]) {
   const availableAccounts = accounts.filter((account) => account.status === "正常");
   return formatCompact(availableAccounts.reduce((sum, account) => sum + Math.max(0, account.quota), 0));
@@ -176,6 +221,7 @@ function AccountsPageContent() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState("10");
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
+  const [invoiceAccount, setInvoiceAccount] = useState<Account | null>(null);
   const [editStatus, setEditStatus] = useState<AccountStatus>("正常");
   const [editProxy, setEditProxy] = useState("");
   const [isTestingProxy, setIsTestingProxy] = useState(false);
@@ -845,6 +891,14 @@ function AccountsPageContent() {
         </DialogContent>
       </Dialog>
 
+      <InvoiceDialog
+        account={invoiceAccount}
+        open={Boolean(invoiceAccount)}
+        onOpenChange={(open) => {
+          if (!open) setInvoiceAccount(null);
+        }}
+      />
+
       <section className="space-y-3">
         <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
           {metricCards.map((item) => {
@@ -1035,7 +1089,7 @@ function AccountsPageContent() {
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1000px] text-left">
+              <table className="w-full min-w-[1160px] text-left">
                 <thead className="border-b border-stone-100 text-[11px] text-stone-400 uppercase tracking-[0.18em]">
                   <tr>
                     <th className="w-12 px-4 py-3">
@@ -1049,6 +1103,7 @@ function AccountsPageContent() {
                     <th className="w-24 px-4 py-3">来源</th>
                     <th className="w-24 px-4 py-3">状态</th>
                     <th className="w-56 px-4 py-3">账号信息</th>
+                    <th className="w-44 px-4 py-3">下次续费</th>
                     <th className="w-32 px-4 py-3">创建时间</th>
                     <th className="w-24 px-4 py-3">额度</th>
                     <th className="w-40 px-4 py-3">恢复时间</th>
@@ -1121,6 +1176,17 @@ function AccountsPageContent() {
                         </td>
                         <td className="px-4 py-3 text-xs leading-5 text-stone-500">
                           {(() => {
+                            const renewal = formatSubscriptionRenewal(account);
+                            return (
+                              <div className="space-y-0.5">
+                                <div className="font-medium text-stone-700">{renewal.primary}</div>
+                                {renewal.secondary ? <div>{renewal.secondary}</div> : null}
+                              </div>
+                            );
+                          })()}
+                        </td>
+                        <td className="px-4 py-3 text-xs leading-5 text-stone-500">
+                          {(() => {
                             const raw = (account as any).created_at;
                             if (!raw) return "—";
                             try {
@@ -1171,6 +1237,15 @@ function AccountsPageContent() {
                         <td className="px-4 py-3 text-stone-500">{account.fail}</td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1 text-stone-400">
+                            <button
+                              type="button"
+                              className="rounded-lg p-2 transition hover:bg-blue-50 hover:text-blue-600"
+                              onClick={() => setInvoiceAccount(account)}
+                              title="查看发票"
+                            >
+                              <ReceiptText className="size-4" />
+                              <span className="sr-only">查看发票</span>
+                            </button>
                             <button
                               type="button"
                               className="rounded-lg p-2 transition hover:bg-stone-100 hover:text-stone-700"
