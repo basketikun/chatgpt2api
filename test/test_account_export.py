@@ -113,6 +113,30 @@ class AccountExportTests(unittest.TestCase):
         self.assertEqual(account["refresh_token"], "rt_test")
         self.assertEqual(account["account_id"], "acct_123")
 
+    def test_normalize_account_preserves_renewal_unknown_and_known_states(self) -> None:
+        service = AccountService(
+            MemoryStorage(
+                [
+                    {"access_token": "unknown"},
+                    {
+                        "access_token": "active",
+                        "has_active_subscription": True,
+                        "subscription_plan": "chatgptpro",
+                        "billing_period": "monthly",
+                        "renews_at": "2026-09-05T08:06:08+00:00",
+                    },
+                ]
+            )
+        )
+
+        unknown = service.get_account("unknown")
+        active = service.get_account("active")
+
+        self.assertIsNone(unknown["has_active_subscription"])
+        self.assertIsNone(unknown["renews_at"])
+        self.assertTrue(active["has_active_subscription"])
+        self.assertEqual(active["renews_at"], "2026-09-05T08:06:08+00:00")
+
 
 if __name__ == "__main__":
     unittest.main()

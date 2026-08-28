@@ -32,6 +32,11 @@ export type Account = {
   }>;
   default_model_slug?: string | null;
   restore_at?: string | null;
+  has_active_subscription?: boolean | null;
+  subscription_plan?: string | null;
+  billing_period?: string | null;
+  renews_at?: string | null;
+  cancels_at?: string | null;
   success: number;
   fail: number;
   /** 当前图片在途数(正在生成、尚未结束的图片数)。号池空闲时持续 > 0 表示并发槽位泄漏。 */
@@ -45,6 +50,11 @@ export type InvoiceAccount = {
   email?: string | null;
   plan?: string | null;
   status?: string | null;
+  has_active_subscription?: boolean | null;
+  subscription_plan?: string | null;
+  billing_period?: string | null;
+  renews_at?: string | null;
+  cancels_at?: string | null;
 };
 
 export type InvoiceItem = {

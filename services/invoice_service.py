@@ -55,6 +55,15 @@ class InvoiceService:
                     "email": str(account.get("email") or "").strip() or None,
                     "plan": str(account.get("type") or "").strip() or None,
                     "status": str(account.get("status") or "").strip() or None,
+                    "has_active_subscription": (
+                        bool(account.get("has_active_subscription"))
+                        if account.get("has_active_subscription") is not None
+                        else None
+                    ),
+                    "subscription_plan": str(account.get("subscription_plan") or "").strip() or None,
+                    "billing_period": str(account.get("billing_period") or "").strip() or None,
+                    "renews_at": str(account.get("renews_at") or "").strip() or None,
+                    "cancels_at": str(account.get("cancels_at") or "").strip() or None,
                 }
             )
         return result

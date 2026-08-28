@@ -320,24 +320,27 @@ class OpenAIBackendAPI:
             self._raise_on_error(response, path)
         return response.json()
 
-    def _get_default_account(self) -> Dict[str, Any]:
+    def _get_default_account(self) -> tuple[Dict[str, Any], Dict[str, Any]]:
         path = "/backend-api/accounts/check/v4-2023-04-27"
         response = self.session.get(self.base_url + path + "?timezone_offset_min=-480", headers=self._headers(path),
                                     timeout=20)
         if response.status_code != 200:
             self._raise_on_error(response, path)
         payload = response.json()
-        default_account = ((payload.get("accounts") or {}).get("default") or {}).get("account") or {}
+        default_entry = (payload.get("accounts") or {}).get("default") or {}
+        default_account = default_entry.get("account") or {}
+        entitlement = default_entry.get("entitlement") or {}
+        entitlement = entitlement if isinstance(entitlement, dict) else {}
         logger.debug({
             "event": "backend_user_info_account_payload",
             "plan_type": default_account.get("plan_type"),
             "account_user_role": default_account.get("account_user_role"),
             "account_id": default_account.get("account_id"),
             "is_deactivated": default_account.get("is_deactivated"),
-            "has_active_subscription": (payload.get("accounts") or {}).get("default", {}).get("entitlement", {}).get("has_active_subscription"),
-            "subscription_plan": (payload.get("accounts") or {}).get("default", {}).get("entitlement", {}).get("subscription_plan"),
+            "has_active_subscription": entitlement.get("has_active_subscription"),
+            "subscription_plan": entitlement.get("subscription_plan"),
         })
-        return default_account
+        return default_account, entitlement
 
     def get_user_info(self) -> Dict[str, Any]:
         """获取当前 token 的账号信息。"""
@@ -348,7 +351,8 @@ class OpenAIBackendAPI:
             me_future = executor.submit(self._get_me)
             init_future = executor.submit(self._get_conversation_init)
             account_future = executor.submit(self._get_default_account)
-            me_payload, init_payload, default_account = me_future.result(), init_future.result(), account_future.result()
+            me_payload, init_payload = me_future.result(), init_future.result()
+            default_account, entitlement = account_future.result()
         except (KeyboardInterrupt, SystemExit):
             executor.shutdown(wait=False, cancel_futures=True)
             raise
@@ -363,6 +367,7 @@ class OpenAIBackendAPI:
         limits_progress = init_payload.get("limits_progress")
         limits_progress = limits_progress if isinstance(limits_progress, list) else []
         quota, restore_at = self._extract_quota_and_restore_at(limits_progress)
+        has_active_subscription = entitlement.get("has_active_subscription")
         result = {
             "email": me_payload.get("email"),
             "user_id": me_payload.get("id"),
@@ -371,6 +376,13 @@ class OpenAIBackendAPI:
             "limits_progress": limits_progress,
             "default_model_slug": init_payload.get("default_model_slug"),
             "restore_at": restore_at,
+            "has_active_subscription": (
+                has_active_subscription if isinstance(has_active_subscription, bool) else None
+            ),
+            "subscription_plan": str(entitlement.get("subscription_plan") or "").strip() or None,
+            "billing_period": str(entitlement.get("billing_period") or "").strip() or None,
+            "renews_at": str(entitlement.get("renews_at") or "").strip() or None,
+            "cancels_at": str(entitlement.get("cancels_at") or "").strip() or None,
             "status": "限流" if quota == 0 else "正常",
         }
         logger.debug({

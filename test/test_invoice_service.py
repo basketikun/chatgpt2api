@@ -92,8 +92,45 @@ class InvoiceServiceTests(unittest.TestCase):
 
         self.assertEqual(
             service.list_account_options(),
-            [{"account_id": "acct_good", "email": "good@example.com", "plan": None, "status": None}],
+            [
+                {
+                    "account_id": "acct_good",
+                    "email": "good@example.com",
+                    "plan": None,
+                    "status": None,
+                    "has_active_subscription": None,
+                    "subscription_plan": None,
+                    "billing_period": None,
+                    "renews_at": None,
+                    "cancels_at": None,
+                }
+            ],
         )
+
+    def test_account_options_expose_server_derived_renewal_fields(self) -> None:
+        accounts = FakeAccounts(
+            [
+                {
+                    "access_token": make_jwt("acct_pro"),
+                    "email": "pro@example.com",
+                    "type": "Pro",
+                    "status": "正常",
+                    "has_active_subscription": True,
+                    "subscription_plan": "chatgptpro",
+                    "billing_period": "monthly",
+                    "renews_at": "2026-09-05T08:06:08+00:00",
+                    "cancels_at": None,
+                }
+            ]
+        )
+        service = InvoiceService(accounts, BackendFactory([]))  # type: ignore[arg-type]
+
+        [option] = service.list_account_options()
+
+        self.assertEqual(option["account_id"], "acct_pro")
+        self.assertEqual(option["renews_at"], "2026-09-05T08:06:08+00:00")
+        self.assertEqual(option["billing_period"], "monthly")
+        self.assertTrue(option["has_active_subscription"])
 
     def test_list_returns_the_validated_invoice_url_from_the_same_fetch(self) -> None:
         accounts = FakeAccounts([{"access_token": make_jwt("acct_a"), "email": "a@example.com"}])

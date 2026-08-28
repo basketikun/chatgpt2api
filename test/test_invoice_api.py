@@ -17,7 +17,16 @@ class FakeInvoiceService:
 
     def list_account_options(self):
         self.calls.append(("accounts",))
-        return [{"account_id": "acct_a", "email": "a@example.com", "plan": "Pro", "status": "正常"}]
+        return [
+            {
+                "account_id": "acct_a",
+                "email": "a@example.com",
+                "plan": "Pro",
+                "status": "正常",
+                "billing_period": "monthly",
+                "renews_at": "2026-09-05T08:06:08+00:00",
+            }
+        ]
 
     def list_invoices(self, account_id: str, limit: int, cursor: str):
         self.calls.append(("list", account_id, limit, cursor))
@@ -68,6 +77,7 @@ class InvoiceApiTests(unittest.TestCase):
 
         self.assertEqual(listed.status_code, 200, listed.text)
         self.assertEqual(listed.json()["items"][0]["invoice_url"], "https://invoice.stripe.com/i/test?s=ap")
+        self.assertEqual(accounts.json()["items"][0]["renews_at"], "2026-09-05T08:06:08+00:00")
         for response in (accounts, listed):
             self.assertIn("no-store", response.headers["cache-control"])
             self.assertEqual(response.headers["pragma"], "no-cache")
