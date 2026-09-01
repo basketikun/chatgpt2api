@@ -344,7 +344,7 @@ def _decode_message_image_url(value: object) -> tuple[bytes, str] | None:
             headers={"Accept": "image/*,*/*;q=0.8", "User-Agent": "chatgpt2api vision fetcher"},
             timeout=REMOTE_IMAGE_TIMEOUT_SECONDS,
             allow_redirects=True,
-            **proxy_settings.build_session_kwargs(),
+            **proxy_settings.build_session_kwargs(resource=True, upstream=True),
         )
     except Exception as exc:
         raise HTTPException(status_code=400, detail={"error": f"image_url fetch failed: {exc}"}) from exc
