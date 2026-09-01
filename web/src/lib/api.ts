@@ -122,6 +122,7 @@ export type ProxyRuntimeSettings = {
   enabled: boolean;
   egress_mode: ProxyRuntimeEgressMode;
   proxy_url: string;
+  resource_proxy_enabled: boolean;
   resource_proxy_url: string;
   skip_ssl_verify: boolean;
   reset_session_status_codes: number[];

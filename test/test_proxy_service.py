@@ -96,12 +96,39 @@ class ProxyServiceTests(unittest.TestCase):
             egress_mode="single_proxy",
             proxy_url="http://runtime.example:8080",
             resource_proxy_url=" socks5://resource.example:1080 ",
+            resource_proxy_enabled=True,
         )
         store = ProxySettingsStore(FakeConfig(legacy_proxy="http://legacy.example:8080", runtime=runtime))
 
         kwargs = store.build_session_kwargs(resource=True, upstream=True)
 
         self.assertEqual(kwargs["proxy"], "socks5h://resource.example:1080")
+
+    def test_resource_requests_stay_direct_until_explicitly_enabled(self) -> None:
+        runtime = make_runtime(
+            enabled=True,
+            egress_mode="single_proxy",
+            proxy_url="http://runtime.example:8080",
+            resource_proxy_url="http://resource.example:1080",
+        )
+        store = ProxySettingsStore(FakeConfig(runtime=runtime))
+
+        kwargs = store.build_session_kwargs(resource=True, upstream=True)
+
+        self.assertNotIn("proxy", kwargs)
+
+    def test_resource_proxy_switch_accepts_string_boolean(self) -> None:
+        runtime = make_runtime(
+            enabled=True,
+            egress_mode="single_proxy",
+            proxy_url="http://runtime.example:8080",
+            resource_proxy_enabled="true",
+        )
+        store = ProxySettingsStore(FakeConfig(runtime=runtime))
+
+        kwargs = store.build_session_kwargs(resource=True, upstream=True)
+
+        self.assertEqual(kwargs["proxy"], "http://runtime.example:8080")
 
     def test_manual_clearance_merges_cookies_and_preserves_explicit_user_agent(self) -> None:
         runtime = make_runtime(
