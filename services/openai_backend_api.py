@@ -2546,13 +2546,37 @@ class OpenAIBackendAPI:
                 sediment_ids.extend(item for item in polled_sediment_ids if item and item not in sediment_ids)
         return self._resolve_image_urls(conversation_id, file_ids, sediment_ids)
 
+    # 图片下载失败时的重试间隔（秒），长度即最大重试次数
+    IMAGE_DOWNLOAD_RETRY_DELAYS = (1.0, 2.0)
+
+    def _download_image_with_retry(self, url: str) -> bytes:
+        """下载单张图片，失败时按固定间隔重试，重试用尽后抛出最后一次异常。"""
+        attempts = len(self.IMAGE_DOWNLOAD_RETRY_DELAYS) + 1
+        for attempt in range(1, attempts + 1):
+            try:
+                response = self.session.get(url, timeout=120)
+                ensure_ok(response, "image_download")
+                return response.content
+            except Exception as exc:
+                if attempt >= attempts:
+                    raise
+                delay = self.IMAGE_DOWNLOAD_RETRY_DELAYS[attempt - 1]
+                logger.warning({
+                    "event": "image_download_retry",
+                    "attempt": attempt,
+                    "max_attempts": attempts,
+                    "delay_secs": delay,
+                    "error": repr(exc)[:300],
+                })
+                time.sleep(delay)
+        raise RuntimeError("unreachable")
+
     def download_image_bytes(self, urls: list[str]) -> list[bytes]:
         images = []
         for url in urls:
-            response = self.session.get(url, timeout=120)
-            ensure_ok(response, "image_download")
-            if response.content not in images:
-                images.append(response.content)
+            content = self._download_image_with_retry(url)
+            if content not in images:
+                images.append(content)
         return images
 
     def stream_conversation(
