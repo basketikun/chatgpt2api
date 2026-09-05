@@ -883,8 +883,10 @@ def stream_image_outputs(
         "conversation_id": conversation_id,
         "file_ids": file_ids,
         "sediment_ids": sediment_ids,
+        "blocked": bool(last.get("blocked")),
         "tool_invoked": last.get("tool_invoked"),
         "turn_use_case": last.get("turn_use_case"),
+        "message_preview": message[:200],
     })
     if request.progress_callback:
         request.progress_callback("image_stream_resolve_start")
@@ -1339,13 +1341,14 @@ def _generate_single_image(
             "index": index,
         })
         backend = None
+        # 本次尝试的上游会话 ID，仅来自本轮 SSE 事件或异常，换账号重试时重新置空
+        last_conversation_id = ""
         try:
             backend = OpenAIBackendAPI(access_token=token)
             if request.progress_callback:
                 backend.progress_callback = request.progress_callback
             stream_fn = stream_codex_image_outputs if is_codex_image_model(request.model) else stream_image_outputs
             outputs: list[ImageOutput] = []
-            last_conversation_id = ""
             try:
                 for output in stream_fn(backend, request, index, total):
                     last_conversation_id = output.conversation_id or last_conversation_id
@@ -1520,7 +1523,7 @@ def _generate_single_image(
                     })
                     time.sleep(wait_secs)
                     continue
-            raise ImageGenerationError(image_stream_error_message(last_error), account_email=account_email, conversation_id="") from exc
+            raise ImageGenerationError(image_stream_error_message(last_error), account_email=account_email, conversation_id=last_conversation_id) from exc
         finally:
             if backend is not None:
                 backend.close()
