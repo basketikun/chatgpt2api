@@ -59,10 +59,10 @@ function getDraggedImageFiles(dataTransfer: DataTransfer) {
 }
 
 const qualityOptions = [
-  { value: "auto", label: "自动" },
-  { value: "low", label: "低" },
-  { value: "medium", label: "中" },
-  { value: "high", label: "高" },
+  { value: "auto", label: "Auto" },
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
 ];
 const aspectOptions = [
   { ratio: "1:1", tier: "1k", width: "1024", height: "1024", label: "1:1", icon: Square },
@@ -232,11 +232,11 @@ export function ImageComposer({
                     setLightboxOpen(true);
                   }}
                   className="group size-14 overflow-hidden rounded-2xl border border-stone-200 bg-stone-50 transition hover:border-stone-300 sm:size-16"
-                  aria-label={`预览参考图 ${image.name || index + 1}`}
+                  aria-label={`${t.common.imagePreview} ${image.name || index + 1}`}
                 >
                   <img
                     src={image.dataUrl}
-                    alt={image.name || `参考图 ${index + 1}`}
+                    alt={image.name || `${t.image.referenceImage} ${index + 1}`}
                     className="h-full w-full object-cover"
                   />
                 </button>
@@ -247,7 +247,7 @@ export function ImageComposer({
                     onRemoveReferenceImage(index);
                   }}
                   className="absolute -right-1 -top-1 inline-flex size-5 items-center justify-center rounded-full border border-stone-200 bg-white text-stone-500 transition hover:border-stone-300 hover:text-stone-800"
-                  aria-label={`移除参考图 ${image.name || index + 1}`}
+                  aria-label={`${t.image.removeReference} ${image.name || index + 1}`}
                 >
                   <X className="size-3" />
                 </button>
@@ -352,9 +352,9 @@ export function ImageComposer({
                           width: "min(460px, calc(100vw - 2rem))",
                         }}
                       >
-                        <h3 className="mb-3 text-base font-semibold text-stone-950">图像设置</h3>
+                        <h3 className="mb-3 text-base font-semibold text-stone-950">{t.image.imageSettings}</h3>
                         <div className="mb-3">
-                          <div className="mb-2 text-sm font-medium text-stone-900">模型</div>
+                          <div className="mb-2 text-sm font-medium text-stone-900">{t.image.model}</div>
                           <Select
                             value={imageModel}
                             onValueChange={(value) => {
@@ -392,10 +392,18 @@ export function ImageComposer({
                           </Select>
                         </div>
                         <div className="mb-3">
-                          <div className="mb-2 text-sm font-medium text-stone-900">质量</div>
+                          <div className="mb-2 text-sm font-medium text-stone-900">{t.image.quality}</div>
                           <div className="grid grid-cols-4 gap-2">
                             {qualityOptions.map((option) => {
                               const active = option.value === imageQuality;
+                              const label =
+                                option.value === "auto"
+                                  ? t.image.qualityAuto
+                                  : option.value === "low"
+                                    ? t.image.qualityLow
+                                    : option.value === "medium"
+                                      ? t.image.qualityMedium
+                                      : t.image.qualityHigh;
                               return (
                                 <button
                                   key={option.value}
@@ -406,7 +414,7 @@ export function ImageComposer({
                                   )}
                                   onClick={() => onImageQualityChange(option.value)}
                                 >
-                                  {option.label}
+                                  {label}
                                 </button>
                               );
                             })}
@@ -414,7 +422,7 @@ export function ImageComposer({
                         </div>
                         <div className="mb-3">
                           <div className="mb-2 flex items-center gap-1.5 text-sm font-medium text-stone-900">
-                            尺寸 <Info className="size-3.5 text-stone-400" />
+                            {t.image.tier} <Info className="size-3.5 text-stone-400" />
                           </div>
                           <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
                             <div className="flex items-center rounded-lg bg-stone-100 px-3 py-1.5 text-sm text-stone-700">
@@ -444,7 +452,7 @@ export function ImageComposer({
                         </div>
                         <div className="mb-3">
                           <div className="mb-2 flex items-center gap-1.5 text-sm font-medium text-stone-900">
-                            宽高比 <Info className="size-3.5 text-stone-400" />
+                            {t.image.ratio} <Info className="size-3.5 text-stone-400" />
                           </div>
                           <div className="grid grid-cols-4 gap-2 sm:grid-cols-5">
                             {aspectOptions.map((option) => {
