@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import webConfig from "@/constants/common-env";
 import { useVersionCheck } from "@/hooks/use-version-check";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 function typeVariant(type: string): "success" | "danger" | "info" | "violet" | "outline" {
@@ -23,6 +24,7 @@ function typeVariant(type: string): "success" | "danger" | "info" | "violet" | "
 }
 
 export function VersionReleaseDialog({ className }: { className?: string }) {
+  const { t } = useI18n();
   const {
     open,
     setOpen,
@@ -34,6 +36,14 @@ export function VersionReleaseDialog({ className }: { className?: string }) {
     checkLatestRelease,
   } = useVersionCheck();
 
+  const renderType = (type: string) => {
+    if (type === "新增") return t.release.tagNew;
+    if (type === "修复") return t.release.tagFix;
+    if (type === "调整") return t.release.tagTweak;
+    if (type === "文档") return t.release.tagDoc;
+    return type;
+  };
+
   return (
     <>
       <button
@@ -43,7 +53,7 @@ export function VersionReleaseDialog({ className }: { className?: string }) {
           className,
         )}
         onClick={openReleaseModal}
-        title="查看版本更新"
+        title={t.release.checkUpdate}
       >
         v{webConfig.appVersion}
         {hasNewVersion ? (
@@ -53,12 +63,12 @@ export function VersionReleaseDialog({ className }: { className?: string }) {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="w-[min(94vw,680px)] rounded-2xl">
           <DialogHeader>
-            <DialogTitle>版本更新</DialogTitle>
+            <DialogTitle>{t.release.title}</DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3">
-            <VersionCard label="当前版本" value={webConfig.appVersion} />
+            <VersionCard label={t.release.currentVersion} value={webConfig.appVersion} />
             <VersionCard
-              label="最新版本"
+              label={t.release.latestVersion}
               value={latestVersion}
               action={
                 <button
@@ -66,7 +76,7 @@ export function VersionReleaseDialog({ className }: { className?: string }) {
                   className="text-[11px] text-stone-400 underline-offset-2 hover:text-stone-700 hover:underline dark:hover:text-stone-200"
                   onClick={() => void checkLatestRelease(true)}
                 >
-                  {checking ? "检查中..." : "检查更新"}
+                  {checking ? t.release.checking : t.release.checkUpdate}
                 </button>
               }
             />
@@ -76,17 +86,17 @@ export function VersionReleaseDialog({ className }: { className?: string }) {
               <div key={release.version} className="border-l border-stone-200 pl-4 dark:border-white/10">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-sm font-semibold text-stone-950 dark:text-stone-100">
-                    {release.version === "Unreleased" ? "未发布" : release.version}
+                    {release.version === "Unreleased" ? t.release.unreleased : release.version}
                   </span>
                   <span className="text-xs text-stone-500 dark:text-stone-400">{release.date}</span>
-                  {release.version === latestVersion ? <Badge variant="success">最新</Badge> : null}
-                  {release.version === webConfig.appVersion ? <Badge variant="outline">当前</Badge> : null}
+                  {release.version === latestVersion ? <Badge variant="success">{t.release.latest}</Badge> : null}
+                  {release.version === webConfig.appVersion ? <Badge variant="outline">{t.release.current}</Badge> : null}
                 </div>
                 <div className="mt-2 space-y-1.5">
                   {release.items.map((item, index) => (
                     <div key={index} className="flex items-start gap-2 text-sm leading-6 text-stone-700 dark:text-stone-300">
                       <Badge variant={typeVariant(item.type)} className="mt-0.5 shrink-0">
-                        {item.type}
+                        {renderType(item.type)}
                       </Badge>
                       <span className="min-w-0 flex-1">{item.content}</span>
                     </div>
@@ -97,7 +107,7 @@ export function VersionReleaseDialog({ className }: { className?: string }) {
           </div>
           <Button variant="outline" size="sm" asChild>
             <a href="https://github.com/basketikun/chatgpt2api" target="_blank" rel="noreferrer">
-              前往 GitHub 更新
+              {t.release.goToGithub}
             </a>
           </Button>
         </DialogContent>

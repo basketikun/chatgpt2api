@@ -12,19 +12,9 @@ import { Sheet, SheetClose, SheetContent, SheetFooter, SheetHeader, SheetTitle, 
 import webConfig from "@/constants/common-env";
 import { fetchThirdPartyApps, type ThirdPartyAppsSettings } from "@/lib/api";
 import { getValidatedAuthSession } from "@/lib/auth-session";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { clearStoredAuthSession, type StoredAuthSession } from "@/store/auth";
-
-const adminNavItems = [
-  { href: "/image", label: "生图" },
-  { href: "/accounts", label: "号池管理" },
-  { href: "/image-manager", label: "图片管理" },
-  { href: "/logs", label: "日志管理" },
-  { href: "/debug", label: "调试" },
-  { href: "/settings", label: "设置" },
-];
-
-const userNavItems = [{ href: "/image", label: "画图" }];
 
 function buildThirdPartyHref(appUrl: string, baseUrl: string, apiKey: string) {
   const url = appUrl.trim();
@@ -39,6 +29,7 @@ function buildThirdPartyHref(appUrl: string, baseUrl: string, apiKey: string) {
 }
 
 export function TopNav() {
+  const { t } = useI18n();
   const pathname = usePathname();
   const router = useRouter();
   const [session, setSession] = useState<StoredAuthSession | null | undefined>(undefined);
@@ -107,8 +98,19 @@ export function TopNav() {
     return null;
   }
 
+  const adminNavItems = [
+    { href: "/image", label: t.nav.imageGen },
+    { href: "/accounts", label: t.nav.accounts },
+    { href: "/image-manager", label: t.nav.imageManager },
+    { href: "/logs", label: t.nav.logs },
+    { href: "/debug", label: t.nav.debug },
+    { href: "/settings", label: t.nav.settings },
+  ];
+
+  const userNavItems = [{ href: "/image", label: t.nav.draw }];
+
   const navItems = session.role === "admin" ? adminNavItems : userNavItems;
-  const roleLabel = session.role === "admin" ? "管理员" : "普通用户";
+  const roleLabel = session.role === "admin" ? t.nav.admin : t.nav.user;
   const displayName = session.name.trim() || roleLabel;
   const baseUrl = webConfig.apiUrl.replace(/\/$/, "") || window.location.origin;
   const canvas = thirdPartyApps?.infinite_canvas;
@@ -137,7 +139,7 @@ export function TopNav() {
             <Sheet>
               <SheetTrigger className="inline-flex size-8 items-center justify-center text-stone-700 transition hover:text-stone-950 sm:hidden dark:text-stone-200 dark:hover:text-white">
                 <Menu className="size-4" />
-                <span className="sr-only">打开导航</span>
+                <span className="sr-only">{t.nav.openNav}</span>
               </SheetTrigger>
               <SheetContent side="left">
                 <SheetHeader>
@@ -152,7 +154,7 @@ export function TopNav() {
                         className="flex items-center rounded-xl px-3 py-2.5 text-left text-sm font-medium text-stone-600 transition hover:bg-stone-100 hover:text-stone-950 dark:text-stone-300 dark:hover:bg-white/10 dark:hover:text-white"
                         onClick={handleCanvasOpen}
                       >
-                        无限画布
+                        {t.nav.canvas}
                       </button>
                     </SheetClose>
                   ) : null}
@@ -175,7 +177,7 @@ export function TopNav() {
                     className="rounded-xl border border-stone-200 px-3 py-2.5 text-left text-sm font-medium text-stone-500 transition hover:text-stone-950 dark:border-white/10 dark:text-stone-300 dark:hover:text-white"
                     onClick={() => void handleLogout()}
                   >
-                    退出
+                    {t.nav.logout}
                   </button>
                 </SheetFooter>
               </SheetContent>
@@ -195,7 +197,7 @@ export function TopNav() {
                 onClick={handleCanvasOpen}
                 className="relative shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[13px] font-medium text-stone-500 transition hover:text-stone-900 sm:rounded-none sm:px-0 sm:text-[15px] dark:text-stone-400 dark:hover:text-stone-100"
               >
-                无限画布
+                {t.nav.canvas}
               </button>
             ) : null}
             {navItems.map((item) => {
@@ -227,7 +229,7 @@ export function TopNav() {
               className="py-1 text-xs text-stone-400 transition hover:text-stone-700 dark:text-stone-500 dark:hover:text-stone-200 sm:text-sm"
               onClick={() => void handleLogout()}
             >
-              退出
+              {t.nav.logout}
             </button>
           </div>
         </div>
@@ -235,13 +237,13 @@ export function TopNav() {
       <Dialog open={isCanvasDialogOpen} onOpenChange={setIsCanvasDialogOpen}>
         <DialogContent showCloseButton={false} className="rounded-2xl p-6">
           <DialogHeader className="gap-2">
-            <DialogTitle>跳转到三方应用</DialogTitle>
+            <DialogTitle>{t.nav.canvas}</DialogTitle>
             <DialogDescription className="text-sm leading-6">
-              该入口仅供个人测试使用，建议自行本机部署后再长期使用。跳转地址会默认带上本项目地址和当前密钥，用于自动填充连接信息；如果不放心，可以取消后手动前往应用并自行输入。
+              {t.nav.canvasDesc}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <div className="text-xs font-medium text-stone-500">完整跳转地址</div>
+            <div className="text-xs font-medium text-stone-500">{t.nav.canvasFullUrl}</div>
             <div className="max-h-28 overflow-auto break-all rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 font-mono text-xs leading-5 text-stone-700">
               {canvasDisplayHref}
             </div>
@@ -249,11 +251,11 @@ export function TopNav() {
           <DialogFooter className="pt-2">
             <DialogClose asChild>
               <Button type="button" variant="outline" className="rounded-xl border-stone-200 bg-white text-stone-700">
-                取消
+                {t.common.cancel}
               </Button>
             </DialogClose>
             <Button type="button" className="rounded-xl bg-stone-950 text-white hover:bg-stone-800" onClick={confirmCanvasOpen}>
-              继续跳转
+              {t.nav.canvasConfirm}
             </Button>
           </DialogFooter>
         </DialogContent>

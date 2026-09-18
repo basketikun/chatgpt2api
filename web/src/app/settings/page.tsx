@@ -12,23 +12,13 @@ import { ConfigCard } from "./components/config-card";
 import { CPAPoolDialog } from "./components/cpa-pool-dialog";
 import { CPAPoolsCard } from "./components/cpa-pools-card";
 import { ImportBrowserDialog } from "./components/import-browser-dialog";
+import { useI18n } from "@/lib/i18n";
 import { ProxyRuntimeCard } from "./components/proxy-runtime-card";
 import { SettingsHeader } from "./components/settings-header";
 import { Sub2APIConnections } from "./components/sub2api-connections";
 import { ThirdPartyAppsCard } from "./components/third-party-apps-card";
 import { UserKeysCard } from "./components/user-keys-card";
 import { useSettingsStore } from "./store";
-
-const settingsTabs = [
-  { value: "basic", title: "基础配置" },
-  { value: "backup", title: "备份" },
-  { value: "keys", title: "用户密钥" },
-  { value: "api-docs", title: "接口接入" },
-  { value: "canvas", title: "画布入口" },
-  { value: "proxy", title: "FlareSolverr" },
-  { value: "cpa", title: "CPA" },
-  { value: "sub2api", title: "Sub2API" },
-];
 
 function SettingsDataController() {
   const didLoadRef = useRef(false);
@@ -75,6 +65,18 @@ function SettingsDataController() {
 }
 
 function SettingsPageContent() {
+  const { t } = useI18n();
+  const settingsTabs = [
+    { value: "basic", title: t.settings.tabBasic },
+    { value: "backup", title: t.settings.tabBackup },
+    { value: "keys", title: t.settings.tabKeys },
+    { value: "api-docs", title: t.settings.tabApiDocs },
+    { value: "canvas", title: t.settings.tabCanvas },
+    { value: "proxy", title: t.settings.tabProxy },
+    { value: "cpa", title: t.settings.tabCpa },
+    { value: "sub2api", title: t.settings.tabSub2api },
+  ];
+
   return (
     <>
       <SettingsDataController />

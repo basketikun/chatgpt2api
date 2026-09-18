@@ -5,8 +5,8 @@ import { ThemeScript } from "@/components/theme-script";
 import { TopNav } from "@/components/top-nav";
 
 export const metadata: Metadata = {
-  title: "ChatGPT 号池管理",
-  description: "ChatGPT account pool management dashboard",
+  title: "chatgpt2api - Account Pool & Image Generation",
+  description: "ChatGPT account pool management and image generation platform",
 };
 
 export const viewport: Viewport = {
@@ -26,7 +26,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-CN" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <head>
         <ThemeScript />
       </head>
@@ -34,7 +34,7 @@ export default function RootLayout({
         className="antialiased"
         style={{
           fontFamily:
-            '"SF Pro Display","SF Pro Text","PingFang SC","Microsoft YaHei","Helvetica Neue",sans-serif',
+            '"SF Pro Display","SF Pro Text","Vazirmatn","Segoe UI","Tahoma","PingFang SC","Microsoft YaHei","Helvetica Neue",sans-serif',
         }}
       >
         <Toaster position="top-center" richColors offset={48} />

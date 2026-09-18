@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import type { ImageModel } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 type ImageComposerProps = {
@@ -108,6 +109,7 @@ export function ImageComposer({
   onReferenceImageChange,
   onRemoveReferenceImage,
 }: ImageComposerProps) {
+  const { t } = useI18n();
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [isSizeMenuOpen, setIsSizeMenuOpen] = useState(false);
@@ -123,9 +125,9 @@ export function ImageComposer({
     () => imageModels.map((model) => ({ value: model, label: model })),
     [imageModels],
   );
-  const qualityLabel = qualityOptions.find((option) => option.value === imageQuality)?.label || "自动";
-  const ratioLabel = imageRatio === "auto" ? "auto" : `${imageRatio}(${imageTier})`;
-  const imageSizeLabel = `${qualityLabel} · ${ratioLabel} · ${imageCount || 1} 张`;
+  const qualityLabel = qualityOptions.find((option) => option.value === imageQuality)?.label || t.common.auto;
+  const ratioLabel = imageRatio === "auto" ? t.common.auto : `${imageRatio}(${imageTier})`;
+  const imageSizeLabel = `${qualityLabel} · ${ratioLabel} · ${imageCount || 1}`;
   const selectedModelLabel = modelOptions.find((option) => option.value === imageModel)?.label || imageModel;
   const isCodexModel = imageModel.toLowerCase().includes("codex");
 
@@ -282,11 +284,7 @@ export function ImageComposer({
               value={prompt}
               onChange={(event) => onPromptChange(event.target.value)}
               onPaste={handleTextareaPaste}
-              placeholder={
-                referenceImages.length > 0
-                  ? "描述你希望如何修改参考图"
-                  : "输入你想要生成的画面，也可直接粘贴图片"
-              }
+              placeholder={t.image.promptPlaceholder}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
@@ -299,7 +297,7 @@ export function ImageComposer({
               <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-[24px] border-2 border-dashed border-stone-900 bg-white/85 text-sm font-medium text-stone-900 backdrop-blur-[1px] sm:rounded-[32px]">
                 <div className="flex items-center gap-2 rounded-full bg-stone-950 px-4 py-2 text-white shadow-lg">
                   <ImagePlus className="size-4" />
-                  <span>松开以上传参考图</span>
+                  <span>{t.image.addReference}</span>
                 </div>
               </div>
             ) : null}
@@ -312,18 +310,18 @@ export function ImageComposer({
                     variant="outline"
                     className="h-9 shrink-0 rounded-full border-stone-200 bg-white px-3 text-xs font-medium text-stone-700 shadow-none sm:h-10 sm:px-4 sm:text-sm"
                     onClick={onPickReferenceImage}
-                    aria-label={referenceImages.length > 0 ? "添加参考图" : "上传"}
+                    aria-label={t.image.addReference}
                   >
                     <ImagePlus className="size-3.5 sm:size-4" />
-                    <span className="hidden sm:inline">{referenceImages.length > 0 ? "添加参考图" : "上传"}</span>
+                    <span className="hidden sm:inline">{t.image.addReference}</span>
                   </Button>
                   <div className="shrink-0 rounded-full bg-stone-100 px-2 py-1 text-[10px] font-medium text-stone-600 sm:px-3 sm:py-2 sm:text-xs">
-                    <span className="hidden sm:inline">剩余额度 </span>{availableQuota}
+                    <span className="hidden sm:inline">{t.image.availableQuota} </span>{availableQuota}
                   </div>
                   {activeTaskCount > 0 && (
                     <div className="flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-[10px] font-medium text-amber-700 sm:gap-1.5 sm:px-3 sm:py-2 sm:text-xs">
                       <LoaderCircle className="size-3 animate-spin" />
-                      {activeTaskCount}<span className="hidden sm:inline"> 个任务处理中</span>
+                      {activeTaskCount}<span className="hidden sm:inline"> {t.image.inQueue}</span>
                     </div>
                   )}
                   <div className="relative flex h-9 min-w-0 shrink items-center rounded-full bg-transparent text-[11px] sm:h-auto sm:shrink-0 sm:text-[13px]">
@@ -487,7 +485,7 @@ export function ImageComposer({
                           </div>
                         </div>
                         <div className="border-t border-stone-100 pt-3">
-                          <div className="mb-2 text-sm font-medium text-stone-900">生成数量</div>
+                          <div className="mb-2 text-sm font-medium text-stone-900">{t.image.count}</div>
                           <div className="grid grid-cols-4 gap-2 sm:grid-cols-5">
                             {countOptions.map((option) => {
                               const active = imageCount === option;
@@ -501,7 +499,7 @@ export function ImageComposer({
                                   )}
                                   onClick={() => onImageCountChange(option)}
                                 >
-                                  {option} 张
+                                  {option}
                                 </button>
                               );
                             })}
@@ -528,7 +526,7 @@ export function ImageComposer({
                   onClick={() => void onSubmit()}
                   disabled={!prompt.trim()}
                   className="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-stone-950 text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-300 sm:size-11"
-                  aria-label={referenceImages.length > 0 ? "编辑图片" : "生成图片"}
+                  aria-label={t.image.generate}
                 >
                   <ArrowUp className="size-3.5 sm:size-4" />
                 </button>

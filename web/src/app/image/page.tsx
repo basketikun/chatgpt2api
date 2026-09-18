@@ -29,6 +29,7 @@ import {
   type Model,
   type ImageTask,
 } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { useSettingsStore } from "@/app/settings/store";
 import {
@@ -445,6 +446,7 @@ async function recoverConversationHistory(items: ImageConversation[]) {
 
 
 function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
+  const { t, locale } = useI18n();
   const didLoadQuotaRef = useRef(false);
   const conversationsRef = useRef<ImageConversation[]>([]);
   const loadCancelledRef = useRef(false);
@@ -477,7 +479,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
   const [conversations, setConversations] = useState<ImageConversation[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
-  const [availableQuota, setAvailableQuota] = useState("加载中...");
+  const [availableQuota, setAvailableQuota] = useState("--");
   const [lightboxImages, setLightboxImages] = useState<ImageLightboxItem[]>([]);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
@@ -510,23 +512,35 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
   );
   const deleteConfirmTitle =
     deleteConfirm?.type === "all"
-      ? "清空历史记录"
+      ? t.image.clearHistory
       : deleteConfirm?.type === "prompt"
-        ? "删除提示词记录"
+        ? t.image.deleteTurn
         : deleteConfirm?.type === "results"
-          ? "删除生成结果"
+          ? t.image.deleteResults
           : deleteConfirm?.type === "one"
-            ? "删除对话"
+            ? t.image.deleteChat
             : "";
   const deleteConfirmDescription =
     deleteConfirm?.type === "all"
-      ? "确认删除全部图片历史记录吗？删除后无法恢复。"
+      ? t.image.clearHistoryConfirm
       : deleteConfirm?.type === "prompt"
-        ? "确认删除这条提示词记录吗？对应生成结果会保留。"
+        ? (locale === "fa"
+            ? "آیا از حذف این پرامپت اطمینان دارید؟ نتایج تولید شده باقی می‌مانند."
+            : locale === "ar"
+              ? "هل أنت متأكد من حذف سجل الطلب؟ ستبقى النتائج المولدة."
+              : locale === "zh"
+                ? "确认删除这条提示词记录吗？对应生成结果会保留。"
+                : "Are you sure you want to delete this prompt record? Generated results will be kept.")
         : deleteConfirm?.type === "results"
-          ? "确认删除这条生成结果吗？对应提示词记录会保留。"
+          ? (locale === "fa"
+              ? "آیا از حذف این نتایج تولید شده اطمینان دارید؟ پرامپت باقی می‌ماند."
+              : locale === "ar"
+                ? "هل أنت متأكد من حذف هذه النتائج؟ سيبقى نص الطلب."
+                : locale === "zh"
+                  ? "确认删除这条生成结果吗？对应提示词记录会保留。"
+                  : "Are you sure you want to delete these results? The prompt record will be kept.")
           : deleteConfirm?.type === "one"
-            ? "确认删除这条图片对话吗？删除后无法恢复。"
+            ? t.image.deleteChatConfirm
             : "";
 
   useEffect(() => {
@@ -1631,7 +1645,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
             <DialogHeader className="px-6 pt-7 pb-4 sm:px-8">
               <DialogTitle className="flex items-center gap-2 text-xl font-bold tracking-tight">
                 <History className="size-5" />
-                历史记录
+                {t.image.history}
               </DialogTitle>
             </DialogHeader>
             <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-8 sm:px-8">
@@ -1665,14 +1679,14 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
               onClick={() => setIsHistoryOpen(true)}
             >
               <History className="mr-2 size-4" />
-              历史记录 ({conversations.length})
+              {t.image.history} ({conversations.length})
             </Button>
             <Button
               className="h-10 rounded-2xl bg-stone-950 text-white shadow-sm"
               onClick={handleCreateDraft}
             >
               <Plus className="size-4" />
-              新建
+              {t.image.newChat}
             </Button>
             <Button
               variant="outline"
@@ -1709,8 +1723,8 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
             <button
               ref={scrollToLatestBtnRef}
               type="button"
-              aria-label="滚动到最新消息"
-              title="滚动到最新消息"
+              aria-label={t.image.scrollToBottom}
+              title={t.image.scrollToBottom}
               onClick={() => scrollResultsToLatest("smooth")}
               className="absolute bottom-4 left-1/2 z-20 inline-flex size-11 -translate-x-1/2 items-center justify-center rounded-full border border-stone-200 bg-white/95 text-stone-700 shadow-lg shadow-stone-200/60 backdrop-blur transition hover:-translate-y-0.5 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-400 dark:border-white/10 dark:bg-stone-800/95 dark:text-stone-100 dark:shadow-black/40 dark:hover:bg-stone-700"
               style={{ display: "none" }}
@@ -1769,10 +1783,10 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
             </DialogHeader>
             <DialogFooter>
               <Button variant="outline" onClick={() => setDeleteConfirm(null)}>
-                取消
+                {t.common.cancel}
               </Button>
               <Button className="bg-rose-600 text-white hover:bg-rose-700" onClick={() => void handleConfirmDelete()}>
-                确认删除
+                {t.common.delete}
               </Button>
             </DialogFooter>
           </DialogContent>

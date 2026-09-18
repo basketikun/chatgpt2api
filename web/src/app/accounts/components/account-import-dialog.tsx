@@ -36,6 +36,7 @@ import {
   type AccountImportPayload,
   type OAuthLoginStartResponse,
 } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 type ImportMethod = "menu" | "token" | "session" | "codex-auth" | "account-json" | "oauth";
@@ -182,6 +183,7 @@ function MethodCard({
 
 export function AccountImportDialog({ disabled, onImported }: AccountImportDialogProps) {
   const router = useRouter();
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [method, setMethod] = useState<ImportMethod>("menu");
   const [tokenInput, setTokenInput] = useState("");
@@ -779,35 +781,35 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
           disabled={disabled}
         >
           <Upload className="size-4" />
-          导入
+          {t.accounts.importAccounts}
         </Button>
         <DialogContent showCloseButton={false} className="rounded-2xl p-6">
           <DialogHeader className="gap-2">
             <DialogTitle>
               {method === "menu"
-                ? "导入账户"
+                ? t.accounts.importAccounts
                 : method === "token"
-                  ? "导入 Access Token"
+                  ? "Access Token"
                   : method === "session"
-                    ? "导入 Session JSON"
+                    ? "Session JSON"
                     : method === "codex-auth"
-                      ? "导入 Codex 认证 JSON"
+                      ? "Codex JSON"
                     : method === "oauth"
-                      ? "OAuth 登录已有账号"
-                      : "导入账号 JSON"}
+                      ? t.accountImport.loginWithOpenAI
+                      : t.accountImport.tabBatch}
             </DialogTitle>
             <DialogDescription className="text-sm leading-6">
               {method === "menu"
-                ? "选择一种导入方式。导入成功后会自动拉取邮箱、类型和额度。"
+                ? t.accountImport.batchDesc
                 : method === "token"
-                  ? "支持手动粘贴或从 TXT 文件导入，一行一个 Token。"
+                  ? t.accountImport.sessionDesc
                   : method === "session"
-                    ? "粘贴完整 Session JSON，系统会自动提取 accessToken。"
+                    ? t.accountImport.sessionDesc
                     : method === "codex-auth"
-                      ? "粘贴 Codex 认证 JSON，系统会按 codex 来源导入。"
+                      ? t.accountImport.batchDesc
                     : method === "oauth"
-                      ? "用浏览器跑一遍 OpenAI 标准 OAuth，拿回 refresh_token 后系统会自动续期。"
-                      : "支持读取本项目导出的单账号对象或全部账号数组，并在提交前做数量确认。"}
+                      ? t.accountImport.oauthWaiting
+                      : t.accountImport.batchDesc}
             </DialogDescription>
           </DialogHeader>
 
@@ -820,7 +822,7 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
               onClick={() => setOpen(false)}
               disabled={footerDisabled}
             >
-              取消
+              {t.common.cancel}
             </Button>
             {method === "token" ? (
               <Button
@@ -829,7 +831,7 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
                 disabled={footerDisabled}
               >
                 {isSubmitting ? <LoaderCircle className="size-4 animate-spin" /> : null}
-                导入 Token
+                {t.accountImport.importBtn}
               </Button>
             ) : null}
             {method === "session" ? (
@@ -839,7 +841,7 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
                 disabled={footerDisabled}
               >
                 {isSubmitting ? <LoaderCircle className="size-4 animate-spin" /> : null}
-                导入 JSON
+                {t.accountImport.importBtn}
               </Button>
             ) : null}
             {method === "codex-auth" ? (
@@ -849,7 +851,7 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
                 disabled={footerDisabled}
               >
                 {isSubmitting ? <LoaderCircle className="size-4 animate-spin" /> : null}
-                导入 JSON
+                {t.accountImport.importBtn}
               </Button>
             ) : null}
             {method === "oauth" ? (
@@ -862,7 +864,7 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
                 disabled={footerDisabled || !oauthSession || !oauthCallbackInput.trim()}
               >
                 {isSubmitting ? <LoaderCircle className="size-4 animate-spin" /> : null}
-                完成导入
+                {t.accountImport.importBtn}
               </Button>
             ) : null}
             {method === "account-json" ? (
@@ -874,7 +876,7 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
                 onClick={() => setConfirmOpen(true)}
                 disabled={footerDisabled || !pendingAccountJsonImport}
               >
-                查看导入确认
+                {t.common.confirm}
               </Button>
             ) : null}
           </DialogFooter>
@@ -884,14 +886,11 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent className="rounded-2xl p-6">
           <DialogHeader className="gap-2">
-            <DialogTitle>确认导入账号 Token</DialogTitle>
+            <DialogTitle>{t.accounts.importAccounts}</DialogTitle>
             <DialogDescription className="text-sm leading-6">
               {pendingAccountJsonImport
-                ? `确认识别到 ${pendingAccountJsonImport.parsedAccountCount} 个 Token，是否确认导入？`
-                : "尚未读取到可导入的 Token。"}
-              {pendingAccountJsonImport?.errorCount
-                ? `，另有 ${pendingAccountJsonImport.errorCount} 个文件未提取成功。`
-                : "。"}
+                ? `${pendingAccountJsonImport.parsedAccountCount} Tokens`
+                : ""}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="pt-2">
@@ -901,21 +900,21 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
               onClick={() => setConfirmOpen(false)}
               disabled={isSubmitting}
             >
-              返回
+              {t.common.back}
             </Button>
             <Button
               className="h-10 rounded-xl bg-stone-950 px-5 text-white hover:bg-stone-800"
               onClick={() =>
                 void submitTokens(
                   pendingAccountJsonImport?.tokens ?? [],
-                  "账号 JSON 导入完成",
+                  "Success",
                   pendingAccountJsonImport?.accounts ?? [],
                 )
               }
               disabled={isSubmitting || !pendingAccountJsonImport}
             >
               {isSubmitting ? <LoaderCircle className="size-4 animate-spin" /> : null}
-              确认导入
+              {t.common.confirm}
             </Button>
           </DialogFooter>
         </DialogContent>
