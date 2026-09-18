@@ -1,0 +1,26 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    expose:
+      - "80"
+    environment:
+      - SERVICE_FQDN_APP_80=${SERVICE_FQDN_APP_80:-https://gpt.account30t.com}
+      - STORAGE_BACKEND=${STORAGE_BACKEND:-sqlite}
+      - DATABASE_URL=${DATABASE_URL:-sqlite:////app/data/accounts.db}
+      - CHATGPT2API_AUTH_KEY=${CHATGPT2API_AUTH_KEY:-chatgpt2api}
+      - CHATGPT2API_BASE_URL=${CHATGPT2API_BASE_URL:-https://gpt.account30t.com}
+      - CHATGPT2API_CONFIG_FILE=/app/data/config.json
+    volumes:
+      - chatgpt2api-data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:80/health?format=json >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  chatgpt2api-data:

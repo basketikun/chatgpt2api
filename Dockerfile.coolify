@@ -1,0 +1,58 @@
+# Stage 1: Build Web Frontend
+FROM node:22-alpine AS web-build
+
+WORKDIR /app/web
+
+COPY web/package.json web/bun.lock ./
+RUN npm install
+
+COPY VERSION /app/VERSION
+COPY CHANGELOG.md /app/CHANGELOG.md
+COPY web ./
+RUN NEXT_PUBLIC_APP_VERSION="$(cat /app/VERSION)" npm run build
+
+
+# Stage 2: Runtime Application
+FROM python:3.13-slim AS app
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    UV_LINK_MODE=copy
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    libpq-dev \
+    gcc \
+    openssl \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir uv
+
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
+
+COPY main.py ./
+COPY config.json ./
+COPY config.json ./config.json.template
+COPY VERSION ./
+COPY api ./api
+COPY services ./services
+COPY utils ./utils
+COPY scripts ./scripts
+COPY --from=web-build /app/web/out ./web_dist
+
+# Pre-sync project into virtual environment for instant boot
+RUN uv sync --frozen --no-dev
+
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
+
+VOLUME ["/app/data"]
+EXPOSE 80
+
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
+CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "80", "--access-log"]

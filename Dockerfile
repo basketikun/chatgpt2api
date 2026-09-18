@@ -35,6 +35,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     gcc \
     openssl \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir uv
@@ -44,6 +45,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 
 COPY main.py ./
 COPY config.json ./
+COPY config.json ./config.json.template
 COPY VERSION ./
 COPY api ./api
 COPY services ./services
@@ -51,6 +53,14 @@ COPY utils ./utils
 COPY scripts ./scripts
 COPY --from=web-build /app/web/out ./web_dist
 
+# Pre-install project into virtual environment for instant boot
+RUN uv sync --frozen --no-dev
+
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
+
+VOLUME ["/app/data"]
 EXPOSE 80
 
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "80", "--access-log"]
