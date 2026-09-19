@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap');
+@import url('https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css');
 @import "tailwindcss";
 @import "tw-animate-css";
 
@@ -228,4 +230,41 @@
 ::view-transition-old(root), ::view-transition-new(root) {
     animation: none;
     mix-blend-mode: normal;
+}
+
+:root {
+  --font-vazirmatn: 'Vazirmatn', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+[dir="rtl"],
+html.rtl,
+html[dir="rtl"],
+body.rtl,
+[lang="fa"],
+[lang="ar"],
+[lang="fa"] body,
+[lang="ar"] body {
+  font-family: var(--font-vazirmatn) !important;
+  direction: rtl;
+  text-align: right;
+}
+
+html[dir="rtl"] input,
+html[dir="rtl"] textarea,
+html[dir="rtl"] select,
+html[dir="rtl"] button {
+  font-family: var(--font-vazirmatn) !important;
+}
+
+/* Ensure code blocks, tokens, email inputs, URLs, and English elements stay LTR */
+html[dir="rtl"] code,
+html[dir="rtl"] pre,
+html[dir="rtl"] .font-mono,
+html[dir="rtl"] input[type="password"],
+html[dir="rtl"] input[type="email"],
+html[dir="rtl"] input[type="url"],
+html[dir="rtl"] .ltr-dir,
+html[dir="rtl"] [dir="ltr"] {
+  direction: ltr !important;
+  text-align: left !important;
 }

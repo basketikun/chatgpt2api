@@ -137,10 +137,13 @@ export function ImageResults({
           <p
             className="mx-auto mt-3 max-w-[280px] text-sm italic tracking-[0.01em] text-stone-500 sm:mt-4 sm:max-w-none sm:text-[15px]"
             style={{
-              fontFamily: '"Palatino Linotype","Book Antiqua","URW Palladio L","Times New Roman",serif',
+          <p
+            className="text-sm leading-6 text-stone-500"
+            style={{
+              fontFamily: 'var(--font-vazirmatn, "Palatino Linotype","Book Antiqua","URW Palladio L","Times New Roman",serif)',
             }}
           >
-            在同一窗口里保留本地历史与任务状态，并从已有结果图继续发起新的无状态编辑。
+            {t.image.emptyStateDesc}
           </p>
         </div>
       </div>
@@ -174,11 +177,11 @@ export function ImageResults({
               <div className="flex justify-end">
                 <div className="max-w-[90%] px-1 py-1 text-[14px] leading-6 text-stone-900 sm:max-w-[82%] sm:text-[15px] sm:leading-7">
                   <div className="mb-1.5 flex flex-wrap justify-end gap-2 text-[11px] text-stone-400 sm:mb-2">
-                    <span>第 {turnIndex + 1} 轮</span>
+                    <span>{t.image.turnLabel} {turnIndex + 1}</span>
                     <span>
-                      {turn.mode === "edit" ? "编辑图" : "文生图"}
+                      {turn.mode === "edit" ? t.image.modeEdit : t.image.modeText2Img}
                     </span>
-                    <span>{getTurnStatusLabel(turn.status)}</span>
+                    <span>{getTurnStatusLabel(turn.status, t)}</span>
                     <span>{formatConversationTime(turn.createdAt)}</span>
                   </div>
                   <div className="text-right">{turn.prompt}</div>
@@ -241,10 +244,10 @@ export function ImageResults({
                   ) : null}
 
                   <div className="mb-3 flex flex-wrap items-center gap-1.5 text-[11px] text-stone-500 sm:mb-4 sm:gap-2 sm:text-xs">
-                    <span className="rounded-full bg-stone-100 px-3 py-1">{turn.count} 张</span>
-                    <span className="rounded-full bg-stone-100 px-3 py-1">{getTurnStatusLabel(turn.status)}</span>
+                    <span className="rounded-full bg-stone-100 px-3 py-1">{turn.count}</span>
+                    <span className="rounded-full bg-stone-100 px-3 py-1">{getTurnStatusLabel(turn.status, t)}</span>
                     {turn.status === "queued" ? (
-                      <span className="rounded-full bg-amber-50 px-3 py-1 text-amber-700">等待当前对话中的前序任务完成</span>
+                      <span className="rounded-full bg-amber-50 px-3 py-1 text-amber-700">{t.image.waitingPriorTasks}</span>
                     ) : null}
                   </div>
 
@@ -277,7 +280,7 @@ export function ImageResults({
                             />
                             <div className="flex flex-col gap-1 px-0.5 py-1 text-[10px] sm:flex-row sm:items-center sm:justify-between sm:gap-2 sm:px-3 sm:py-3 sm:text-xs">
                               <div className="min-w-0 text-stone-500">
-                                <span>结果 {index + 1}</span>
+                                <span>{t.image.resultLabel} {index + 1}</span>
                                 {image.durationMs != null ? <span className="text-stone-400 sm:ml-2">{formatDuration(image.durationMs)}</span> : null}
                                 {imageMeta ? <span className="block text-stone-400">{imageMeta}</span> : null}
                               </div>
@@ -309,7 +312,7 @@ export function ImageResults({
                       }
 
                       if (image.status === "error") {
-                        const isTimeoutError = image.error?.includes("超时") && image.taskId;
+                        const isTimeoutError = (image.error?.includes("timeout") || image.error?.includes("超时")) && image.taskId;
                         return (
                           <div key={image.id} className="break-inside-avoid">
                             <div
@@ -446,35 +449,35 @@ export function ImageResults({
   );
 }
 
-function getTurnStatusLabel(status: ImageTurnStatus) {
+function getTurnStatusLabel(status: ImageTurnStatus, t?: ReturnType<typeof useI18n>["t"]) {
   if (status === "queued") {
-    return "排队中";
+    return t ? t.image.inQueue : "Queued";
   }
   if (status === "generating") {
-    return "处理中";
+    return t ? t.image.generating : "Generating";
   }
   if (status === "success") {
-    return "已完成";
+    return t ? t.common.success : "Success";
   }
-  return "失败";
+  return t ? t.common.error : "Failed";
 }
 
 const PROGRESS_LABELS: Record<string, string> = {
-  getting_account: "确认可用账号",
-  uploading: "上传图片",
-  bootstrapping: "预热首页",
-  getting_token: "获取 token",
-  preparing_conversation: "准备会话",
-  starting_generation: "启动生成",
-  generating: "生成中",
-  receiving_image: "接收图片中",
+  getting_account: "Account check",
+  uploading: "Uploading",
+  bootstrapping: "Bootstrapping",
+  getting_token: "Getting token",
+  preparing_conversation: "Preparing conversation",
+  starting_generation: "Starting generation",
+  generating: "Generating",
+  receiving_image: "Receiving image",
 };
 
 function getProgressLabel(progress?: string) {
   if (!progress) {
-    return "生成中";
+    return "Generating";
   }
-  return PROGRESS_LABELS[progress] || "生成中";
+  return PROGRESS_LABELS[progress] || "Generating";
 }
 
 function formatElapsed(seconds: number): string {
