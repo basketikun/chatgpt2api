@@ -137,9 +137,6 @@ export function ImageResults({
           <p
             className="mx-auto mt-3 max-w-[280px] text-sm italic tracking-[0.01em] text-stone-500 sm:mt-4 sm:max-w-none sm:text-[15px]"
             style={{
-          <p
-            className="text-sm leading-6 text-stone-500"
-            style={{
               fontFamily: 'var(--font-vazirmatn, "Palatino Linotype","Book Antiqua","URW Palladio L","Times New Roman",serif)',
             }}
           >

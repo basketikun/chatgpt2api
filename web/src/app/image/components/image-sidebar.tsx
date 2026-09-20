@@ -137,7 +137,7 @@ export function ImageSidebar({
                       )}
                     </div>
                     <div className={cn("mt-1 text-xs", active ? "text-stone-500" : "text-stone-400")}>
-                      {conversation.turns.length} 轮 · {formatConversationTime(conversation.updatedAt)}
+                      {conversation.turns.length} {locale === "fa" ? "پیام" : locale === "ar" ? "رسالة" : locale === "zh" ? "轮" : "turns"} · {formatConversationTime(conversation.updatedAt)}
                     </div>
                     {stats.running > 0 || stats.queued > 0 ? (
                       <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">

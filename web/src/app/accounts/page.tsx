@@ -196,7 +196,7 @@ function AccountsPageContent() {
       setAccounts(data.items);
       setSelectedIds((prev) => prev.filter((id) => data.items.some((item) => item.access_token === id)));
     } catch (error) {
-      const message = error instanceof Error ? error.message : "加载账户失败";
+      const message = error instanceof Error ? error.message : t.accounts.loadFailed;
       toast.error(message);
     } finally {
       if (!silent) {
@@ -211,7 +211,7 @@ function AccountsPageContent() {
       const data = await fetchModels();
       setAvailableModels(Array.isArray(data.data) ? data.data : []);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "加载模型列表失败";
+      const message = error instanceof Error ? error.message : t.accounts.loadFailed;
       toast.error(message);
     } finally {
       setIsLoadingModels(false);
@@ -317,7 +317,7 @@ function AccountsPageContent() {
 
   const handleDeleteTokens = async (tokens: string[]) => {
     if (tokens.length === 0) {
-      toast.error("请先选择要删除的账户");
+      toast.error(t.accounts.deleteBatchConfirm);
       return;
     }
 
@@ -326,9 +326,9 @@ function AccountsPageContent() {
       const data = await deleteAccounts(tokens);
       setAccounts(data.items);
       setSelectedIds((prev) => prev.filter((id) => data.items.some((item) => item.access_token === id)));
-      toast.success(`删除 ${data.removed ?? 0} 个账户`);
+      toast.success(t.accounts.deleteSuccess);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "删除账户失败";
+      const message = error instanceof Error ? error.message : t.accounts.deleteFailed;
       toast.error(message);
     } finally {
       setIsDeleting(false);
@@ -337,7 +337,7 @@ function AccountsPageContent() {
 
   const handleRefreshAccounts = async (accessTokens: string[]) => {
     if (accessTokens.length === 0) {
-      toast.error("没有需要刷新的账户");
+      toast.error(t.accounts.noAccounts);
       return;
     }
 
@@ -345,7 +345,7 @@ function AccountsPageContent() {
       setRefreshingTokens((prev) => new Set([...prev, accessTokens[0]]));
       try {
         const { progress_id } = await refreshAccounts(accessTokens);
-        // 单账号：轮询等待完成
+        // poll progress
         await pollRefreshProgress(progress_id, (progress) => {
           if (progress.done && progress.result) {
             setAccounts(progress.result.items);
@@ -353,7 +353,7 @@ function AccountsPageContent() {
           }
         });
       } catch (error) {
-        const message = error instanceof Error ? error.message : "刷新账户失败";
+        const message = error instanceof Error ? error.message : t.accounts.updateFailed;
         toast.error(message);
       } finally {
         setRefreshingTokens((prev) => {
@@ -383,7 +383,7 @@ function AccountsPageContent() {
       visible: true,
       current: 0,
       total,
-      message: "正在刷新账号信息...",
+      message: t.accounts.refreshProgress,
       email: "",
     });
 
@@ -402,14 +402,14 @@ function AccountsPageContent() {
                 return;
               }
               if (!p.result) {
-                reject(new Error("刷新结果为空"));
+                reject(new Error(t.accounts.loadFailed));
                 return;
               }
               // 更新最终进度显示
               setProgress((prev) => ({
                 ...prev,
                 current: prev.total,
-                message: "刷新完成",
+                message: t.accounts.refreshCompleted,
               }));
               // 清除联动统计
               setRefreshSummary(null);
@@ -453,7 +453,7 @@ function AccountsPageContent() {
           visible: true,
           current: 0,
           total: relogined,
-          message: `正在尝试对 ${relogined} 个账号进行移除异常状态`,
+          message: t.accounts.refreshProgress,
           email: "",
         });
         // 模拟重新登录进度
@@ -467,7 +467,7 @@ function AccountsPageContent() {
                 visible: true,
                 current: relogined,
                 total: relogined,
-                message: "移除异常状态完成",
+                message: t.accounts.refreshCompleted,
                 email: "",
               });
               setTimeout(() => setProgress({ visible: false, current: 0, total: 0, message: "", email: "" }), 800);
@@ -483,24 +483,21 @@ function AccountsPageContent() {
           visible: true,
           current: total,
           total,
-          message: "刷新完成",
+          message: t.accounts.refreshCompleted,
           email: "",
         });
         setTimeout(() => setProgress({ visible: false, current: 0, total: 0, message: "", email: "" }), 800);
       }
 
       if ((data.errors ?? []).length > 0) {
-        const firstError = data.errors?.[0]?.error;
-        toast.error(
-          `刷新成功 ${data.refreshed} 个，失败 ${(data.errors ?? []).length} 个${firstError ? `，首个错误：${firstError}` : ""}`,
-        );
+        toast.error(t.accounts.updateFailed);
       } else {
-        toast.success(`刷新成功 ${data.refreshed} 个账户${relogined > 0 ? `，已触发 ${relogined} 个账号重新登录` : ""}`);
+        toast.success(t.accounts.refreshCompleted);
       }
     } catch (error) {
       setProgress({ visible: false, current: 0, total: 0, message: "", email: "" });
       setRefreshSummary(null);
-      const message = error instanceof Error ? error.message : "刷新账户失败";
+      const message = error instanceof Error ? error.message : t.accounts.updateFailed;
       toast.error(message);
     } finally {
       setIsRefreshing(false);
@@ -534,7 +531,7 @@ function AccountsPageContent() {
 
   const handleReLogin = async (accessTokens: string[]) => {
     if (accessTokens.length === 0) {
-      toast.error("请先选择要恢复的账户");
+      toast.error(t.accounts.reloginConfirm);
       return;
     }
 
@@ -545,12 +542,8 @@ function AccountsPageContent() {
     });
 
     if (abnormalTokens.length === 0) {
-      toast.error("选中账号中没有异常账号");
+      toast.error(t.accounts.noAccounts);
       return;
-    }
-
-    if (abnormalTokens.length < accessTokens.length) {
-      toast.info(`已过滤 ${accessTokens.length - abnormalTokens.length} 个非异常账号`);
     }
 
     setIsRelogining(true);
@@ -565,7 +558,7 @@ function AccountsPageContent() {
 
     // 显示进度条（真实进度）
     const total = abnormalTokens.length;
-    setProgress({ visible: true, current: 0, total, message: "正在尝试恢复异常账号...", email: "" });
+    setProgress({ visible: true, current: 0, total, message: t.accounts.refreshProgress, email: "" });
 
     try {
       const { progress_id } = await reLoginAccounts(abnormalTokens);
@@ -581,22 +574,16 @@ function AccountsPageContent() {
                 reject(new Error(p.error));
                 return;
               }
-              setProgress((prev) => ({ ...prev, current: prev.total, message: "恢复流程已完成" }));
+              setProgress((prev) => ({ ...prev, current: prev.total, message: t.accounts.refreshCompleted }));
               setRefreshSummary(null);
               resolve();
             } else {
               // 实时更新进度
               const results = p.results ?? [];
-              // 找到最新一条有错误的结果
-              const lastErrorResult = [...results].reverse().find((r) => r.error);
-              const emailHint = lastErrorResult
-                ? `失败: ${lastErrorResult.token} ${lastErrorResult.error ?? ""}`
-                : `已处理 ${p.processed}/${p.total}`;
               setProgress((prev) => ({
                 ...prev,
                 current: p.processed,
-                email: emailHint,
-                message: "正在尝试恢复异常账号...",
+                message: t.accounts.refreshProgress,
               }));
 
               // 实时更新统计卡片：基数 + 已处理的恢复结果
@@ -611,7 +598,6 @@ function AccountsPageContent() {
                   runningDisabled += 1;
                   runningAbnormal -= 1;
                 }
-                // "异常"或"跳过"：保持异常状态不变
               }
               setRefreshSummary({
                 total: accounts.length,
@@ -641,16 +627,16 @@ function AccountsPageContent() {
         visible: true,
         current: total,
         total,
-        message: "恢复完成",
+        message: t.accounts.refreshCompleted,
         email: "",
       });
       setTimeout(() => setProgress({ visible: false, current: 0, total: 0, message: "", email: "" }), 800);
 
-      toast.success(`恢复流程已全部完成`);
+      toast.success(t.accounts.refreshCompleted);
     } catch (error) {
       setProgress({ visible: false, current: 0, total: 0, message: "", email: "" });
       setRefreshSummary(null);
-      const message = error instanceof Error ? error.message : "重新登录失败";
+      const message = error instanceof Error ? error.message : t.accounts.updateFailed;
       toast.error(message);
     } finally {
       setIsRelogining(false);
@@ -666,17 +652,17 @@ function AccountsPageContent() {
   const handleTestAccountProxy = async () => {
     const candidate = editProxy.trim();
     if (!candidate) {
-      toast.error("请先填写代理地址");
+      toast.error(t.settings.proxyUrl);
       return;
     }
     setIsTestingProxy(true);
     try {
       const data = await testProxy(candidate);
       data.result.ok
-        ? toast.success(`代理可用（${data.result.latency_ms} ms，HTTP ${data.result.status}）`)
-        : toast.error(`代理不可用：${data.result.error ?? "未知错误"}`);
+        ? toast.success(t.accounts.proxySuccess)
+        : toast.error(`${t.accounts.proxyFailed}: ${data.result.error ?? ""}`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "测试代理失败");
+      toast.error(error instanceof Error ? error.message : t.accounts.proxyFailed);
     } finally {
       setIsTestingProxy(false);
     }
@@ -696,9 +682,9 @@ function AccountsPageContent() {
       setAccounts(data.items);
       setSelectedIds((prev) => prev.filter((id) => data.items.some((item) => item.access_token === id)));
       setEditingAccount(null);
-      toast.success("账号信息已更新");
+      toast.success(t.accounts.saveChanges);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "更新账号失败";
+      const message = error instanceof Error ? error.message : t.accounts.updateFailed;
       toast.error(message);
     } finally {
       setIsUpdating(false);
@@ -1098,7 +1084,7 @@ function AccountsPageContent() {
                               className="rounded-lg p-1 text-stone-400 transition hover:bg-stone-100 hover:text-stone-700"
                               onClick={() => {
                                 void navigator.clipboard.writeText(account.access_token);
-                                toast.success("token 已复制");
+                                toast.success(t.common.copied);
                               }}
                             >
                               <Copy className="size-4" />

@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import webConfig from "@/constants/common-env";
+import { useI18n } from "@/lib/i18n";
 import { parseChangelog, type ReleaseInfo } from "@/lib/release";
 
 const latestVersionUrl =
@@ -32,6 +33,7 @@ function isNewerVersion(latestVersion: string, currentVersion: string) {
 }
 
 export function useVersionCheck() {
+  const { t } = useI18n();
   const currentVersion = webConfig.appVersion;
   const localReleases = useMemo(readLocalReleases, []);
   const [latestVersion, setLatestVersion] = useState(currentVersion);
@@ -55,11 +57,11 @@ export function useVersionCheck() {
         ]);
         setLatestVersion(version.trim() || currentVersion);
         if (changelog.trim()) setReleases(parseChangelog(changelog));
-        if (showMessage) toast.success("已获取最新版本信息");
+        if (showMessage) toast.success(t.release.fetchSuccess);
       } catch {
         setLatestVersion(currentVersion);
         setReleases(localReleases);
-        if (showMessage) toast.error("获取最新版本信息失败");
+        if (showMessage) toast.error(t.release.fetchFailed);
       } finally {
         setChecking(false);
       }

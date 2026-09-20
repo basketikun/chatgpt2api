@@ -29,7 +29,7 @@ import {
   type Model,
   type ImageTask,
 } from "@/lib/api";
-import { useI18n } from "@/lib/i18n";
+import { getI18n, useI18n } from "@/lib/i18n";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { useSettingsStore } from "@/app/settings/store";
 import {
@@ -129,7 +129,7 @@ function readFileAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = () => reject(new Error("读取参考图失败"));
+    reader.onerror = () => reject(new Error(getI18n().t.image.readReferenceFailed));
     reader.readAsDataURL(file);
   });
 }
@@ -174,7 +174,7 @@ function buildReferenceImageFromResult(image: StoredImage, fileName: string): St
 async function fetchImageAsFile(url: string, fileName: string) {
   const response = await fetch(url);
   if (!response.ok) {
-    throw new Error("读取结果图失败");
+    throw new Error(getI18n().t.image.readResultFailed);
   }
   const blob = await response.blob();
   return new File([blob], fileName, { type: blob.type || "image/png" });
@@ -213,7 +213,7 @@ function taskDataToStoredImage(image: StoredImage, task: ImageTask): StoredImage
         status: "error",
         taskStatus: undefined,
         progress: undefined,
-        error: "未返回图片数据",
+        error: getI18n().t.image.noImageDataReturned,
       };
     }
     return {
@@ -237,7 +237,7 @@ function taskDataToStoredImage(image: StoredImage, task: ImageTask): StoredImage
       status: "error",
       taskStatus: undefined,
       progress: undefined,
-      error: task.error || "生成失败",
+      error: task.error || getI18n().t.image.generationFailed,
       durationMs: task.duration_ms,
     };
   }
@@ -292,7 +292,7 @@ function deriveTurnStatus(turn: ImageTurn): Pick<ImageTurn, "status" | "error"> 
     return { status: turn.status === "queued" ? "queued" : "generating", error: undefined };
   }
   if (failedCount > 0) {
-    return { status: "error", error: `其中 ${failedCount} 张未成功生成` };
+    return { status: "error", error: getI18n().t.image.partialGenerateFailed(failedCount) };
   }
   if (successCount > 0) {
     return { status: "success", error: undefined };
@@ -410,7 +410,7 @@ async function recoverConversationHistory(items: ImageConversation[]) {
         return {
           ...image,
           status: "error" as const,
-          error: "页面刷新或任务中断，未找到可恢复的任务 ID",
+          error: getI18n().t.image.taskInterrupted,
         };
       });
       const candidateTurn = turnChanged ? { ...turn, images } : turn;
@@ -524,21 +524,9 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
     deleteConfirm?.type === "all"
       ? t.image.clearHistoryConfirm
       : deleteConfirm?.type === "prompt"
-        ? (locale === "fa"
-            ? "آیا از حذف این پرامپت اطمینان دارید؟ نتایج تولید شده باقی می‌مانند."
-            : locale === "ar"
-              ? "هل أنت متأكد من حذف سجل الطلب؟ ستبقى النتائج المولدة."
-              : locale === "zh"
-                ? "确认删除这条提示词记录吗？对应生成结果会保留。"
-                : "Are you sure you want to delete this prompt record? Generated results will be kept.")
+        ? t.image.confirmDeletePrompt
         : deleteConfirm?.type === "results"
-          ? (locale === "fa"
-              ? "آیا از حذف این نتایج تولید شده اطمینان دارید؟ پرامپت باقی می‌ماند."
-              : locale === "ar"
-                ? "هل أنت متأكد من حذف هذه النتائج؟ سيبقى نص الطلب."
-                : locale === "zh"
-                  ? "确认删除这条生成结果吗？对应提示词记录会保留。"
-                  : "Are you sure you want to delete these results? The prompt record will be kept.")
+          ? t.image.confirmDeleteResult
           : deleteConfirm?.type === "one"
             ? t.image.deleteChatConfirm
             : "";
@@ -649,7 +637,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
           : null) ?? pickFallbackConversationId(normalizedItems);
       setSelectedConversationId(nextSelectedConversationId);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "读取会话记录失败";
+      const message = error instanceof Error ? error.message : t.image.loadConversationsFailed;
       toast.error(message);
     } finally {
       if (!loadCancelledRef.current) {
@@ -739,7 +727,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       const data = await fetchAccounts();
       setAvailableQuota(formatAvailableQuota(data.items));
     } catch {
-      setAvailableQuota((prev) => (prev === "加载中..." ? "--" : prev));
+      setAvailableQuota((prev) => (prev.includes("...") ? "--" : prev));
     }
   }, [isAdmin]);
 
@@ -952,7 +940,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
     try {
       await deleteImageConversation(id);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "删除会话失败";
+      const message = error instanceof Error ? error.message : t.image.deleteConversationFailed;
       toast.error(message);
       const items = await listImageConversations();
       conversationsRef.current = items;
@@ -973,7 +961,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
         }
         const images =
           part === "results"
-            ? turn.images.map((image) => ({ id: image.id, status: "error" as const, error: "生成结果已删除" }))
+            ? turn.images.map((image) => ({ id: image.id, status: "error" as const, error: t.image.resultDeleted }))
             : turn.images;
         const derived =
           part === "results"
@@ -1014,9 +1002,9 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       setConversations([]);
       setSelectedConversationId(null);
       resetComposer();
-      toast.success("已清空历史记录");
+      toast.success(t.image.historyCleared);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "清空历史记录失败";
+      const message = error instanceof Error ? error.message : t.image.clearHistoryFailed;
       toast.error(message);
     }
   };
@@ -1030,7 +1018,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
     try {
       await renameImageConversation(id, title);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "重命名失败";
+      const message = error instanceof Error ? error.message : t.image.renameFailed;
       toast.error(message);
     }
   };
@@ -1090,10 +1078,10 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
         fileInputRef.current.value = "";
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "读取参考图失败";
+      const message = error instanceof Error ? error.message : t.image.readReferenceFailed;
       toast.error(message);
     }
-  }, []);
+  }, [t]);
 
   const handleReferenceImageChange = useCallback(
     async (files: File[]) => {
@@ -1137,13 +1125,13 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
         setReferenceImageFiles((prev) => [...prev, nextReference.file]);
         setImagePrompt("");
         textareaRef.current?.focus();
-        toast.success("已加入当前参考图，继续输入描述即可编辑");
+        toast.success(t.image.addedToReference);
       } catch (error) {
-        const message = error instanceof Error ? error.message : "读取结果图失败";
+        const message = error instanceof Error ? error.message : t.image.readResultFailed;
         toast.error(message);
       }
     },
-    [],
+    [t],
   );
 
   const handleReuseTurnConfig = useCallback(async (conversationId: string, turnId: string) => {
@@ -1171,8 +1159,8 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       fileInputRef.current.value = "";
     }
     textareaRef.current?.focus();
-    toast.success("已复用这条提示词配置");
-  }, []);
+    toast.success(t.image.reusedPrompt);
+  }, [t]);
 
   const openLightbox = useCallback((images: ImageLightboxItem[], index: number) => {
     if (images.length === 0) {
@@ -1246,7 +1234,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
           dataUrlToFile(image.dataUrl, image.name || `${activeTurn.id}-${index + 1}.png`, image.type),
         );
         if (activeTurn.mode === "edit" && referenceFiles.length === 0) {
-          throw new Error("未找到可用于继续编辑的参考图");
+          throw new Error(t.image.noReferenceFoundForEdit);
         }
 
         const pendingImages = activeTurn.images.filter((image) => image.status === "loading");
@@ -1282,7 +1270,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
               const timeoutTask = taskList.items.find(
                 (task) =>
                   task.status === "error" &&
-                  task.error?.includes("超时") &&
+                  (task.error?.includes("超时") || task.error?.toLowerCase().includes("timeout")) &&
                   task.conversation_id &&
                   !retryingTaskIdsRef.has(task.id),
               );
@@ -1291,7 +1279,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
                 setTimeoutRetry({
                   conversationId: timeoutTask.conversation_id,
                   taskId: timeoutTask.id,
-                  taskError: timeoutTask.error || "生图超时",
+                  taskError: timeoutTask.error || t.image.timeout,
                 });
                 // 应用超时错误到对应图片，显示继续等待按钮
                 await applyTasks([timeoutTask]);
@@ -1324,7 +1312,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
 
         await loadQuota();
       } catch (error) {
-        const message = error instanceof Error ? error.message : "生成图片失败";
+        const message = error instanceof Error ? error.message : t.image.generateImageFailed;
         await updateConversation(conversationId, (current) => {
           const conversation = current ?? snapshot;
           return {
@@ -1400,9 +1388,9 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       setSelectedConversationId(conversationId);
       await persistConversation(nextConversation);
       void runConversationQueue(conversationId);
-      toast.success("已加入重新生成队列");
+      toast.success(t.image.addedToRegenerateQueue);
     },
-    [runConversationQueue],
+    [runConversationQueue, t],
   );
 
   const handleRetryImage = useCallback(
@@ -1480,13 +1468,13 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       });
       // 清除重试状态
       setTimeoutRetry(null);
-      toast.info(`已继续等待 ${imageTimeoutRetrySecs} 秒`);
+      toast.info(t.image.continuedWaiting(imageTimeoutRetrySecs));
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "续轮询失败";
+      const msg = err instanceof Error ? err.message : t.image.pollContinueFailed;
       toast.error(msg);
       setTimeoutRetry(null);
     }
-  }, [timeoutRetry, updateConversation, imageTimeoutRetrySecs]);
+  }, [timeoutRetry, updateConversation, imageTimeoutRetrySecs, t]);
 
   const handleTimeoutRetryCancel = useCallback(() => {
     if (!timeoutRetry) return;
@@ -1561,7 +1549,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
   const handleSubmit = async () => {
     const prompt = imagePrompt.trim();
     if (!prompt) {
-      toast.error("请输入提示词");
+      toast.error(t.image.enterPrompt);
       return;
     }
 
@@ -1615,11 +1603,11 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
 
     const targetStats = getImageConversationStats(baseConversation);
     if (targetStats.running > 0 || targetStats.queued > 1) {
-      toast.success("已加入当前对话队列");
+      toast.success(t.image.addedToConversationQueue);
     } else if (!targetConversation) {
-      toast.success("已创建新对话并开始处理");
+      toast.success(t.image.createdConversationAndStarted);
     } else {
-      toast.success("已发送到当前对话");
+      toast.success(t.image.sentToConversation);
     }
   };
 

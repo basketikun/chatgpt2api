@@ -126,7 +126,7 @@ function ImageManagerContent() {
       setSelectedPaths((current) => current.filter((path) => data.items.some((item) => imageKey(item) === path)));
       setPage(1);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "加载图片失败");
+      toast.error(error instanceof Error ? error.message : t.imageManager.loadImagesFailed);
     } finally {
       setIsLoading(false);
     }
@@ -150,9 +150,9 @@ function ImageManagerContent() {
       await deleteManagedImages({ paths: [deleteTarget.rel] });
       setItems((prev) => prev.filter((item) => item.rel !== deleteTarget.rel));
       setSelectedPaths((prev) => prev.filter((p) => p !== imageKey(deleteTarget)));
-      toast.success("图片已删除");
+      toast.success(t.imageManager.imageDeleted);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "删除失败");
+      toast.error(error instanceof Error ? error.message : t.imageManager.deleteFailed);
     } finally {
       setIsDeleting(false);
       closeDialog();
@@ -166,7 +166,7 @@ function ImageManagerContent() {
       const tagsData = await fetchImageTags();
       setAllTags(tagsData.tags);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "设置标签失败");
+      toast.error(error instanceof Error ? error.message : t.imageManager.setTagFailed);
     }
   };
 
@@ -175,7 +175,7 @@ function ImageManagerContent() {
     if (!tag) return;
     const current = item.tags ?? [];
     if (current.includes(tag)) {
-      toast.error("标签已存在");
+      toast.error(t.imageManager.tagAlreadyExists);
       return;
     }
     void handleSetTags(item, [...current, tag]);
@@ -204,9 +204,9 @@ function ImageManagerContent() {
         ...item,
         tags: (item.tags ?? []).filter((t) => t !== tag),
       })));
-      toast.success(`标签"${tag}"已删除，影响 ${result.removed_from} 张图片`);
+      toast.success(t.imageManager.tagDeleted(tag, result.removed_from));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "删除标签失败");
+      toast.error(error instanceof Error ? error.message : t.imageManager.deleteTagFailed);
     }
   };
 
@@ -241,12 +241,12 @@ function ImageManagerContent() {
     setIsDeleting(true);
     try {
       const data = await deleteManagedImages(deleteMode === "filtered" ? { start_date: startDate, end_date: endDate, all_matching: true } : { paths: selectedPaths });
-      toast.success(`已删除 ${data.removed} 张图片`);
+      toast.success(t.imageManager.imagesDeleted(data.removed));
       setDeleteMode(null);
       setSelectedPaths([]);
       await loadImages();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "删除图片失败");
+      toast.error(error instanceof Error ? error.message : t.imageManager.deleteImagesFailed);
     } finally {
       setIsDeleting(false);
     }
@@ -258,9 +258,9 @@ function ImageManagerContent() {
     setIsDownloading(true);
     try {
       await downloadImages(paths);
-      toast.success(`已下载 ${paths.length} 张图片`);
+      toast.success(t.imageManager.downloadedImages(paths.length));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "下载失败");
+      toast.error(error instanceof Error ? error.message : (locale === "fa" ? "دانلود ناموفق بود" : locale === "ar" ? "فشل التنزيل" : locale === "zh" ? "下载失败" : "Download failed"));
     } finally {
       setIsDownloading(false);
     }

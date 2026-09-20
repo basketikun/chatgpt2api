@@ -115,3 +115,9 @@ export function useI18n() {
     translateStatus,
   };
 }
+
+export function getI18n() {
+  const locale = useI18nStore.getState().locale;
+  const t = translations[locale] || translations.en;
+  return { locale, t };
+}

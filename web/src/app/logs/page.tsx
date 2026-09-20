@@ -83,7 +83,7 @@ function LogsContent() {
       setSelectedIds((current) => current.filter((id) => data.items.some((item) => item.id === id)));
       setPage(1);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "加载日志失败");
+      toast.error(error instanceof Error ? error.message : (locale === "fa" ? "بارگذاری لاگ‌ها ناموفق بود" : locale === "ar" ? "فشل تحميل السجلات" : locale === "zh" ? "加载日志失败" : "Failed to load logs"));
     } finally {
       setIsLoading(false);
     }
@@ -115,7 +115,7 @@ function LogsContent() {
     setIsDeleting(true);
     try {
       const data = await deleteSystemLogs(ids);
-      toast.success(`已删除 ${data.removed} 条日志`);
+      toast.success(locale === "fa" ? `تعداد ${data.removed} لاگ حذف شد` : locale === "ar" ? `تم حذف ${data.removed} سجل` : locale === "zh" ? `已删除 ${data.removed} 条日志` : `Deleted ${data.removed} logs`);
       setDeletingItems([]);
       setSelectedIds((current) => current.filter((id) => !ids.includes(id)));
       if (detailLog && ids.includes(detailLog.id)) {
@@ -124,7 +124,7 @@ function LogsContent() {
       }
       await loadLogs();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "删除日志失败");
+      toast.error(error instanceof Error ? error.message : (locale === "fa" ? "حذف لاگ‌ها ناموفق بود" : locale === "ar" ? "فشل حذف السجلات" : locale === "zh" ? "删除日志失败" : "Failed to delete logs"));
     } finally {
       setIsDeleting(false);
     }
