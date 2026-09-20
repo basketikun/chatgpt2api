@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { createUserKey, deleteUserKey, fetchUserKeys, updateUserKey, type UserKey } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 
 function formatDateTime(value?: string | null) {
   if (!value) {
@@ -36,6 +37,7 @@ function formatDateTime(value?: string | null) {
 }
 
 export function UserKeysCard() {
+  const { tText } = useI18n();
   const didLoadRef = useRef(false);
   const [items, setItems] = useState<UserKey[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -55,7 +57,7 @@ export function UserKeysCard() {
       const data = await fetchUserKeys();
       setItems(data.items);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "加载用户密钥失败");
+      toast.error(error instanceof Error ? error.message : tText("加载用户密钥失败"));
     } finally {
       setIsLoading(false);
     }
@@ -77,9 +79,9 @@ export function UserKeysCard() {
       setRevealedKey(data.key);
       setName("");
       setIsDialogOpen(false);
-      toast.success("用户密钥已创建");
+      toast.success(tText("用户密钥已创建"));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "创建用户密钥失败");
+      toast.error(error instanceof Error ? error.message : tText("创建用户密钥失败"));
     } finally {
       setIsCreating(false);
     }
@@ -102,9 +104,9 @@ export function UserKeysCard() {
     try {
       const data = await updateUserKey(item.id, { enabled: !item.enabled });
       setItems(data.items);
-      toast.success(item.enabled ? "用户密钥已禁用" : "用户密钥已启用");
+      toast.success(item.enabled ? tText("用户密钥已禁用") : tText("用户密钥已启用"));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "更新用户密钥失败");
+      toast.error(error instanceof Error ? error.message : tText("更新用户密钥失败"));
     } finally {
       setItemPending(item.id, false);
     }
@@ -120,9 +122,9 @@ export function UserKeysCard() {
       const data = await deleteUserKey(item.id);
       setItems(data.items);
       setDeletingItem(null);
-      toast.success("用户密钥已删除");
+      toast.success(tText("用户密钥已删除"));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "删除用户密钥失败");
+      toast.error(error instanceof Error ? error.message : tText("删除用户密钥失败"));
     } finally {
       setItemPending(item.id, false);
     }
@@ -154,9 +156,9 @@ export function UserKeysCard() {
       setItems(data.items);
       setEditingItem(null);
       setEditKey("");
-      toast.success(trimmedKey ? "用户密钥已更新" : "用户名称已更新");
+      toast.success(trimmedKey ? tText("用户密钥已更新") : tText("用户名称已更新"));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "更新用户密钥失败");
+      toast.error(error instanceof Error ? error.message : tText("更新用户密钥失败"));
     } finally {
       setItemPending(item.id, false);
     }
@@ -165,9 +167,9 @@ export function UserKeysCard() {
   const handleCopy = async (value: string) => {
     try {
       await navigator.clipboard.writeText(value);
-      toast.success("已复制到剪贴板");
+      toast.success(tText("已复制到剪贴板"));
     } catch {
-      toast.error("复制失败，请手动复制");
+      toast.error(tText("复制失败，请手动复制"));
     }
   };
 
@@ -181,19 +183,19 @@ export function UserKeysCard() {
                 <KeyRound className="size-5 text-stone-600" />
               </div>
               <div>
-                <h2 className="text-lg font-semibold tracking-tight">用户密钥管理</h2>
-                <p className="text-sm text-stone-500">为普通用户创建专用密钥；普通用户只能进入画图页，不能查看设置和号池。</p>
+                <h2 className="text-lg font-semibold tracking-tight">{tText("用户密钥管理")}</h2>
+                <p className="text-sm text-stone-500">{tText("为普通用户创建专用密钥；普通用户只能进入画图页，不能查看设置和号池。")}</p>
               </div>
             </div>
             <Button className="h-9 rounded-xl bg-stone-950 px-4 text-white hover:bg-stone-800" onClick={() => setIsDialogOpen(true)}>
               <Plus className="size-4" />
-              创建用户密钥
+              {tText("创建用户密钥")}
             </Button>
           </div>
 
           {revealedKey ? (
             <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
-              <div className="font-medium">新密钥仅展示一次，请立即保存：</div>
+              <div className="font-medium">{tText("新密钥仅展示一次，请立即保存：")}</div>
               <div className="mt-3 flex flex-col gap-3 rounded-lg border border-emerald-200 bg-white/80 p-3 md:flex-row md:items-center md:justify-between">
                 <code className="break-all font-mono text-[13px]">{revealedKey}</code>
                 <Button
@@ -203,7 +205,7 @@ export function UserKeysCard() {
                   onClick={() => void handleCopy(revealedKey)}
                 >
                   <Copy className="size-4" />
-                  复制
+                  {tText("复制")}
                 </Button>
               </div>
             </div>
@@ -215,7 +217,7 @@ export function UserKeysCard() {
             </div>
           ) : items.length === 0 ? (
             <div className="rounded-xl bg-stone-50 px-6 py-10 text-center text-sm text-stone-500">
-              暂无普通用户密钥。点击右上角按钮后即可创建并分发给其他人。
+              {tText("暂无普通用户密钥。点击右上角按钮后即可创建并分发给其他人。")}
             </div>
           ) : (
             <div className="space-y-3">
@@ -227,12 +229,12 @@ export function UserKeysCard() {
                       <div className="flex flex-wrap items-center gap-2">
                         <div className="truncate text-sm font-medium text-stone-800">{item.name}</div>
                         <Badge variant={item.enabled ? "success" : "secondary"} className="rounded-md">
-                          {item.enabled ? "已启用" : "已禁用"}
+                          {item.enabled ? tText("已启用") : tText("已禁用")}
                         </Badge>
                       </div>
                       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-stone-500">
-                        <span>创建时间 {formatDateTime(item.created_at)}</span>
-                        <span>最近使用 {formatDateTime(item.last_used_at)}</span>
+                        <span>{tText("创建时间")} {formatDateTime(item.created_at)}</span>
+                        <span>{tText("最近使用")} {formatDateTime(item.last_used_at)}</span>
                       </div>
                     </div>
 
@@ -245,7 +247,7 @@ export function UserKeysCard() {
                         disabled={isPending}
                       >
                         {isPending ? <LoaderCircle className="size-4 animate-spin" /> : <Pencil className="size-4" />}
-                        编辑
+                        {tText("编辑")}
                       </Button>
                       <Button
                         type="button"
@@ -261,7 +263,7 @@ export function UserKeysCard() {
                         ) : (
                           <CheckCircle2 className="size-4" />
                         )}
-                        {item.enabled ? "禁用" : "启用"}
+                        {item.enabled ? tText("禁用") : tText("启用")}
                       </Button>
                       <Button
                         type="button"
@@ -271,7 +273,7 @@ export function UserKeysCard() {
                         disabled={isPending}
                       >
                         {isPending ? <LoaderCircle className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
-                        删除
+                        {tText("删除")}
                       </Button>
                     </div>
                   </div>
@@ -285,17 +287,17 @@ export function UserKeysCard() {
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="rounded-2xl p-6">
           <DialogHeader className="gap-2">
-            <DialogTitle>创建用户密钥</DialogTitle>
+            <DialogTitle>{tText("创建用户密钥")}</DialogTitle>
             <DialogDescription className="text-sm leading-6">
-              可选填写一个备注名称，方便区分不同使用者；创建后会生成一条只能查看一次的原始密钥。
+              {tText("可选填写一个备注名称，方便区分不同使用者；创建后会生成一条只能查看一次的原始密钥。")}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <label className="text-sm font-medium text-stone-700">名称（可选）</label>
+            <label className="text-sm font-medium text-stone-700">{tText("名称（可选）")}</label>
             <Input
               value={name}
               onChange={(event) => setName(event.target.value)}
-              placeholder="例如：设计同学 A、运营临时账号"
+              placeholder={tText("例如：设计同学 A、运营临时账号")}
               className="h-11 rounded-xl border-stone-200 bg-white"
             />
           </div>
@@ -307,7 +309,7 @@ export function UserKeysCard() {
               onClick={() => setIsDialogOpen(false)}
               disabled={isCreating}
             >
-              取消
+              {tText("取消")}
             </Button>
             <Button
               type="button"
@@ -316,7 +318,7 @@ export function UserKeysCard() {
               disabled={isCreating}
             >
               {isCreating ? <LoaderCircle className="size-4 animate-spin" /> : <Plus className="size-4" />}
-              创建
+              {tText("创建")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -325,9 +327,9 @@ export function UserKeysCard() {
       <Dialog open={Boolean(deletingItem)} onOpenChange={(open) => (!open ? setDeletingItem(null) : null)}>
         <DialogContent className="rounded-2xl p-6">
           <DialogHeader className="gap-2">
-            <DialogTitle>删除用户密钥</DialogTitle>
+            <DialogTitle>{tText("删除用户密钥")}</DialogTitle>
             <DialogDescription className="text-sm leading-6">
-              确认删除用户密钥「{deletingItem?.name}」吗？删除后该密钥将无法继续调用接口。
+              {localeText(tText, "确认删除用户密钥「", deletingItem?.name, "」吗？删除后该密钥将无法继续调用接口。")}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -338,7 +340,7 @@ export function UserKeysCard() {
               onClick={() => setDeletingItem(null)}
               disabled={deletingItem ? pendingIds.has(deletingItem.id) : false}
             >
-              取消
+              {tText("取消")}
             </Button>
             <Button
               type="button"
@@ -347,7 +349,7 @@ export function UserKeysCard() {
               disabled={deletingItem ? pendingIds.has(deletingItem.id) : false}
             >
               {deletingItem && pendingIds.has(deletingItem.id) ? <LoaderCircle className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
-              删除
+              {tText("删除")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -364,31 +366,31 @@ export function UserKeysCard() {
       >
         <DialogContent className="rounded-2xl p-6">
           <DialogHeader className="gap-2">
-            <DialogTitle>编辑用户密钥</DialogTitle>
+            <DialogTitle>{tText("编辑用户密钥")}</DialogTitle>
             <DialogDescription className="text-sm leading-6">
-              可以修改备注名称；如需更换专用密钥，直接填写新的原始密钥即可。留空则保持当前密钥不变。
+              {tText("可以修改备注名称；如需更换专用密钥，直接填写新的原始密钥即可。留空则保持当前密钥不变。")}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium text-stone-700">名称</label>
+              <label className="text-sm font-medium text-stone-700">{tText("名称")}</label>
               <Input
                 value={editName}
                 onChange={(event) => setEditName(event.target.value)}
-                placeholder="例如：设计同学 A、运营临时账号"
+                placeholder={tText("例如：设计同学 A、运营临时账号")}
                 className="h-11 rounded-xl border-stone-200 bg-white"
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-stone-700">新的专用密钥（可选）</label>
+              <label className="text-sm font-medium text-stone-700">{tText("新的专用密钥（可选）")}</label>
               <Input
                 value={editKey}
                 onChange={(event) => setEditKey(event.target.value)}
-                placeholder="例如：sk-your-custom-user-key"
+                placeholder={tText("例如：sk-your-custom-user-key")}
                 className="h-11 rounded-xl border-stone-200 bg-white font-mono"
               />
               <p className="text-xs leading-5 text-stone-500">
-                保存后旧密钥会立即失效，新密钥生效。系统仍只保存哈希，不会回显当前密钥。
+                {tText("保存后旧密钥会立即失效，新密钥生效。系统仍只保存哈希，不会回显当前密钥。")}
               </p>
             </div>
           </div>
@@ -403,7 +405,7 @@ export function UserKeysCard() {
               }}
               disabled={editingItem ? pendingIds.has(editingItem.id) : false}
             >
-              取消
+              {tText("取消")}
             </Button>
             <Button
               type="button"
@@ -412,11 +414,20 @@ export function UserKeysCard() {
               disabled={editingItem ? pendingIds.has(editingItem.id) : false}
             >
               {editingItem && pendingIds.has(editingItem.id) ? <LoaderCircle className="size-4 animate-spin" /> : <Pencil className="size-4" />}
-              保存
+              {tText("保存")}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
   );
+}
+
+function localeText(
+  tText: (text: string) => string,
+  prefix: string,
+  value: string | undefined,
+  suffix: string,
+) {
+  return `${tText(prefix)}${value ?? ""}${tText(suffix)}`;
 }

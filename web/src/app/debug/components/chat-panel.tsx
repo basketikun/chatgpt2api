@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { httpRequest } from "@/lib/request";
+import { useI18n } from "@/lib/i18n";
 
 import { pretty, type ChatCompletionResponse, type ChatContentPart, type ChatMessage } from "./types";
 
@@ -70,6 +71,7 @@ function messageImages(message: ChatMessage): string[] {
 }
 
 export function ChatPanel() {
+  const { tText } = useI18n();
   const [model, setModel] = useState("auto");
   const [reasoningEffort, setReasoningEffort] = useState("");
   const [input, setInput] = useState("你好，先记住我的项目叫 chatgpt2api。");
@@ -132,7 +134,7 @@ export function ChatPanel() {
     <div className="grid h-full min-h-0 gap-8 lg:grid-cols-[360px_minmax(0,1fr)]">
       <section className="flex min-h-0 flex-col lg:border-r lg:border-stone-200/70 lg:pr-8 dark:lg:border-white/10">
         <div className="border-b border-stone-200/70 pb-3 dark:border-white/10">
-          <h2 className="text-sm font-medium text-stone-500 dark:text-stone-400">请求</h2>
+          <h2 className="text-sm font-medium text-stone-500 dark:text-stone-400">{tText("请求")}</h2>
         </div>
         <div className="min-h-0 flex-1 space-y-4 overflow-auto pt-4">
           <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_160px]">
@@ -141,17 +143,17 @@ export function ChatPanel() {
               <Input id="chat-model" value={model} onChange={(event) => setModel(event.target.value)} className="rounded-md border-stone-200/70 bg-transparent shadow-none dark:border-white/10" />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="chat-reasoning-effort">思考强度</Label>
+              <Label htmlFor="chat-reasoning-effort">{tText("思考强度")}</Label>
               <Select value={reasoningEffort || "default"} onValueChange={(value) => setReasoningEffort(value === "default" ? "" : value)}>
                 <SelectTrigger id="chat-reasoning-effort" className="h-10 rounded-md border-stone-200/70 bg-transparent shadow-none dark:border-white/10">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="default">默认</SelectItem>
-                  <SelectItem value="low">低</SelectItem>
-                  <SelectItem value="medium">中</SelectItem>
-                  <SelectItem value="high">高</SelectItem>
-                  <SelectItem value="xhigh">超高</SelectItem>
+                  <SelectItem value="default">{tText("默认")}</SelectItem>
+                  <SelectItem value="low">{tText("低")}</SelectItem>
+                  <SelectItem value="medium">{tText("中")}</SelectItem>
+                  <SelectItem value="high">{tText("高")}</SelectItem>
+                  <SelectItem value="xhigh">{tText("超高")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -161,10 +163,10 @@ export function ChatPanel() {
             <Textarea id="chat-input" value={input} onChange={(event) => setInput(event.target.value)} className="min-h-32 rounded-md border-stone-200/70 bg-transparent shadow-none dark:border-white/10" />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="chat-images">图片</Label>
+            <Label htmlFor="chat-images">{tText("图片")}</Label>
             <label htmlFor="chat-images" className="flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-stone-300 bg-stone-50/70 px-3 py-3 text-sm text-stone-600 transition hover:border-stone-400 hover:bg-stone-100 dark:border-white/10 dark:bg-white/[0.03] dark:text-stone-300 dark:hover:bg-white/[0.06]">
               <ImagePlus className="size-4" />
-              选择图片
+              {tText("选择图片")}
             </label>
             <input id="chat-images" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple className="sr-only" onChange={(event) => {
               void handleImagesChange(event.target.files);
@@ -187,10 +189,10 @@ export function ChatPanel() {
           <div className="flex gap-2">
             <Button size="sm" onClick={() => void sendChat()} disabled={loading || (!input.trim() && !selectedImages.length)}>
               {loading ? <LoaderCircle className="animate-spin" /> : <Send />}
-              发送
+              {tText("发送")}
             </Button>
             <Button size="sm" variant="outline" onClick={clearChat}>
-              清空
+              {tText("清空")}
             </Button>
           </div>
           {error ? <div className="rounded-md border border-rose-200 bg-rose-50/60 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-rose-300">{error}</div> : null}
@@ -199,7 +201,7 @@ export function ChatPanel() {
       </section>
       <section className="flex min-h-0 flex-col">
         <div className="border-b border-stone-200/70 pb-3 dark:border-white/10">
-          <h2 className="text-sm font-medium text-stone-500 dark:text-stone-400">对话</h2>
+          <h2 className="text-sm font-medium text-stone-500 dark:text-stone-400">{tText("对话")}</h2>
         </div>
         <div className="min-h-0 flex-1 space-y-4 overflow-auto pt-4">
           {messages.length ? messages.map((message, index) => (
@@ -215,7 +217,7 @@ export function ChatPanel() {
               {messageText(message) ? <div className="whitespace-pre-wrap leading-7 text-stone-700 dark:text-stone-300">{messageText(message)}</div> : null}
             </div>
           )) : (
-            <div className="flex h-full items-center justify-center text-sm text-stone-400 dark:text-stone-500">暂无对话消息</div>
+            <div className="flex h-full items-center justify-center text-sm text-stone-400 dark:text-stone-500">{tText("暂无对话消息")}</div>
           )}
         </div>
       </section>

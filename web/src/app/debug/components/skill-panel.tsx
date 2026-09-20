@@ -122,7 +122,7 @@ ${skillEn}
 
   const copyText = async (text: string) => {
     await navigator.clipboard.writeText(text);
-    toast.success("已复制");
+    toast.success(tText("已复制"));
   };
 
   const downloadSkill = (text: string) => {

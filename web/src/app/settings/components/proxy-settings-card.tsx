@@ -11,8 +11,10 @@ import { Input } from "@/components/ui/input";
 import { testProxy, type ProxyTestResult } from "@/lib/api";
 
 import { useSettingsStore } from "../store";
+import { useI18n } from "@/lib/i18n";
 
 export function ProxySettingsCard() {
+  const { tText } = useI18n();
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<ProxyTestResult | null>(null);
   const config = useSettingsStore((state) => state.config);
@@ -26,7 +28,7 @@ export function ProxySettingsCard() {
   const handleTest = async () => {
     const candidate = proxy.trim();
     if (!candidate) {
-      toast.error("请先填写代理地址");
+      toast.error(tText("请先填写代理地址"));
       return;
     }
     setIsTesting(true);
@@ -35,12 +37,12 @@ export function ProxySettingsCard() {
       const data = await testProxy(candidate);
       setTestResult(data.result);
       if (data.result.ok) {
-        toast.success(`代理可用（${data.result.latency_ms} ms，HTTP ${data.result.status}）`);
+      toast.success(`${tText("代理可用")}（${data.result.latency_ms} ms，HTTP ${data.result.status}）`);
       } else {
-        toast.error(`代理不可用：${data.result.error ?? "未知错误"}`);
+        toast.error(`${tText("代理不可用")}：${data.result.error ?? tText("未知错误")}`);
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "测试代理失败");
+      toast.error(error instanceof Error ? error.message : tText("测试代理失败"));
     } finally {
       setIsTesting(false);
     }
@@ -55,12 +57,12 @@ export function ProxySettingsCard() {
               <Link2 className="size-5 text-stone-600" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold tracking-tight">全局代理</h2>
-              <p className="text-sm text-stone-500">为系统中的出站请求配置统一代理，保存后会立即生效。</p>
+              <h2 className="text-lg font-semibold tracking-tight">{tText("全局代理")}</h2>
+              <p className="text-sm text-stone-500">{tText("为系统中的出站请求配置统一代理，保存后会立即生效。")}</p>
             </div>
           </div>
           <Badge variant={proxy.trim() ? "success" : "secondary"} className="w-fit rounded-md px-2.5 py-1">
-            {proxy.trim() ? "已配置" : "未配置"}
+            {proxy.trim() ? tText("已配置") : tText("未配置")}
           </Badge>
         </div>
 
@@ -71,7 +73,7 @@ export function ProxySettingsCard() {
         ) : (
           <>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-stone-700">代理地址</label>
+              <label className="text-sm font-medium text-stone-700">{tText("代理地址")}</label>
               <Input
                 value={proxy}
                 onChange={(event) => {
@@ -82,7 +84,7 @@ export function ProxySettingsCard() {
                 className="h-11 rounded-xl border-stone-200 bg-white"
               />
               <p className="text-sm text-stone-500">
-                留空表示不使用代理。请按完整地址填写，例如 `http://127.0.0.1:7890`、`http://用户名:密码@127.0.0.1:7890` 或 `socks5://127.0.0.1:7890`。
+                {tText("留空表示不使用代理。请按完整地址填写，例如 `http://127.0.0.1:7890`、`http://用户名:密码@127.0.0.1:7890` 或 `socks5://127.0.0.1:7890`。")}
               </p>
             </div>
 
@@ -108,7 +110,7 @@ export function ProxySettingsCard() {
                 disabled={isTesting || isLoadingConfig}
               >
                 {isTesting ? <LoaderCircle className="size-4 animate-spin" /> : <PlugZap className="size-4" />}
-                测试代理
+                {tText("测试代理")}
               </Button>
               <Button
                 className="h-10 rounded-xl bg-stone-950 px-5 text-white hover:bg-stone-800"
@@ -116,7 +118,7 @@ export function ProxySettingsCard() {
                 disabled={isSavingConfig}
               >
                 {isSavingConfig ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
-                保存配置
+                {tText("保存配置")}
               </Button>
             </div>
           </>

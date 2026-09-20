@@ -7,6 +7,7 @@ import remarkGfm from "remark-gfm";
 
 import { httpRequest } from "@/lib/request";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 
 import type { SearchResult } from "./types";
 
@@ -58,6 +59,7 @@ function MarkdownResult({ content }: { content: string }) {
 }
 
 export function SearchPanel() {
+  const { tText } = useI18n();
   const [prompt, setPrompt] = useState("帮我搜索 chatgpt2api 相关项目");
   const [result, setResult] = useState<SearchResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -95,7 +97,7 @@ export function SearchPanel() {
     <section className={cn("mx-auto flex min-h-[calc(100vh-142px)] w-full max-w-6xl flex-col px-4 transition-all", searched ? "py-5" : "justify-center")}>
       <div className={cn("mx-auto w-full max-w-3xl", searched && "sticky top-3 z-10")}>
         {!searched ? (
-          <p className="mb-5 text-center text-sm text-stone-500 dark:text-stone-400">利用ChatGPT先进的网页搜索功能进行搜索</p>
+          <p className="mb-5 text-center text-sm text-stone-500 dark:text-stone-400">{tText("利用ChatGPT先进的网页搜索功能进行搜索")}</p>
         ) : null}
         <form
           className={cn("mx-auto flex w-full items-center gap-3 rounded-full border border-stone-200 bg-white/95 backdrop-blur transition-all dark:border-white/10 dark:bg-stone-950/90", searched ? "px-4 py-2" : "px-5 py-3")}
@@ -108,7 +110,7 @@ export function SearchPanel() {
           <input
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
-            placeholder="搜索网页"
+            placeholder={tText("搜索网页")}
             className={cn("min-w-0 flex-1 bg-transparent text-[15px] text-stone-900 outline-none placeholder:text-stone-400 dark:text-stone-100 dark:placeholder:text-stone-500", searched ? "h-8" : "h-10")}
           />
           <button type="submit" disabled={loading || !prompt.trim()} className="inline-flex size-8 shrink-0 items-center justify-center rounded-full text-stone-800 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:text-stone-300 dark:text-stone-100 dark:hover:bg-white/10 dark:disabled:text-stone-600">
@@ -121,7 +123,7 @@ export function SearchPanel() {
         {loading ? (
           <div className="mx-auto flex max-w-3xl items-center gap-3 rounded-2xl border border-stone-200 bg-white/75 px-4 py-3 text-sm text-stone-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-stone-300">
             <LoaderCircle className="size-4 animate-spin" />
-            搜索中... {(elapsedMs / 1000).toFixed(1)}s
+            {tText("搜索中...")} {(elapsedMs / 1000).toFixed(1)}s
           </div>
         ) : null}
 
@@ -141,7 +143,7 @@ export function SearchPanel() {
             </div>
             {result.sources?.length ? (
               <aside className="lg:sticky lg:top-24 lg:self-start">
-                <div className="mb-3 text-sm font-semibold text-stone-900 dark:text-stone-100">来源</div>
+                <div className="mb-3 text-sm font-semibold text-stone-900 dark:text-stone-100">{tText("来源")}</div>
                 <div className="divide-y divide-stone-200 dark:divide-white/10">
                   {result.sources.map((source, index) => {
                     const url = cleanUrl(source.url || "");

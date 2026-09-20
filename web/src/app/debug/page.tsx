@@ -4,6 +4,7 @@ import { LoaderCircle } from "lucide-react";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuthGuard } from "@/lib/use-auth-guard";
+import { useI18n } from "@/lib/i18n";
 
 import { ChatPanel } from "./components/chat-panel";
 import { PptPanel } from "./components/ppt-panel";
@@ -20,6 +21,7 @@ const tabs = [
 ];
 
 export default function DebugPage() {
+  const { tText } = useI18n();
   const { isCheckingAuth, session } = useAuthGuard(["admin"]);
 
   if (isCheckingAuth || !session || session.role !== "admin") {
@@ -35,7 +37,7 @@ export default function DebugPage() {
       <TabsList variant="line" className="w-full">
         {tabs.map(({ value, title }) => (
           <TabsTrigger key={value} value={value}>
-            {title}
+            {tText(title)}
           </TabsTrigger>
         ))}
       </TabsList>
