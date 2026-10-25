@@ -6,7 +6,7 @@ import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Iterable, Iterator
 
 import tiktoken
@@ -1528,6 +1528,16 @@ def _generate_single_image(
 
 def stream_image_outputs_with_pool(request: ConversationRequest) -> Iterator[ImageOutput]:
     """并行生成多张图片，每张图片使用独立线程和账号，互不阻塞。"""
+    model_mapping = config.data.get("image_model_mapping", {})
+    mapped_model = model_mapping.get(request.model) if isinstance(model_mapping, dict) else None
+    if isinstance(mapped_model, str) and mapped_model.strip() and mapped_model.strip() != request.model:
+        requested_model = request.model
+        request = replace(request, model=mapped_model.strip())
+        logger.info({
+            "event": "image_model_mapped",
+            "requested_model": requested_model,
+            "upstream_model": request.model,
+        })
     if not is_supported_image_model(request.model):
         raise ImageGenerationError("unsupported image model,supported models: " + ", ".join(sorted(IMAGE_MODELS)))
 

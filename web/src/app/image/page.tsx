@@ -155,7 +155,7 @@ function normalizeStoredImageModel(value: string | null, availableModels: ImageM
   if (normalized && availableModels.includes(normalized)) {
     return normalized;
   }
-  return availableModels[0] || "gpt-image-2";
+  return availableModels.includes("codex-gpt-image-2") ? "codex-gpt-image-2" : availableModels[0] || "gpt-image-2";
 }
 
 function buildReferenceImageFromResult(image: StoredImage, fileName: string): StoredReferenceImage | null {
@@ -471,6 +471,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
   const [imageQuality, setImageQuality] = useState("auto");
   const [imageModel, setImageModel] = useState<ImageModel>("gpt-image-2");
   const [imageModels, setImageModels] = useState<ImageModel[]>(["gpt-image-2"]);
+  const [imageModelsLoaded, setImageModelsLoaded] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [referenceImageFiles, setReferenceImageFiles] = useState<File[]>([]);
   const [referenceImages, setReferenceImages] = useState<StoredReferenceImage[]>([]);
@@ -697,12 +698,8 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
         }
         setImageModels(available);
         const storedModel = typeof window !== "undefined" ? window.localStorage.getItem(IMAGE_MODEL_STORAGE_KEY) : null;
-        setImageModel((current) => {
-          if (available.includes(current)) {
-            return current;
-          }
-          return normalizeStoredImageModel(storedModel, available);
-        });
+        setImageModel(normalizeStoredImageModel(storedModel, available));
+        setImageModelsLoaded(true);
       } catch {
         if (!cancelled) {
           setImageModels(["gpt-image-2"]);
@@ -858,8 +855,10 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
     window.localStorage.setItem(IMAGE_RATIO_STORAGE_KEY, imageRatio);
     window.localStorage.setItem(IMAGE_TIER_STORAGE_KEY, imageTier);
     window.localStorage.setItem(IMAGE_QUALITY_STORAGE_KEY, imageQuality);
-    window.localStorage.setItem(IMAGE_MODEL_STORAGE_KEY, imageModel);
-  }, [imageRatio, imageTier, imageQuality, imageModel]);
+    if (imageModelsLoaded) {
+      window.localStorage.setItem(IMAGE_MODEL_STORAGE_KEY, imageModel);
+    }
+  }, [imageRatio, imageTier, imageQuality, imageModel, imageModelsLoaded]);
 
   useEffect(() => {
     if (typeof window !== "undefined" && parsedCount > 0) {
@@ -1365,7 +1364,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       const nextTurn: ImageTurn = {
         id: nextTurnId,
         prompt: sourceTurn.prompt,
-        model: sourceTurn.model,
+        model: imageModel,
         mode: sourceTurn.mode,
         referenceImages: sourceTurn.referenceImages,
         count,
@@ -1386,15 +1385,47 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       setSelectedConversationId(conversationId);
       await persistConversation(nextConversation);
       void runConversationQueue(conversationId);
-      toast.success("已加入重新生成队列");
+      toast.success(`已使用 ${imageModel} 加入重新生成队列`);
     },
-    [runConversationQueue],
+    [imageModel, runConversationQueue],
   );
 
   const handleRetryImage = useCallback(
     async (conversationId: string, turnId: string, imageId: string) => {
       const conversation = conversationsRef.current.find((item) => item.id === conversationId);
       if (!conversation) {
+        return;
+      }
+
+      const sourceTurn = conversation.turns.find((turn) => turn.id === turnId);
+      if (!sourceTurn || !sourceTurn.prompt.trim()) {
+        return;
+      }
+
+      // A turn has one model. Preserve its existing results when retrying with another model.
+      if (sourceTurn.model !== imageModel) {
+        const now = new Date().toISOString();
+        const nextTurnId = createId();
+        const nextTurn: ImageTurn = {
+          ...sourceTurn,
+          id: nextTurnId,
+          model: imageModel,
+          count: 1,
+          images: createLoadingImages(nextTurnId, 1),
+          createdAt: now,
+          status: "queued",
+          error: undefined,
+          promptDeleted: false,
+          resultsDeleted: false,
+        };
+        setSelectedConversationId(conversationId);
+        await persistConversation({
+          ...conversation,
+          updatedAt: now,
+          turns: [...conversation.turns, nextTurn],
+        });
+        void runConversationQueue(conversationId);
+        toast.success(`已使用 ${imageModel} 加入重新生成队列`);
         return;
       }
 
@@ -1433,7 +1464,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       await persistConversation(nextConversation);
       void runConversationQueue(conversationId);
     },
-    [runConversationQueue],
+    [imageModel, runConversationQueue],
   );
 
   const handleTimeoutRetryContinue = useCallback(async () => {
