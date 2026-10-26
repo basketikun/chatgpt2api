@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import type { ImageModel } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 
 type ImageComposerProps = {
   prompt: string;
@@ -108,6 +109,7 @@ export function ImageComposer({
   onReferenceImageChange,
   onRemoveReferenceImage,
 }: ImageComposerProps) {
+  const { tText } = useI18n();
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [isSizeMenuOpen, setIsSizeMenuOpen] = useState(false);
@@ -123,9 +125,9 @@ export function ImageComposer({
     () => imageModels.map((model) => ({ value: model, label: model })),
     [imageModels],
   );
-  const qualityLabel = qualityOptions.find((option) => option.value === imageQuality)?.label || "自动";
+  const qualityLabel = tText(qualityOptions.find((option) => option.value === imageQuality)?.label || "自动");
   const ratioLabel = imageRatio === "auto" ? "auto" : `${imageRatio}(${imageTier})`;
-  const imageSizeLabel = `${qualityLabel} · ${ratioLabel} · ${imageCount || 1} 张`;
+  const imageSizeLabel = `${qualityLabel} · ${ratioLabel} · ${imageCount || 1} ${tText("张")}`;
   const selectedModelLabel = modelOptions.find((option) => option.value === imageModel)?.label || imageModel;
   const isCodexModel = imageModel.toLowerCase().includes("codex");
 
@@ -230,11 +232,11 @@ export function ImageComposer({
                     setLightboxOpen(true);
                   }}
                   className="group size-14 overflow-hidden rounded-2xl border border-stone-200 bg-stone-50 transition hover:border-stone-300 sm:size-16"
-                  aria-label={`预览参考图 ${image.name || index + 1}`}
+                  aria-label={`${tText("预览参考图")} ${image.name || index + 1}`}
                 >
                   <img
                     src={image.dataUrl}
-                    alt={image.name || `参考图 ${index + 1}`}
+                    alt={image.name || `${tText("预览参考图")} ${index + 1}`}
                     className="h-full w-full object-cover"
                   />
                 </button>
@@ -245,7 +247,7 @@ export function ImageComposer({
                     onRemoveReferenceImage(index);
                   }}
                   className="absolute -right-1 -top-1 inline-flex size-5 items-center justify-center rounded-full border border-stone-200 bg-white text-stone-500 transition hover:border-stone-300 hover:text-stone-800"
-                  aria-label={`移除参考图 ${image.name || index + 1}`}
+                  aria-label={`${tText("移除参考图")} ${image.name || index + 1}`}
                 >
                   <X className="size-3" />
                 </button>
@@ -284,8 +286,8 @@ export function ImageComposer({
               onPaste={handleTextareaPaste}
               placeholder={
                 referenceImages.length > 0
-                  ? "描述你希望如何修改参考图"
-                  : "输入你想要生成的画面，也可直接粘贴图片"
+                  ? tText("描述你希望如何修改参考图")
+                  : tText("输入你想要生成的画面，也可直接粘贴图片")
               }
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
@@ -299,7 +301,7 @@ export function ImageComposer({
               <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-[24px] border-2 border-dashed border-stone-900 bg-white/85 text-sm font-medium text-stone-900 backdrop-blur-[1px] sm:rounded-[32px]">
                 <div className="flex items-center gap-2 rounded-full bg-stone-950 px-4 py-2 text-white shadow-lg">
                   <ImagePlus className="size-4" />
-                  <span>松开以上传参考图</span>
+                  <span>{tText("松开以上传参考图")}</span>
                 </div>
               </div>
             ) : null}
@@ -312,18 +314,18 @@ export function ImageComposer({
                     variant="outline"
                     className="h-9 shrink-0 rounded-full border-stone-200 bg-white px-3 text-xs font-medium text-stone-700 shadow-none sm:h-10 sm:px-4 sm:text-sm"
                     onClick={onPickReferenceImage}
-                    aria-label={referenceImages.length > 0 ? "添加参考图" : "上传"}
+                    aria-label={referenceImages.length > 0 ? tText("添加参考图") : tText("上传")}
                   >
                     <ImagePlus className="size-3.5 sm:size-4" />
-                    <span className="hidden sm:inline">{referenceImages.length > 0 ? "添加参考图" : "上传"}</span>
+                    <span className="hidden sm:inline">{referenceImages.length > 0 ? tText("添加参考图") : tText("上传")}</span>
                   </Button>
                   <div className="shrink-0 rounded-full bg-stone-100 px-2 py-1 text-[10px] font-medium text-stone-600 sm:px-3 sm:py-2 sm:text-xs">
-                    <span className="hidden sm:inline">剩余额度 </span>{availableQuota}
+                    <span className="hidden sm:inline">{tText("剩余额度")} </span>{availableQuota}
                   </div>
                   {activeTaskCount > 0 && (
                     <div className="flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-[10px] font-medium text-amber-700 sm:gap-1.5 sm:px-3 sm:py-2 sm:text-xs">
                       <LoaderCircle className="size-3 animate-spin" />
-                      {activeTaskCount}<span className="hidden sm:inline"> 个任务处理中</span>
+                      {activeTaskCount}<span className="hidden sm:inline"> {tText("个任务处理中")}</span>
                     </div>
                   )}
                   <div className="relative flex h-9 min-w-0 shrink items-center rounded-full bg-transparent text-[11px] sm:h-auto sm:shrink-0 sm:text-[13px]">
@@ -354,9 +356,9 @@ export function ImageComposer({
                           width: "min(460px, calc(100vw - 2rem))",
                         }}
                       >
-                        <h3 className="mb-3 text-base font-semibold text-stone-950">图像设置</h3>
+                        <h3 className="mb-3 text-base font-semibold text-stone-950">{tText("图像设置")}</h3>
                         <div className="mb-3">
-                          <div className="mb-2 text-sm font-medium text-stone-900">模型</div>
+                      <div className="mb-2 text-sm font-medium text-stone-900">{tText("模型")}</div>
                           <Select
                             value={imageModel}
                             onValueChange={(value) => {
@@ -394,7 +396,7 @@ export function ImageComposer({
                           </Select>
                         </div>
                         <div className="mb-3">
-                          <div className="mb-2 text-sm font-medium text-stone-900">质量</div>
+                          <div className="mb-2 text-sm font-medium text-stone-900">{tText("质量")}</div>
                           <div className="grid grid-cols-4 gap-2">
                             {qualityOptions.map((option) => {
                               const active = option.value === imageQuality;
@@ -416,7 +418,7 @@ export function ImageComposer({
                         </div>
                         <div className="mb-3">
                           <div className="mb-2 flex items-center gap-1.5 text-sm font-medium text-stone-900">
-                            尺寸 <Info className="size-3.5 text-stone-400" />
+                            {tText("尺寸")} <Info className="size-3.5 text-stone-400" />
                           </div>
                           <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
                             <div className="flex items-center rounded-lg bg-stone-100 px-3 py-1.5 text-sm text-stone-700">
@@ -446,7 +448,7 @@ export function ImageComposer({
                         </div>
                         <div className="mb-3">
                           <div className="mb-2 flex items-center gap-1.5 text-sm font-medium text-stone-900">
-                            宽高比 <Info className="size-3.5 text-stone-400" />
+                            {tText("宽高比")} <Info className="size-3.5 text-stone-400" />
                           </div>
                           <div className="grid grid-cols-4 gap-2 sm:grid-cols-5">
                             {aspectOptions.map((option) => {
@@ -487,7 +489,7 @@ export function ImageComposer({
                           </div>
                         </div>
                         <div className="border-t border-stone-100 pt-3">
-                          <div className="mb-2 text-sm font-medium text-stone-900">生成数量</div>
+                          <div className="mb-2 text-sm font-medium text-stone-900">{tText("生成数量")}</div>
                           <div className="grid grid-cols-4 gap-2 sm:grid-cols-5">
                             {countOptions.map((option) => {
                               const active = imageCount === option;
@@ -501,7 +503,7 @@ export function ImageComposer({
                                   )}
                                   onClick={() => onImageCountChange(option)}
                                 >
-                                  {option} 张
+                                  {option} {tText("张")}
                                 </button>
                               );
                             })}
@@ -528,7 +530,7 @@ export function ImageComposer({
                   onClick={() => void onSubmit()}
                   disabled={!prompt.trim()}
                   className="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-stone-950 text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-300 sm:size-11"
-                  aria-label={referenceImages.length > 0 ? "编辑图片" : "生成图片"}
+                  aria-label={referenceImages.length > 0 ? tText("编辑图片") : tText("生成图片")}
                 >
                   <ArrowUp className="size-3.5 sm:size-4" />
                 </button>

@@ -31,6 +31,7 @@ import {
 } from "@/lib/api";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { useSettingsStore } from "@/app/settings/store";
+import { useI18n } from "@/lib/i18n";
 import {
   clearImageConversations,
   deleteImageConversation,
@@ -445,6 +446,7 @@ async function recoverConversationHistory(items: ImageConversation[]) {
 
 
 function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
+  const { tText } = useI18n();
   const didLoadQuotaRef = useRef(false);
   const conversationsRef = useRef<ImageConversation[]>([]);
   const loadCancelledRef = useRef(false);
@@ -477,7 +479,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
   const [conversations, setConversations] = useState<ImageConversation[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
-  const [availableQuota, setAvailableQuota] = useState("加载中...");
+  const [availableQuota, setAvailableQuota] = useState("Carregando...");
   const [lightboxImages, setLightboxImages] = useState<ImageLightboxItem[]>([]);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
@@ -510,23 +512,23 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
   );
   const deleteConfirmTitle =
     deleteConfirm?.type === "all"
-      ? "清空历史记录"
+      ? tText("清空历史记录")
       : deleteConfirm?.type === "prompt"
-        ? "删除提示词记录"
+        ? tText("删除提示词记录")
         : deleteConfirm?.type === "results"
-          ? "删除生成结果"
+          ? tText("删除生成结果")
           : deleteConfirm?.type === "one"
-            ? "删除对话"
+            ? tText("删除对话")
             : "";
   const deleteConfirmDescription =
     deleteConfirm?.type === "all"
-      ? "确认删除全部图片历史记录吗？删除后无法恢复。"
+      ? tText("确认删除全部图片历史记录吗？删除后无法恢复。")
       : deleteConfirm?.type === "prompt"
-        ? "确认删除这条提示词记录吗？对应生成结果会保留。"
+        ? tText("确认删除这条提示词记录吗？对应生成结果会保留。")
         : deleteConfirm?.type === "results"
-          ? "确认删除这条生成结果吗？对应提示词记录会保留。"
+          ? tText("确认删除这条生成结果吗？对应提示词记录会保留。")
           : deleteConfirm?.type === "one"
-            ? "确认删除这条图片对话吗？删除后无法恢复。"
+            ? tText("确认删除这条图片对话吗？删除后无法恢复。")
             : "";
 
   useEffect(() => {
@@ -725,7 +727,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       const data = await fetchAccounts();
       setAvailableQuota(formatAvailableQuota(data.items));
     } catch {
-      setAvailableQuota((prev) => (prev === "加载中..." ? "--" : prev));
+      setAvailableQuota((prev) => (prev === "Carregando..." ? "--" : prev));
     }
   }, [isAdmin]);
 
@@ -959,7 +961,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
         }
         const images =
           part === "results"
-            ? turn.images.map((image) => ({ id: image.id, status: "error" as const, error: "生成结果已删除" }))
+            ? turn.images.map((image) => ({ id: image.id, status: "error" as const, error: tText("生成结果已删除") }))
             : turn.images;
         const derived =
           part === "results"
@@ -1000,7 +1002,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       setConversations([]);
       setSelectedConversationId(null);
       resetComposer();
-      toast.success("已清空历史记录");
+      toast.success(tText("已清空历史记录"));
     } catch (error) {
       const message = error instanceof Error ? error.message : "清空历史记录失败";
       toast.error(message);
@@ -1123,7 +1125,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
         setReferenceImageFiles((prev) => [...prev, nextReference.file]);
         setImagePrompt("");
         textareaRef.current?.focus();
-        toast.success("已加入当前参考图，继续输入描述即可编辑");
+        toast.success(tText("已加入当前参考图，继续输入描述即可编辑"));
       } catch (error) {
         const message = error instanceof Error ? error.message : "读取结果图失败";
         toast.error(message);
@@ -1157,7 +1159,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       fileInputRef.current.value = "";
     }
     textareaRef.current?.focus();
-    toast.success("已复用这条提示词配置");
+    toast.success(tText("已复用这条提示词配置"));
   }, []);
 
   const openLightbox = useCallback((images: ImageLightboxItem[], index: number) => {
@@ -1386,7 +1388,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       setSelectedConversationId(conversationId);
       await persistConversation(nextConversation);
       void runConversationQueue(conversationId);
-      toast.success("已加入重新生成队列");
+      toast.success(tText("已加入重新生成队列"));
     },
     [runConversationQueue],
   );
@@ -1466,7 +1468,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       });
       // 清除重试状态
       setTimeoutRetry(null);
-      toast.info(`已继续等待 ${imageTimeoutRetrySecs} 秒`);
+      toast.info(`${tText("已继续等待")} ${imageTimeoutRetrySecs} ${tText("秒")}`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "续轮询失败";
       toast.error(msg);
@@ -1547,7 +1549,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
   const handleSubmit = async () => {
     const prompt = imagePrompt.trim();
     if (!prompt) {
-      toast.error("请输入提示词");
+      toast.error(tText("请输入提示词"));
       return;
     }
 
@@ -1601,11 +1603,11 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
 
     const targetStats = getImageConversationStats(baseConversation);
     if (targetStats.running > 0 || targetStats.queued > 1) {
-      toast.success("已加入当前对话队列");
+      toast.success(tText("已加入当前对话队列"));
     } else if (!targetConversation) {
-      toast.success("已创建新对话并开始处理");
+      toast.success(tText("已创建新对话并开始处理"));
     } else {
-      toast.success("已发送到当前对话");
+      toast.success(tText("已发送到当前对话"));
     }
   };
 
@@ -1631,7 +1633,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
             <DialogHeader className="px-6 pt-7 pb-4 sm:px-8">
               <DialogTitle className="flex items-center gap-2 text-xl font-bold tracking-tight">
                 <History className="size-5" />
-                历史记录
+                {tText("历史记录")}
               </DialogTitle>
             </DialogHeader>
             <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-8 sm:px-8">
@@ -1665,14 +1667,14 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
               onClick={() => setIsHistoryOpen(true)}
             >
               <History className="mr-2 size-4" />
-              历史记录 ({conversations.length})
+              {tText("历史记录")} ({conversations.length})
             </Button>
             <Button
               className="h-10 rounded-2xl bg-stone-950 text-white shadow-sm"
               onClick={handleCreateDraft}
             >
               <Plus className="size-4" />
-              新建
+              {tText("新建")}
             </Button>
             <Button
               variant="outline"
@@ -1709,8 +1711,8 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
             <button
               ref={scrollToLatestBtnRef}
               type="button"
-              aria-label="滚动到最新消息"
-              title="滚动到最新消息"
+              aria-label={tText("滚动到最新消息")}
+              title={tText("滚动到最新消息")}
               onClick={() => scrollResultsToLatest("smooth")}
               className="absolute bottom-4 left-1/2 z-20 inline-flex size-11 -translate-x-1/2 items-center justify-center rounded-full border border-stone-200 bg-white/95 text-stone-700 shadow-lg shadow-stone-200/60 backdrop-blur transition hover:-translate-y-0.5 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-400 dark:border-white/10 dark:bg-stone-800/95 dark:text-stone-100 dark:shadow-black/40 dark:hover:bg-stone-700"
               style={{ display: "none" }}
@@ -1769,10 +1771,10 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
             </DialogHeader>
             <DialogFooter>
               <Button variant="outline" onClick={() => setDeleteConfirm(null)}>
-                取消
+                {tText("取消")}
               </Button>
               <Button className="bg-rose-600 text-white hover:bg-rose-700" onClick={() => void handleConfirmDelete()}>
-                确认删除
+                {tText("确认删除")}
               </Button>
             </DialogFooter>
           </DialogContent>

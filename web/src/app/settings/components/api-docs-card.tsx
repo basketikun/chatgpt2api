@@ -6,6 +6,7 @@ import { ChevronDown, FileArchive, FileText, KeyRound, ListChecks, type LucideIc
 import { Card, CardContent } from "@/components/ui/card";
 import webConfig from "@/constants/common-env";
 import { getStoredAuthSession } from "@/store/auth";
+import { useI18n } from "@/lib/i18n";
 
 type ParamRow = [string, string, string];
 
@@ -53,7 +54,7 @@ const docs: ApiDoc[] = [
     example: (baseUrl: string, key: string) => `curl ${baseUrl}/chat/completions \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer ${key}" \\
-  -d '{"model":"gpt-5-mini","messages":[{"role":"user","content":"你好"}]}'`,
+  -d '{"model":"gpt-5-mini","messages":[{"role":"user","content":"Olá"}]}'`,
   },
   {
     title: "Responses",
@@ -74,7 +75,7 @@ const docs: ApiDoc[] = [
     example: (baseUrl: string, key: string) => `curl ${baseUrl}/responses \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer ${key}" \\
-  -d '{"model":"gpt-5-mini","input":"生成一张未来城市图片"}'`,
+  -d '{"model":"gpt-5-mini","input":"Gere uma imagem de uma cidade futurista"}'`,
   },
   {
     title: "搜索",
@@ -92,7 +93,7 @@ const docs: ApiDoc[] = [
     example: (baseUrl: string, key: string) => `curl ${baseUrl}/search \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer ${key}" \\
-  -d '{"prompt":"搜索 chatgpt2api 最新使用方式"}'`,
+  -d '{"prompt":"Pesquise a forma mais recente de usar o chatgpt2api"}'`,
   },
   {
     title: "图片生成",
@@ -115,7 +116,7 @@ const docs: ApiDoc[] = [
     example: (baseUrl: string, key: string) => `curl ${baseUrl}/images/generations \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer ${key}" \\
-  -d '{"model":"gpt-image-2","prompt":"一张极简产品海报","n":1}'`,
+  -d '{"model":"gpt-image-2","prompt":"Um pôster de produto minimalista","n":1}'`,
   },
   {
     title: "图片编辑",
@@ -138,7 +139,7 @@ const docs: ApiDoc[] = [
     example: (baseUrl: string, key: string) => `curl ${baseUrl}/images/edits \\
   -H "Authorization: Bearer ${key}" \\
   -F "model=gpt-image-2" \\
-  -F "prompt=改成赛博朋克夜景" \\
+  -F "prompt=Transforme em uma paisagem noturna cyberpunk" \\
   -F "image=@./input.png"`,
   },
   {
@@ -160,7 +161,7 @@ const docs: ApiDoc[] = [
     example: (baseUrl: string, key: string) => `curl ${baseUrl}/ppt/generations \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer ${key}" \\
-  -d '{"prompt":"制作一份 8 页以内的季度业务汇报 PPT","base64_images":[]}'`,
+  -d '{"prompt":"Crie uma apresentação trimestral de negócios com até 8 páginas","base64_images":[]}'`,
   },
   {
     title: "创建 PSD 任务",
@@ -181,7 +182,7 @@ const docs: ApiDoc[] = [
     example: (baseUrl: string, key: string) => `curl ${baseUrl}/psd/generations \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer ${key}" \\
-  -d '{"prompt":"按原图位置拆分海报元素并合成可编辑 PSD","base64_images":["data:image/png;base64,..."]}'`,
+  -d '{"prompt":"Separe os elementos do pôster conforme a imagem original e gere um PSD editável","base64_images":["data:image/png;base64,..."]}'`,
   },
   {
     title: "任务状态查询",
@@ -218,14 +219,15 @@ const docs: ApiDoc[] = [
 const usableModels = ["gpt-image-2", "codex-gpt-image-2", "auto", "gpt-5", "gpt-5-1", "gpt-5-2", "gpt-5-3", "gpt-5-3-mini", "gpt-5-mini"];
 
 function ParamTable({ rows }: { rows: ParamRow[] }) {
+  const { tText } = useI18n();
   return (
     <div className="overflow-hidden rounded-lg border border-stone-200">
       <table className="w-full text-left text-xs">
         <thead className="bg-stone-50 text-stone-500">
           <tr>
-            <th className="px-3 py-2 font-medium">参数</th>
-            <th className="px-3 py-2 font-medium">类型</th>
-            <th className="px-3 py-2 font-medium">说明</th>
+            <th className="px-3 py-2 font-medium">{tText("参数")}</th>
+            <th className="px-3 py-2 font-medium">{tText("类型")}</th>
+            <th className="px-3 py-2 font-medium">{tText("说明")}</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-stone-100 bg-white">
@@ -233,7 +235,7 @@ function ParamTable({ rows }: { rows: ParamRow[] }) {
             <tr key={name}>
               <td className="px-3 py-2 font-mono text-stone-800">{name}</td>
               <td className="px-3 py-2 font-mono text-stone-500">{type}</td>
-              <td className="px-3 py-2 text-stone-600">{desc}</td>
+              <td className="px-3 py-2 text-stone-600">{tText(desc)}</td>
             </tr>
           ))}
         </tbody>
@@ -243,6 +245,7 @@ function ParamTable({ rows }: { rows: ParamRow[] }) {
 }
 
 export function ApiDocsCard() {
+  const { tText } = useI18n();
   const [authKey, setAuthKey] = useState("");
   const serviceBaseUrl = webConfig.apiUrl.replace(/\/$/, "") || (typeof window !== "undefined" ? window.location.origin : "");
   const openAIBaseUrl = `${serviceBaseUrl}/v1`;
@@ -264,16 +267,16 @@ export function ApiDocsCard() {
         <div>
           <div className="flex items-center gap-2 text-base font-semibold text-stone-900">
             <KeyRound className="size-5 text-stone-500" />
-            接口接入说明
+            {tText("接口接入说明")}
           </div>
           <p className="mt-1 text-xs leading-6 text-stone-500">
-            第三方应用按 OpenAI 兼容接口接入；文件任务接口也使用同一套鉴权方式。
+            {tText("第三方应用按 OpenAI 兼容接口接入；文件任务接口也使用同一套鉴权方式。")}
           </p>
         </div>
 
         <div className="grid gap-3 md:grid-cols-2">
           <div className="space-y-1 rounded-xl border border-stone-200 bg-white px-3 py-2">
-            <div className="text-xs text-stone-500">服务地址</div>
+            <div className="text-xs text-stone-500">{tText("服务地址")}</div>
             <div className="break-all font-mono text-xs text-stone-800">{serviceBaseUrl}</div>
           </div>
           <div className="space-y-1 rounded-xl border border-stone-200 bg-white px-3 py-2">
@@ -285,13 +288,13 @@ export function ApiDocsCard() {
             <div className="break-all font-mono text-xs text-stone-800">{displayKey}</div>
           </div>
           <div className="space-y-1 rounded-xl border border-stone-200 bg-white px-3 py-2">
-            <div className="text-xs text-stone-500">请求头</div>
+            <div className="text-xs text-stone-500">{tText("请求头")}</div>
             <div className="break-all font-mono text-xs text-stone-800">Authorization: Bearer {displayKey}</div>
           </div>
         </div>
 
         <div className="space-y-2">
-          <div className="text-xs font-medium text-stone-600">常用模型，也可请求 /v1/models 获取</div>
+          <div className="text-xs font-medium text-stone-600">{tText("常用模型，也可请求 /v1/models 获取")}</div>
           <div className="flex flex-wrap gap-2">
             {usableModels.map((model) => (
               <span key={model} className="rounded-md border border-stone-200 bg-white px-2 py-1 font-mono text-xs text-stone-700">{model}</span>
@@ -310,7 +313,7 @@ export function ApiDocsCard() {
                       <Icon className="size-4" />
                     </span>
                     <span className="min-w-0">
-                      <span className="block text-sm font-semibold text-stone-900">{item.title}</span>
+                      <span className="block text-sm font-semibold text-stone-900">{tText(item.title)}</span>
                       <span className="mt-1 block truncate font-mono text-xs text-stone-500">{item.method} {item.path}</span>
                     </span>
                   </span>
@@ -319,15 +322,15 @@ export function ApiDocsCard() {
 
                 <div className="mt-4 grid gap-4 lg:grid-cols-2">
                   <div className="space-y-2">
-                    <h3 className="text-xs font-semibold text-stone-700">输入参数</h3>
+                    <h3 className="text-xs font-semibold text-stone-700">{tText("输入参数")}</h3>
                     <ParamTable rows={item.input} />
                   </div>
                   <div className="space-y-2">
-                    <h3 className="text-xs font-semibold text-stone-700">输出参数</h3>
+                    <h3 className="text-xs font-semibold text-stone-700">{tText("输出参数")}</h3>
                     <ParamTable rows={item.output} />
                   </div>
                   <div className="space-y-2 lg:col-span-2">
-                    <h3 className="text-xs font-semibold text-stone-700">调用示例</h3>
+                    <h3 className="text-xs font-semibold text-stone-700">{tText("调用示例")}</h3>
                     <pre className="overflow-auto whitespace-pre-wrap break-all rounded-xl bg-stone-950 px-3 py-3 text-xs leading-5 text-stone-100">{item.example(openAIBaseUrl, displayKey)}</pre>
                   </div>
                 </div>

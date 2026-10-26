@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import webConfig from "@/constants/common-env";
 import { parseChangelog, type ReleaseInfo } from "@/lib/release";
+import { useI18n } from "@/lib/i18n";
 
 const latestVersionUrl =
   "https://raw.githubusercontent.com/basketikun/chatgpt2api/main/VERSION";
@@ -32,6 +33,7 @@ function isNewerVersion(latestVersion: string, currentVersion: string) {
 }
 
 export function useVersionCheck() {
+  const { tText } = useI18n();
   const currentVersion = webConfig.appVersion;
   const localReleases = useMemo(readLocalReleases, []);
   const [latestVersion, setLatestVersion] = useState(currentVersion);
@@ -55,16 +57,16 @@ export function useVersionCheck() {
         ]);
         setLatestVersion(version.trim() || currentVersion);
         if (changelog.trim()) setReleases(parseChangelog(changelog));
-        if (showMessage) toast.success("已获取最新版本信息");
+        if (showMessage) toast.success(tText("已获取最新版本信息"));
       } catch {
         setLatestVersion(currentVersion);
         setReleases(localReleases);
-        if (showMessage) toast.error("获取最新版本信息失败");
+        if (showMessage) toast.error(tText("获取最新版本信息失败"));
       } finally {
         setChecking(false);
       }
     },
-    [currentVersion, localReleases],
+    [currentVersion, localReleases, tText],
   );
 
   const openReleaseModal = () => {

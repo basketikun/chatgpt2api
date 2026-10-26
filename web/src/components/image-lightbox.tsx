@@ -5,6 +5,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { ChevronLeft, ChevronRight, Download, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 
 type LightboxImage = {
   id: string;
@@ -94,6 +95,7 @@ export function ImageLightbox({
   onOpenChange,
   onIndexChange,
 }: ImageLightboxProps) {
+  const { tText } = useI18n();
   const gestureRef = useRef<TouchGesture | null>(null);
   const lastTapRef = useRef(0);
   const pendingTransformRef = useRef<ImageTransform | null>(null);
@@ -374,7 +376,7 @@ export function ImageLightbox({
             </button>
             <DialogPrimitive.Close className="inline-flex size-9 items-center justify-center rounded-full bg-black/50 text-white/90 transition hover:bg-black/70">
               <X className="size-4" />
-              <span className="sr-only">关闭</span>
+              <span className="sr-only">{tText("关闭")}</span>
             </DialogPrimitive.Close>
           </div>
 

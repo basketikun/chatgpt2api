@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import { toast } from "sonner";
+import { translateText } from "@/lib/i18n";
 
 import {
   createCPAPool,
@@ -403,7 +404,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         config: normalized,
       });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "加载系统配置失败");
+      toast.error(error instanceof Error ? error.message : translateText("加载系统配置失败"));
     } finally {
       set({ isLoadingConfig: false });
     }
@@ -498,10 +499,10 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         config: normalizeConfig(data.config),
       });
       window.dispatchEvent(new Event("third-party-apps-updated"));
-      toast.success("配置已保存");
+      toast.success(translateText("配置已保存"));
       return true;
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "保存系统配置失败");
+      toast.error(error instanceof Error ? error.message : translateText("保存系统配置失败"));
       return false;
     } finally {
       set({ isSavingConfig: false });
@@ -745,12 +746,12 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       }
       const data = await testImageStorageConnection();
       if (data.result.ok) {
-        toast.success(`WebDAV 连接可用：HTTP ${data.result.status}`);
+        toast.success(`${translateText("WebDAV 连接可用")}：HTTP ${data.result.status}`);
       } else {
-        toast.error(`WebDAV 连接失败：${data.result.error ?? `HTTP ${data.result.status}`}`);
+        toast.error(`${translateText("WebDAV 连接失败")}：${data.result.error ?? `HTTP ${data.result.status}`}`);
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "测试 WebDAV 失败");
+      toast.error(error instanceof Error ? error.message : translateText("测试 WebDAV 失败"));
     } finally {
       set({ isTestingImageStorage: false });
     }
@@ -764,9 +765,9 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         return;
       }
       const data = await syncImageStorage();
-      toast.success(`同步完成：上传 ${data.result.uploaded}，跳过 ${data.result.skipped}，失败 ${data.result.failed}`);
+      toast.success(`${translateText("同步完成")}：${translateText("上传")} ${data.result.uploaded}，${translateText("跳过")} ${data.result.skipped}，${translateText("失败")} ${data.result.failed}`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "同步图片失败");
+      toast.error(error instanceof Error ? error.message : translateText("同步图片失败"));
     } finally {
       set({ isSyncingImageStorage: false });
     }
@@ -821,7 +822,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       });
     } catch (error) {
       if (!silent) {
-        toast.error(error instanceof Error ? error.message : "加载备份列表失败");
+        toast.error(error instanceof Error ? error.message : translateText("加载备份列表失败"));
       }
     } finally {
       if (!silent) {
@@ -838,10 +839,10 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         return;
       }
       const data = await runBackupNow();
-      toast.success(`备份已完成：${data.result.key}`);
+      toast.success(`${translateText("备份已完成")}：${data.result.key}`);
       await get().loadBackups(true);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "执行备份失败");
+      toast.error(error instanceof Error ? error.message : translateText("执行备份失败"));
     } finally {
       set({ isRunningBackup: false });
     }
@@ -851,10 +852,10 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     set({ deletingBackupKey: key });
     try {
       await deleteBackup(key);
-      toast.success("备份已删除");
+      toast.success(translateText("备份已删除"));
       await get().loadBackups(true);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "删除备份失败");
+      toast.error(error instanceof Error ? error.message : translateText("删除备份失败"));
     } finally {
       set({ deletingBackupKey: null });
     }
@@ -868,9 +869,9 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         return;
       }
       const data = await testBackupConnection();
-      toast.success(`R2 连接正常（HTTP ${data.result.status}）`);
+      toast.success(`${translateText("R2 连接正常")}（HTTP ${data.result.status}）`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "测试备份连接失败");
+      toast.error(error instanceof Error ? error.message : translateText("测试备份连接失败"));
     } finally {
       set({ isTestingBackup: false });
     }
@@ -885,7 +886,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       set({ pools: data.pools });
     } catch (error) {
       if (!silent) {
-        toast.error(error instanceof Error ? error.message : "加载 CPA 连接失败");
+        toast.error(error instanceof Error ? error.message : translateText("加载 CPA 连接失败"));
       }
     } finally {
       if (!silent) {
@@ -939,11 +940,11 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   savePool: async () => {
     const { editingPool, formName, formBaseUrl, formSecretKey } = get();
     if (!formBaseUrl.trim()) {
-      toast.error("请输入 CPA 地址");
+      toast.error(translateText("请输入 CPA 地址"));
       return;
     }
     if (!editingPool && !formSecretKey.trim()) {
-      toast.error("请输入 Secret Key");
+      toast.error(translateText("请输入 Secret Key"));
       return;
     }
 
@@ -956,7 +957,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
           secret_key: formSecretKey.trim() || undefined,
         });
         set({ pools: data.pools, dialogOpen: false });
-        toast.success("连接已更新");
+        toast.success(translateText("连接已更新"));
       } else {
         const data = await createCPAPool({
           name: formName.trim(),
@@ -964,10 +965,10 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
           secret_key: formSecretKey.trim(),
         });
         set({ pools: data.pools, dialogOpen: false });
-        toast.success("连接已添加");
+        toast.success(translateText("连接已添加"));
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "保存失败");
+      toast.error(error instanceof Error ? error.message : translateText("保存失败"));
     } finally {
       set({ isSavingPool: false });
     }
@@ -978,9 +979,9 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     try {
       const data = await deleteCPAPool(pool.id);
       set({ pools: data.pools });
-      toast.success("连接已删除");
+      toast.success(translateText("连接已删除"));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "删除失败");
+      toast.error(error instanceof Error ? error.message : translateText("删除失败"));
     } finally {
       set({ deletingId: null });
     }
@@ -999,9 +1000,9 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         filePage: 1,
         browserOpen: true,
       });
-      toast.success(`读取成功，共 ${files.length} 个远程账号`);
+      toast.success(`${translateText("读取成功")}，${translateText("共")} ${files.length} ${translateText("个远程账号")}`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "读取远程账号失败");
+      toast.error(error instanceof Error ? error.message : translateText("读取远程账号失败"));
     } finally {
       set({ loadingFilesId: null });
     }
@@ -1046,7 +1047,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       return;
     }
     if (selectedNames.length === 0) {
-      toast.error("请先选择要导入的账号");
+      toast.error(translateText("请先选择要导入的账号"));
       return;
     }
 
@@ -1059,9 +1060,9 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         ),
         browserOpen: false,
       });
-      toast.success("导入任务已启动");
+      toast.success(translateText("导入任务已启动"));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "启动导入失败");
+      toast.error(error instanceof Error ? error.message : translateText("启动导入失败"));
     } finally {
       set({ isStartingImport: false });
     }

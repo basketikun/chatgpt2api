@@ -18,6 +18,7 @@ import { Sub2APIConnections } from "./components/sub2api-connections";
 import { ThirdPartyAppsCard } from "./components/third-party-apps-card";
 import { UserKeysCard } from "./components/user-keys-card";
 import { useSettingsStore } from "./store";
+import { useI18n } from "@/lib/i18n";
 
 const settingsTabs = [
   { value: "basic", title: "基础配置" },
@@ -75,6 +76,7 @@ function SettingsDataController() {
 }
 
 function SettingsPageContent() {
+  const { tText } = useI18n();
   return (
     <>
       <SettingsDataController />
@@ -84,7 +86,7 @@ function SettingsPageContent() {
           <TabsList variant="line" className="min-w-max justify-start">
             {settingsTabs.map((tab) => (
               <TabsTrigger key={tab.value} value={tab.value} className="px-4">
-                {tab.title}
+                {tText(tab.title)}
               </TabsTrigger>
             ))}
           </TabsList>

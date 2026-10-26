@@ -20,6 +20,7 @@ import {
 } from "@/store/editable-file-history";
 
 import type { EditableFileTask } from "./types";
+import { useI18n } from "@/lib/i18n";
 
 type Props = {
   title: string;
@@ -73,6 +74,7 @@ const fileNameOf = (url: string) => {
 };
 
 function ResultFile({ href, icon, label }: { href?: string; icon: ReactNode; label: string }) {
+  const { tText } = useI18n();
   if (!href) return null;
   return (
     <div className="flex items-center gap-3 rounded-md border border-stone-200 bg-stone-50/80 px-3 py-3 dark:border-white/10 dark:bg-white/[0.04]">
@@ -84,13 +86,14 @@ function ResultFile({ href, icon, label }: { href?: string; icon: ReactNode; lab
         <div className="truncate text-xs text-stone-500 dark:text-stone-400">{fileNameOf(href)}</div>
       </div>
       <Button size="sm" asChild>
-        <a href={href} target="_blank" rel="noreferrer">下载</a>
+        <a href={href} target="_blank" rel="noreferrer">{tText("下载")}</a>
       </Button>
     </div>
   );
 }
 
 export function EditableFilePanel({ title, kind, endpoint, defaultPrompt, imageRequired }: Props) {
+  const { tText } = useI18n();
   const [prompt, setPrompt] = useState(defaultPrompt);
   const [images, setImages] = useState<string[]>([]);
   const [tasks, setTasks] = useState<EditableFileTask[]>([]);
@@ -277,7 +280,7 @@ export function EditableFilePanel({ title, kind, endpoint, defaultPrompt, imageR
         <div className="flex h-14 items-center justify-between border-b border-stone-200 px-4 dark:border-white/10">
           <div className="flex items-center gap-2 text-sm font-semibold text-stone-950 dark:text-stone-50">
             <History className="size-4" />
-            历史记录
+            {tText("历史记录")}
           </div>
           <div className="flex gap-1">
             <Button size="sm" variant="ghost" onClick={createDraft}>
@@ -337,7 +340,7 @@ export function EditableFilePanel({ title, kind, endpoint, defaultPrompt, imageR
               </div>
             );
           }) : (
-            <div className="flex h-full items-center justify-center text-sm text-stone-400 dark:text-stone-500">暂无记录</div>
+            <div className="flex h-full items-center justify-center text-sm text-stone-400 dark:text-stone-500">{tText("暂无记录")}</div>
           )}
         </div>
       </aside>
@@ -347,22 +350,22 @@ export function EditableFilePanel({ title, kind, endpoint, defaultPrompt, imageR
           <h2 className="text-sm font-semibold text-stone-950 dark:text-stone-50">{title}</h2>
           <Button size="sm" onClick={() => void submit()} disabled={submitting || running}>
             {submitting ? <LoaderCircle className="animate-spin" /> : <Play />}
-            生成
+            {tText("生成")}
           </Button>
         </div>
         <div className="min-h-0 flex-1 space-y-5 overflow-auto p-5">
           <div className="space-y-2">
-            <Label htmlFor={`${endpoint}-prompt`} className="text-xs font-semibold text-stone-700 dark:text-stone-300">需求</Label>
+            <Label htmlFor={`${endpoint}-prompt`} className="text-xs font-semibold text-stone-700 dark:text-stone-300">{tText("需求")}</Label>
             <Textarea id={`${endpoint}-prompt`} value={prompt} onChange={(event) => setPrompt(event.target.value)} className="min-h-56 rounded-md border-stone-200 bg-white text-sm leading-6 shadow-none dark:border-white/10 dark:bg-white/[0.03]" />
           </div>
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <Label className="text-xs font-semibold text-stone-700 dark:text-stone-300">参考图</Label>
+              <Label className="text-xs font-semibold text-stone-700 dark:text-stone-300">{tText("参考图")}</Label>
               <span className="rounded-full bg-stone-100 px-2 py-0.5 text-xs text-stone-500 dark:bg-white/10 dark:text-stone-400">{images.length}</span>
             </div>
             <label className="group flex h-24 cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-stone-300 bg-stone-50 text-sm font-medium text-stone-600 transition hover:border-stone-950 hover:bg-white dark:border-white/15 dark:bg-white/[0.03] dark:text-stone-300 dark:hover:border-white/50">
               <ImagePlus className="size-4 transition group-hover:scale-110" />
-              上传图片
+              {tText("上传图片")}
               <Input type="file" accept="image/*" multiple onChange={(event) => void appendFiles(event.target.files)} className="hidden" />
             </label>
             {images.length ? (
@@ -376,7 +379,7 @@ export function EditableFilePanel({ title, kind, endpoint, defaultPrompt, imageR
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="outline" onClick={() => setImages([])}>
               <Trash2 />
-              清空图片
+              {tText("清空图片")}
             </Button>
           </div>
           {error ? <div className="flex gap-2 rounded-md border border-rose-200 bg-rose-50/70 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-rose-300"><AlertCircle className="mt-0.5 size-4 shrink-0" />{error}</div> : null}
@@ -385,7 +388,7 @@ export function EditableFilePanel({ title, kind, endpoint, defaultPrompt, imageR
 
       <section className="flex min-h-0 flex-col">
         <div className="flex h-14 items-center justify-between border-b border-stone-200 px-5 dark:border-white/10">
-          <h2 className="text-sm font-semibold text-stone-950 dark:text-stone-50">生成状态</h2>
+          <h2 className="text-sm font-semibold text-stone-950 dark:text-stone-50">{tText("生成状态")}</h2>
           {selectedTask ? <span className={cn("rounded-full border px-2.5 py-1 text-xs", statusClass(selectedTask.status))}>{statusText(selectedTask.status)}</span> : null}
         </div>
         <div className="min-h-0 flex-1 overflow-auto p-5">
@@ -393,14 +396,14 @@ export function EditableFilePanel({ title, kind, endpoint, defaultPrompt, imageR
             <div className="space-y-5">
               <div className="grid gap-3 sm:grid-cols-[150px_150px_minmax(0,1fr)]">
                 <div className="rounded-md border border-stone-200 bg-stone-50 p-4 dark:border-white/10 dark:bg-white/[0.03]">
-                  <div className="text-xs text-stone-500 dark:text-stone-400">状态</div>
+                  <div className="text-xs text-stone-500 dark:text-stone-400">{tText("状态")}</div>
                   <div className="mt-2 flex items-center gap-2 text-sm font-semibold text-stone-950 dark:text-stone-50">
                     {selectedTask.status === "success" ? <CheckCircle2 className="size-4 text-emerald-500" /> : selectedTask.status === "error" ? <XCircle className="size-4 text-rose-500" /> : <LoaderCircle className="size-4 animate-spin text-amber-500" />}
                     {statusText(selectedTask.status)}
                   </div>
                 </div>
                 <div className="rounded-md border border-stone-200 bg-stone-50 p-4 dark:border-white/10 dark:bg-white/[0.03]">
-                  <div className="text-xs text-stone-500 dark:text-stone-400">已执行</div>
+                  <div className="text-xs text-stone-500 dark:text-stone-400">{tText("已执行")}</div>
                   <div className="mt-2 text-2xl font-semibold tabular-nums text-stone-950 dark:text-stone-50">{formatElapsed(elapsedOf(selectedTask))}</div>
                 </div>
                 <div className="rounded-md border border-stone-200 bg-stone-50 p-4 dark:border-white/10 dark:bg-white/[0.03]">
@@ -411,16 +414,16 @@ export function EditableFilePanel({ title, kind, endpoint, defaultPrompt, imageR
 
               {selectedTask.result ? (
                 <div className="space-y-3 rounded-md border border-stone-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]">
-                  <div className="text-sm font-semibold text-stone-950 dark:text-stone-50">生成结果</div>
-                  <ResultFile href={selectedTask.result.primary_url} icon={<FileText className="size-4" />} label={kind === "ppt" ? "PPT 文件" : "PSD 文件"} />
-                  <ResultFile href={selectedTask.result.zip_url} icon={<FileArchive className="size-4" />} label="素材包" />
+                  <div className="text-sm font-semibold text-stone-950 dark:text-stone-50">{tText("生成结果")}</div>
+                  <ResultFile href={selectedTask.result.primary_url} icon={<FileText className="size-4" />} label={tText(kind === "ppt" ? "PPT 文件" : "PSD 文件")} />
+                  <ResultFile href={selectedTask.result.zip_url} icon={<FileArchive className="size-4" />} label={tText("素材包")} />
                 </div>
               ) : null}
 
               {selectedTask.error ? <div className="rounded-md border border-rose-200 bg-rose-50/70 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-rose-300">{selectedTask.error}</div> : null}
             </div>
           ) : (
-            <div className="flex h-full min-h-80 items-center justify-center text-sm text-stone-400 dark:text-stone-500">暂无任务</div>
+            <div className="flex h-full min-h-80 items-center justify-center text-sm text-stone-400 dark:text-stone-500">{tText("暂无任务")}</div>
           )}
         </div>
       </section>
@@ -428,14 +431,14 @@ export function EditableFilePanel({ title, kind, endpoint, defaultPrompt, imageR
     <Dialog open={!!deleteConfirm} onOpenChange={(open) => !open && setDeleteConfirm(null)}>
       <DialogContent className="rounded-xl" showCloseButton={false}>
         <DialogHeader>
-          <DialogTitle>{deleteConfirm?.type === "all" ? "清空历史记录" : "删除历史记录"}</DialogTitle>
+          <DialogTitle>{tText(deleteConfirm?.type === "all" ? "清空历史记录" : "删除历史记录")}</DialogTitle>
           <DialogDescription>
-            {deleteConfirm?.type === "all" ? "确认清空当前类型的历史记录吗？" : "确认删除这条历史记录吗？"}
+            {tText(deleteConfirm?.type === "all" ? "确认清空当前类型的历史记录吗？" : "确认删除这条历史记录吗？")}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setDeleteConfirm(null)}>取消</Button>
-          <Button variant="destructive" onClick={confirmDelete}>确认删除</Button>
+          <Button variant="outline" onClick={() => setDeleteConfirm(null)}>{tText("取消")}</Button>
+          <Button variant="destructive" onClick={confirmDelete}>{tText("确认删除")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
