@@ -16,6 +16,7 @@
     "enabled": false,
     "egress_mode": "single_proxy",
     "proxy_url": "http://privoxy:8118",
+    "resource_proxy_enabled": false,
     "resource_proxy_url": "",
     "skip_ssl_verify": true,
     "reset_session_status_codes": [

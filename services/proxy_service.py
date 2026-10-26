@@ -43,6 +43,7 @@ class ProxyRuntimeProfile:
     proxy_source: str = "direct"
     resource: bool = False
     runtime_enabled: bool = False
+    resource_proxy_enabled: bool = False
     egress_mode: str = "direct"
     skip_ssl_verify: bool = False
     reset_session_status_codes: tuple[int, ...] = field(default_factory=lambda: (403,))
@@ -178,6 +179,7 @@ class ProxySettingsStore:
         runtime = self._get_runtime_settings()
         clearance = dict(runtime.get("clearance") if isinstance(runtime.get("clearance"), dict) else {})
         runtime_enabled = bool(runtime.get("enabled"))
+        resource_proxy_enabled = bool(runtime.get("resource_proxy_enabled"))
         egress_mode = str(runtime.get("egress_mode") or "direct").strip().lower()
 
         account_proxy = _clean((account or {}).get("proxy") if isinstance(account, dict) else "")
@@ -186,7 +188,7 @@ class ProxySettingsStore:
 
         runtime_proxy = ""
         runtime_proxy_source = "runtime"
-        if upstream and runtime_enabled and egress_mode == "single_proxy":
+        if upstream and runtime_enabled and egress_mode == "single_proxy" and (not resource or resource_proxy_enabled):
             resource_proxy = _clean(runtime.get("resource_proxy_url")) if resource else ""
             runtime_proxy = resource_proxy or _clean(runtime.get("proxy_url"))
             runtime_proxy_source = "runtime_resource" if resource_proxy else "runtime"
@@ -211,6 +213,7 @@ class ProxySettingsStore:
             proxy_source=source,
             resource=bool(resource),
             runtime_enabled=runtime_enabled,
+            resource_proxy_enabled=resource_proxy_enabled,
             egress_mode=egress_mode,
             skip_ssl_verify=bool(runtime.get("skip_ssl_verify")) if runtime_enabled else False,
             reset_session_status_codes=_status_codes_tuple(runtime.get("reset_session_status_codes")),

@@ -183,6 +183,7 @@ class OpenAIBackendAPI:
         self.progress_callback: Callable[[str], None] | None = None
         self.session = requests.Session(**proxy_settings.build_session_kwargs(
             account=self.account,
+            upstream=True,
             impersonate=self.fp["impersonate"],
             verify=True,
         ))
@@ -214,6 +215,25 @@ class OpenAIBackendAPI:
         })
         if self.access_token:
             self.session.headers["Authorization"] = f"Bearer {self.access_token}"
+        self._warm_up_proxy_clearance()
+
+    def _warm_up_proxy_clearance(self) -> None:
+        profile = proxy_settings.get_profile(account=self.account, upstream=True)
+        if not profile.clearance_enabled or not bool(profile.clearance.get("warm_up_on_start")):
+            return
+        bundle = proxy_settings.refresh_clearance(
+            target_url=self.base_url,
+            account=self.account,
+            force=False,
+            upstream=True,
+        )
+        if bundle is None:
+            return
+        if bundle.user_agent:
+            self.user_agent = bundle.user_agent
+            self.session.headers["User-Agent"] = bundle.user_agent
+        for name, value in bundle.cookies.items():
+            self.session.cookies.set(name, value, domain=f".{bundle.target_host or 'chatgpt.com'}")
 
     def close(self) -> None:
         if getattr(self, "_closed", False):
@@ -272,7 +292,12 @@ class OpenAIBackendAPI:
         headers["X-OpenAI-Target-Route"] = path
         if extra:
             headers.update(extra)
-        return headers
+        return proxy_settings.build_headers(
+            headers=headers,
+            target_url=self.base_url + path,
+            account=self.account,
+            upstream=True,
+        )
 
     @staticmethod
     def _extract_quota_and_restore_at(limits_progress: list[Any]) -> tuple[int, str | None]:

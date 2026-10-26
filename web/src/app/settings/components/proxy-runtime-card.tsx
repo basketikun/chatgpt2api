@@ -174,6 +174,15 @@ export function ProxyRuntimeCard() {
             />
           </div>
 
+          <label className="flex items-center gap-3 rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700">
+            <Checkbox
+              checked={Boolean(runtime.resource_proxy_enabled)}
+              onCheckedChange={(checked) => setProxyRuntimeField("resource_proxy_enabled", Boolean(checked))}
+              disabled={!runtimeEnabled || runtime.egress_mode !== "single_proxy"}
+            />
+            远程图片使用运行时代理
+          </label>
+
           <div className="space-y-2">
             <label className="text-sm text-stone-700">重置会话状态码</label>
             <Input

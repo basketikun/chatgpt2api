@@ -21,6 +21,7 @@ DEFAULT_PROXY_RUNTIME: dict[str, Any] = {
     "enabled": False,
     "egress_mode": "direct",
     "proxy_url": "",
+    "resource_proxy_enabled": False,
     "resource_proxy_url": "",
     "skip_ssl_verify": False,
     "reset_session_status_codes": [403],
@@ -76,6 +77,7 @@ def _warp_runtime_defaults() -> dict[str, Any]:
             "enabled": _env_bool("CHATGPT2API_PROXY_RUNTIME_ENABLED", True),
             "egress_mode": egress_mode,
             "proxy_url": os.getenv("CHATGPT2API_PROXY_RUNTIME_PROXY_URL", "http://privoxy:8118").strip(),
+            "resource_proxy_enabled": _env_bool("CHATGPT2API_PROXY_RUNTIME_RESOURCE_PROXY_ENABLED", False),
             "resource_proxy_url": os.getenv("CHATGPT2API_PROXY_RUNTIME_RESOURCE_PROXY_URL", "").strip(),
             "skip_ssl_verify": _env_bool("CHATGPT2API_PROXY_RUNTIME_SKIP_SSL_VERIFY", False),
             "reset_session_status_codes": [

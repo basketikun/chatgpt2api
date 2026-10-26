@@ -58,6 +58,9 @@ DEFAULT_PROXY_RUNTIME = {
     "enabled": False,
     "egress_mode": "direct",
     "proxy_url": "",
+    # Remote image downloads stay direct unless explicitly opted in. This
+    # prevents enabling the runtime proxy from silently changing image egress.
+    "resource_proxy_enabled": False,
     "resource_proxy_url": "",
     "skip_ssl_verify": False,
     "reset_session_status_codes": [403],
@@ -244,6 +247,10 @@ def _normalize_proxy_runtime_settings(value: object) -> dict[str, object]:
         "enabled": _normalize_bool(source.get("enabled"), bool(DEFAULT_PROXY_RUNTIME["enabled"])),
         "egress_mode": egress_mode,
         "proxy_url": str(source.get("proxy_url") or "").strip(),
+        "resource_proxy_enabled": _normalize_bool(
+            source.get("resource_proxy_enabled"),
+            bool(DEFAULT_PROXY_RUNTIME["resource_proxy_enabled"]),
+        ),
         "resource_proxy_url": str(source.get("resource_proxy_url") or "").strip(),
         "skip_ssl_verify": _normalize_bool(
             source.get("skip_ssl_verify"),
