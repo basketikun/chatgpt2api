@@ -66,15 +66,82 @@ function getSessionAccessToken(value: unknown) {
   return typeof token === "string" ? token.trim() : "";
 }
 
-function getAccountJsonAccount(value: unknown): AccountImportPayload | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+function getRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function getString(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function getSub2ApiAccount(value: unknown): AccountImportPayload | null {
+  const raw = getRecord(value);
+  const credentials = getRecord(raw?.credentials);
+  if (!raw || !credentials) {
     return null;
   }
-  const raw = value as Record<string, unknown>;
+
+  const platform = getString(raw.platform).toLowerCase();
+  if (platform && platform !== "openai") {
+    return null;
+  }
+
+  const token = getString(credentials.access_token ?? credentials.accessToken);
+  if (!token) {
+    return null;
+  }
+
+  const extra = getRecord(raw.extra);
+  const payload: AccountImportPayload = {
+    access_token: token,
+    source_type: "codex",
+  };
+  const credentialFields = [
+    "refresh_token",
+    "id_token",
+    "chatgpt_account_id",
+    "chatgpt_user_id",
+    "organization_id",
+    "expires_at",
+    "subscription_expires_at",
+    "model_mapping",
+  ];
+  const accountFields = ["concurrency", "priority", "rate_multiplier", "auto_pause_on_expired"];
+
+  for (const field of credentialFields) {
+    if (credentials[field] !== undefined) {
+      payload[field] = credentials[field];
+    }
+  }
+  for (const field of accountFields) {
+    if (raw[field] !== undefined) {
+      payload[field] = raw[field];
+    }
+  }
+
+  const email = getString(credentials.email) || getString(extra?.email) || getString(raw.name);
+  if (email) {
+    payload.email = email;
+  }
+  const planType = getString(credentials.plan_type) || getString(raw.plan_type);
+  if (planType) {
+    payload.type = planType;
+  }
+
+  return payload;
+}
+
+function getAccountJsonAccount(value: unknown): AccountImportPayload | null {
+  const raw = getRecord(value);
+  if (!raw) {
+    return null;
+  }
   const tokenValue = raw.access_token ?? raw.accessToken;
   const token = typeof tokenValue === "string" ? tokenValue.trim() : "";
   if (!token) {
-    return null;
+    return getSub2ApiAccount(raw);
   }
 
   const payload: AccountImportPayload = {
@@ -426,7 +493,7 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
       const errorCount = results.filter((item) => item.accounts.length === 0).length;
 
       if (parsedAccountCount === 0) {
-        toast.error("这些账号 JSON 文件里没有读取到可用 access_token");
+        toast.error("这些账号 JSON 文件里没有读取到可用 access_token 或 credentials.access_token");
         return;
       }
 
@@ -656,8 +723,8 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
             <div className="space-y-2">
               <div className="text-sm font-medium text-stone-800">选择本地账号 JSON 文件</div>
               <div className="text-sm leading-6 text-stone-500">
-                支持本项目导出的单账号对象或全部账号数组，也兼容每个文件一个账号对象的 CPA JSON。
-                系统会自动提取 `access_token` 或 `accessToken`。
+                支持本项目导出的单账号对象或全部账号数组、CPA JSON，以及 Sub2API 导出的账号 JSON。
+                Sub2API 文件会自动读取 `accounts[].credentials` 中的 Codex 认证信息。
               </div>
             </div>
             <Button
@@ -740,7 +807,7 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
         />
         <MethodCard
           title="导入账号 JSON 文件"
-          description="支持本项目导出的单账号 JSON 或全部账号数组，也兼容 CPA JSON 文件。"
+          description="支持本项目、CPA 和 Sub2API 导出的账号 JSON 文件。"
           icon={Files}
           onClick={() => setMethod("account-json")}
         />
@@ -807,7 +874,7 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
                       ? "粘贴 Codex 认证 JSON，系统会按 codex 来源导入。"
                     : method === "oauth"
                       ? "用浏览器跑一遍 OpenAI 标准 OAuth，拿回 refresh_token 后系统会自动续期。"
-                      : "支持读取本项目导出的单账号对象或全部账号数组，并在提交前做数量确认。"}
+                      : "支持读取本项目、CPA 和 Sub2API 导出的账号 JSON，并在提交前做数量确认。"}
             </DialogDescription>
           </DialogHeader>
 
