@@ -19,6 +19,8 @@ class FakeImageTaskService:
     def __init__(self):
         self.generation_calls = []
         self.edit_calls = []
+        self.resume_calls = []
+        self.manual_recovery_calls = []
 
     def submit_generation(self, identity, **kwargs):
         self.generation_calls.append((identity, kwargs))
@@ -58,6 +60,27 @@ class FakeImageTaskService:
             "missing_ids": [task_id for task_id in ids if task_id == "missing"],
         }
 
+    def resume_poll(self, identity, task_id, extra_timeout_secs, base_url):
+        self.resume_calls.append((identity, task_id, extra_timeout_secs, base_url))
+        return {
+            "id": task_id,
+            "status": "running",
+            "mode": "generate",
+            "created_at": "2026-01-01 00:00:00",
+            "updated_at": "2026-01-01 00:00:00",
+        }
+
+    def recover_manual(self, identity, task_id, **kwargs):
+        self.manual_recovery_calls.append((identity, task_id, kwargs))
+        return {
+            "id": task_id,
+            "status": "success",
+            "mode": "edit",
+            "created_at": "2026-01-01 00:00:00",
+            "updated_at": "2026-01-01 00:00:00",
+            "data": [{"url": "http://testserver/images/manual.png"}],
+        }
+
 
 class ImageTasksApiTests(unittest.TestCase):
     def setUp(self):
@@ -65,6 +88,13 @@ class ImageTasksApiTests(unittest.TestCase):
         self.service_patcher = mock.patch.object(image_tasks_module, "image_task_service", self.fake_service)
         self.service_patcher.start()
         self.addCleanup(self.service_patcher.stop)
+        self.identity_patcher = mock.patch.object(
+            image_tasks_module,
+            "require_identity",
+            return_value={"id": "test-key", "name": "Test", "role": "admin"},
+        )
+        self.identity_patcher.start()
+        self.addCleanup(self.identity_patcher.stop)
         app = FastAPI()
         app.include_router(image_tasks_module.create_router())
         self.client = TestClient(app)
@@ -73,7 +103,15 @@ class ImageTasksApiTests(unittest.TestCase):
         response = self.client.post(
             "/api/image-tasks/generations",
             headers=AUTH_HEADERS,
-            json={"client_task_id": "task-1", "prompt": "cat", "model": "gpt-image-2"},
+            json={
+                "client_task_id": "task-1",
+                "prompt": "cat",
+                "model": "gpt-image-2",
+                "provider_binding_id": "cb-1",
+                "provider_account_identity": "account-1",
+                "client_conversation_id": "content-conversation-1",
+                "retain_conversation": True,
+            },
         )
 
         self.assertEqual(response.status_code, 200, response.text)
@@ -81,6 +119,9 @@ class ImageTasksApiTests(unittest.TestCase):
         self.assertEqual(payload["id"], "task-1")
         self.assertEqual(payload["status"], "success")
         self.assertEqual(len(self.fake_service.generation_calls), 1)
+        request = self.fake_service.generation_calls[0][1]
+        self.assertEqual(request["conversation_id"], "")
+        self.assertEqual(request["parent_message_id"], "")
 
     def test_create_edit_task_accepts_multiple_images(self):
         """测试图片编辑任务接口支持多个上传图片。"""
@@ -99,6 +140,33 @@ class ImageTasksApiTests(unittest.TestCase):
         self.assertEqual(len(self.fake_service.edit_calls), 1)
         images = self.fake_service.edit_calls[0][1]["images"]
         self.assertEqual(len(images), 2)
+
+    def test_resume_poll_uses_the_current_authoritative_provider_base_url(self):
+        response = self.client.post(
+            "/api/image-tasks/task-1/resume-poll",
+            headers=AUTH_HEADERS,
+            json={"extra_timeout_secs": 45},
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["status"], "running")
+        self.assertEqual(self.fake_service.resume_calls[0][1:], ("task-1", 45.0, "http://testserver"))
+
+    def test_manual_recovery_is_scoped_to_the_exact_binding_and_conversation(self):
+        response = self.client.post(
+            "/api/image-tasks/task-1/manual-recover",
+            headers=AUTH_HEADERS,
+            json={
+                "provider_binding_id": "binding-1",
+                "provider_account_identity": "account-1",
+                "client_conversation_id": "product-1",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["status"], "success")
+        self.assertEqual(self.fake_service.manual_recovery_calls[0][1], "task-1")
+        self.assertEqual(self.fake_service.manual_recovery_calls[0][2]["base_url"], "http://testserver")
 
     def test_create_edit_task_accepts_image_url(self):
         """测试图片编辑任务接口支持表单 image_url 引用。"""

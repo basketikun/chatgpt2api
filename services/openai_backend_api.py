@@ -524,13 +524,15 @@ class OpenAIBackendAPI:
             model: str,
             timezone: str,
             thinking_effort: str = "",
+            conversation_id: str = "",
+            parent_message_id: str = "",
     ) -> Dict[str, Any]:
         """把标准 messages 构造成 web 对话请求体。"""
         payload = {
             "action": "next",
             "messages": self._api_messages_to_conversation_messages(messages),
             "model": model,
-            "parent_message_id": new_uuid(),
+            "parent_message_id": parent_message_id or new_uuid(),
             "conversation_mode": {"kind": "primary_assistant"},
             "conversation_origin": None,
             "force_paragen": False,
@@ -559,6 +561,12 @@ class OpenAIBackendAPI:
         normalized_effort = self._normalize_thinking_effort(thinking_effort or config.default_thinking_effort)
         if normalized_effort:
             payload["thinking_effort"] = normalized_effort
+        if conversation_id:
+            if not parent_message_id:
+                raise RuntimeError("conversation continuation requires parent_message_id")
+            payload["conversation_id"] = conversation_id
+        elif parent_message_id:
+            raise RuntimeError("parent_message_id requires conversation_id")
         return payload
 
     def _image_model_settings(self, model: str) -> tuple[str, str]:
@@ -861,14 +869,21 @@ class OpenAIBackendAPI:
             retry_after = int(retry_after_header) if str(retry_after_header or "").isdigit() else None
             raise UpstreamHTTPError(path, error.code, body, retry_after=retry_after) from error
 
-    def _prepare_image_conversation(self, prompt: str, requirements: ChatRequirements, model: str) -> str:
+    def _prepare_image_conversation(
+            self,
+            prompt: str,
+            requirements: ChatRequirements,
+            model: str,
+            conversation_id: str = "",
+            parent_message_id: str = "",
+    ) -> str:
         """为图片生成准备 conduit token。"""
         path = "/backend-api/f/conversation/prepare"
         upstream_model, thinking_effort = self._image_model_settings(model)
         payload = {
             "action": "next",
             "fork_from_shared_post": False,
-            "parent_message_id": new_uuid(),
+            "parent_message_id": parent_message_id or new_uuid(),
             "model": upstream_model,
             "client_prepare_state": "success",
             "timezone_offset_min": -480,
@@ -886,6 +901,12 @@ class OpenAIBackendAPI:
         }
         if thinking_effort:
             payload["thinking_effort"] = thinking_effort
+        if conversation_id:
+            if not parent_message_id:
+                raise RuntimeError("conversation continuation requires parent_message_id")
+            payload["conversation_id"] = conversation_id
+        elif parent_message_id:
+            raise RuntimeError("parent_message_id requires conversation_id")
         response = self.session.post(
             self.base_url + path,
             headers=self._image_headers(path, requirements),
@@ -970,7 +991,9 @@ class OpenAIBackendAPI:
         }
 
     def _start_image_generation(self, prompt: str, requirements: ChatRequirements, conduit_token: str, model: str,
-                                references: Optional[list[Dict[str, Any]]] = None) -> requests.Response:
+                                references: Optional[list[Dict[str, Any]]] = None,
+                                conversation_id: str = "",
+                                parent_message_id: str = "") -> requests.Response:
         """启动图片生成或编辑的 SSE 请求。"""
         upstream_model, thinking_effort = self._image_model_settings(model)
         references = references or []
@@ -1009,7 +1032,7 @@ class OpenAIBackendAPI:
                 "content": content,
                 "metadata": metadata,
             }],
-            "parent_message_id": new_uuid(),
+            "parent_message_id": parent_message_id or new_uuid(),
             "model": upstream_model,
             "client_prepare_state": "sent",
             "timezone_offset_min": -480,
@@ -1034,6 +1057,12 @@ class OpenAIBackendAPI:
         }
         if thinking_effort:
             payload["thinking_effort"] = thinking_effort
+        if conversation_id:
+            if not parent_message_id:
+                raise RuntimeError("conversation continuation requires parent_message_id")
+            payload["conversation_id"] = conversation_id
+        elif parent_message_id:
+            raise RuntimeError("parent_message_id requires conversation_id")
         path = "/backend-api/f/conversation"
         response = self.session.post(
             self.base_url + path,
@@ -1042,6 +1071,16 @@ class OpenAIBackendAPI:
             timeout=300,
             stream=True,
         )
+        if response.status_code == 404:
+            response.close()
+            path = "/backend-api/conversation"
+            response = self.session.post(
+                self.base_url + path,
+                headers=self._image_headers(path, requirements, conduit_token, "text/event-stream"),
+                json=payload,
+                timeout=300,
+                stream=True,
+            )
         ensure_ok(response, path)
         return response
 
@@ -1052,6 +1091,13 @@ class OpenAIBackendAPI:
                                     timeout=60)
         ensure_ok(response, path)
         return response.json()
+
+    def get_conversation_parent_message_id(self, conversation_id: str) -> str:
+        document = self._get_conversation(conversation_id)
+        parent_message_id = str(document.get("current_node") or "").strip()
+        if not parent_message_id:
+            raise RuntimeError("upstream conversation has no authoritative current_node")
+        return parent_message_id
 
     def delete_conversation(self, conversation_id: str) -> Dict[str, Any]:
         """删除本地对话记录。"""
@@ -2563,17 +2609,32 @@ class OpenAIBackendAPI:
             images: Optional[list[str]] = None,
             system_hints: Optional[list[str]] = None,
             thinking_effort: str = "",
+            conversation_id: str = "",
+            parent_message_id: str = "",
     ) -> Iterator[str]:
         system_hints = system_hints or []
         if "picture_v2" in system_hints:
-            yield from self._stream_picture_conversation(prompt, model, images or [])
+            yield from self._stream_picture_conversation(
+                prompt,
+                model,
+                images or [],
+                conversation_id=conversation_id,
+                parent_message_id=parent_message_id,
+            )
             return
 
         normalized = messages or [{"role": "user", "content": prompt}]
         self._bootstrap()
         requirements = self._get_chat_requirements()
         path, timezone = self._chat_target()
-        payload = self._conversation_payload(normalized, model, timezone, thinking_effort=thinking_effort)
+        payload = self._conversation_payload(
+            normalized,
+            model,
+            timezone,
+            thinking_effort=thinking_effort,
+            conversation_id=conversation_id,
+            parent_message_id=parent_message_id,
+        )
         response = self.session.post(
             self.base_url + path,
             headers=self._conversation_headers(path, requirements),
@@ -2600,6 +2661,8 @@ class OpenAIBackendAPI:
             prompt: str,
             model: str,
             images: list[str],
+            conversation_id: str = "",
+            parent_message_id: str = "",
     ) -> Iterator[str]:
         if not self.access_token:
             raise RuntimeError("access_token is required for image endpoints")
@@ -2610,9 +2673,23 @@ class OpenAIBackendAPI:
         self._report_progress("getting_token")
         requirements = self._get_chat_requirements()
         self._report_progress("preparing_conversation")
-        conduit_token = self._prepare_image_conversation(prompt, requirements, model)
+        conduit_token = self._prepare_image_conversation(
+            prompt,
+            requirements,
+            model,
+            conversation_id=conversation_id,
+            parent_message_id=parent_message_id,
+        )
         self._report_progress("starting_generation")
-        response = self._start_image_generation(prompt, requirements, conduit_token, model, references)
+        response = self._start_image_generation(
+            prompt,
+            requirements,
+            conduit_token,
+            model,
+            references,
+            conversation_id=conversation_id,
+            parent_message_id=parent_message_id,
+        )
         self._report_progress("generating")
         yield from self._iter_sse_payloads_capped(response, float(config.image_poll_timeout_secs))
 
