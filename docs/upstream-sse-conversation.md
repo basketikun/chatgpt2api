@@ -269,3 +269,19 @@ SSE 结束后可按以下顺序判断结果：
 4. 查询完整会话时，仍然只读取 `role=tool` 且 `async_task_type=image_gen` 的消息。
 5. 如果没有图片结果也没有文本，返回上游异常或空结果错误。
 
+## 初始文案请求结果不明时的只读恢复
+
+`GET /api/conversation-bindings/text` 复用现有身份认证，要求传入原请求保存的
+`provider_binding_id`、`provider_account_identity`、`client_conversation_id`、
+`conversation_id` 和 `parent_message_id`。只在原绑定账号查询原会话，不发送消息、
+不切换账号、不创建新绑定。调用方必须保存原响应中的这些范围字段；不能由商品编号
+或时间推测、重建已经丢失的会话引用。
+
+只有原锚点仍在当前分支、没有后续用户消息，且当前消息是已结束的完整 assistant
+正文，才返回 `status=succeeded`、`binding_status=bound` 和正文。分析文本、未结束
+或空正文返回 `status=running`，不能当作生成成功。账号或会话错配返回 409。
+
+初始文本流异常且已取得会话编号时，服务先查询一次既有结果；未完成则保留原引用供
+后续 GET 查询，不重复生成。该自动恢复不用于后续聊天轮次，避免取到前一轮回答。
+Workbench 消费者需先部署此 Provider 接口，再启用保存和查询原文案引用的 Worker；
+历史记录缺少原引用时仍是结果未知，不能自动重提。

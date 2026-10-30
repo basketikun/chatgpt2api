@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from threading import Event, Thread
+from unittest import mock
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -100,6 +102,68 @@ class ModelCatalogServiceTests(unittest.TestCase):
         shared_route = self.catalog.route_for_model("shared")
         self.assertEqual(shared_route.account_types, frozenset({"free", "Plus"}))
         self.assertTrue(shared_route.allow_anonymous)
+
+    def test_bound_text_catalog_read_does_not_lock_out_other_requests_or_health(self) -> None:
+        self.outcomes["plus"] = model_list("gpt-5-6")
+        with self.accounts._lock:
+            bindings = [self.accounts._conversation_binding_for_token_locked("plus") for _ in range(3)]
+        catalog_started = Event()
+        release_catalog = Event()
+        original_factory = self.catalog._backend_factory
+
+        def factory(access_token=""):
+            backend = original_factory(access_token=access_token)
+            original_list = backend.list_models
+
+            def read_models():
+                catalog_started.set()
+                if not release_catalog.wait(2):
+                    raise RuntimeError("test catalog was not released")
+                return original_list()
+
+            backend.list_models = read_models
+            return backend
+
+        self.catalog._backend_factory = factory
+        results, errors = [], []
+        def read_binding(binding):
+            try:
+                results.append(self.accounts.get_bound_text_access_token(binding, model="gpt-5-6"))
+            except Exception as exc:
+                errors.append(type(exc).__name__)
+
+        threads = [Thread(target=read_binding, args=(binding,), daemon=True) for binding in bindings]
+        health_done = Event()
+        def read_health():
+            self.accounts.get_stats()
+            health_done.set()
+
+        with mock.patch("services.model_service.model_catalog_service", self.catalog):
+            try:
+                for thread in threads:
+                    thread.start()
+                self.assertTrue(catalog_started.wait(1), "bound text deadlocked before reaching model catalog backend")
+                health = Thread(target=read_health, daemon=True)
+                health.start()
+                self.assertTrue(health_done.wait(1), "model lookup must not hold the account lock needed by health")
+            finally:
+                release_catalog.set()
+                for thread in threads:
+                    thread.join(1)
+            self.assertFalse(any(thread.is_alive() for thread in threads))
+        self.assertEqual(errors, [])
+        self.assertEqual(results, ["plus"] * 3)
+        self.assertEqual(self.calls.count("plus"), 1)
+
+    def test_bound_text_keeps_model_and_disabled_account_checks(self) -> None:
+        with self.accounts._lock:
+            binding = self.accounts._conversation_binding_for_token_locked("plus")
+        with mock.patch("services.model_service.model_catalog_service", self.catalog):
+            with self.assertRaisesRegex(RuntimeError, "cannot serve model"):
+                self.accounts.get_bound_text_access_token(binding, model="pro-only")
+            self.accounts.update_account("plus", {"status": "禁用"})
+            with self.assertRaisesRegex(RuntimeError, "cannot serve text"):
+                self.accounts.get_bound_text_access_token(binding, model="auto")
 
     def test_catalog_is_cached_until_ttl_expires(self) -> None:
         self.catalog.list_models()
