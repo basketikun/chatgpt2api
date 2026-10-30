@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ImagePlus, LoaderCircle, Send, X } from "lucide-react";
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,21 +23,21 @@ type SelectedImage = {
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
-function readImage(file: File): Promise<SelectedImage> {
+function readImage(file: File, t: TFunction): Promise<SelectedImage> {
   return new Promise((resolve, reject) => {
     if (!file.type.startsWith("image/")) {
-      reject(new Error(`${file.name} 不是图片文件`));
+      reject(new Error(t("chatPanel.errors.notImage", { fileName: file.name })));
       return;
     }
     if (file.size > MAX_IMAGE_BYTES) {
-      reject(new Error(`${file.name} 超过 10MB`));
+      reject(new Error(t("chatPanel.errors.tooLarge", { fileName: file.name })));
       return;
     }
     const reader = new FileReader();
     reader.onload = () => {
       const url = String(reader.result || "");
       if (!url.startsWith("data:image/")) {
-        reject(new Error(`${file.name} 读取失败`));
+        reject(new Error(t("chatPanel.errors.readFailed", { fileName: file.name })));
         return;
       }
       resolve({
@@ -45,7 +47,7 @@ function readImage(file: File): Promise<SelectedImage> {
         url,
       });
     };
-    reader.onerror = () => reject(reader.error || new Error(`${file.name} 读取失败`));
+    reader.onerror = () => reject(reader.error || new Error(t("chatPanel.errors.readFailed", { fileName: file.name })));
     reader.readAsDataURL(file);
   });
 }
@@ -70,9 +72,19 @@ function messageImages(message: ChatMessage): string[] {
 }
 
 export function ChatPanel() {
+  const { t, i18n } = useTranslation("debug");
   const [model, setModel] = useState("auto");
   const [reasoningEffort, setReasoningEffort] = useState("");
-  const [input, setInput] = useState("你好，先记住我的项目叫 chatgpt2api。");
+  const [input, setInput] = useState(t("chatPanel.defaultInput"));
+  const isDefaultInputRef = useRef(true);
+
+  // The initial language is pinned to the zh fallback until the detected locale
+  // is applied after mount (see i18n/config.ts), so recompute the untouched
+  // default once the real locale is known instead of freezing it in zh.
+  useEffect(() => {
+    if (isDefaultInputRef.current) setInput(t("chatPanel.defaultInput"));
+  }, [i18n.language, t]);
+
   const [selectedImages, setSelectedImages] = useState<SelectedImage[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [raw, setRaw] = useState<ChatCompletionResponse | null>(null);
@@ -83,7 +95,7 @@ export function ChatPanel() {
     if (!files?.length) return;
     setError("");
     try {
-      const images = await Promise.all(Array.from(files).map(readImage));
+      const images = await Promise.all(Array.from(files).map((file) => readImage(file, t)));
       setSelectedImages((current) => [...current, ...images].slice(0, 4));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -101,6 +113,7 @@ export function ChatPanel() {
       : text;
     const nextMessages: ChatMessage[] = [...messages, { role: "user", content }];
     setMessages(nextMessages);
+    isDefaultInputRef.current = false;
     setInput("");
     setSelectedImages([]);
     setLoading(true);
@@ -132,7 +145,7 @@ export function ChatPanel() {
     <div className="grid h-full min-h-0 gap-8 lg:grid-cols-[360px_minmax(0,1fr)]">
       <section className="flex min-h-0 flex-col lg:border-r lg:border-stone-200/70 lg:pr-8 dark:lg:border-white/10">
         <div className="border-b border-stone-200/70 pb-3 dark:border-white/10">
-          <h2 className="text-sm font-medium text-stone-500 dark:text-stone-400">请求</h2>
+          <h2 className="text-sm font-medium text-stone-500 dark:text-stone-400">{t("chatPanel.requestTitle")}</h2>
         </div>
         <div className="min-h-0 flex-1 space-y-4 overflow-auto pt-4">
           <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_160px]">
@@ -141,30 +154,30 @@ export function ChatPanel() {
               <Input id="chat-model" value={model} onChange={(event) => setModel(event.target.value)} className="rounded-md border-stone-200/70 bg-transparent shadow-none dark:border-white/10" />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="chat-reasoning-effort">思考强度</Label>
+              <Label htmlFor="chat-reasoning-effort">{t("chatPanel.reasoningEffort.label")}</Label>
               <Select value={reasoningEffort || "default"} onValueChange={(value) => setReasoningEffort(value === "default" ? "" : value)}>
                 <SelectTrigger id="chat-reasoning-effort" className="h-10 rounded-md border-stone-200/70 bg-transparent shadow-none dark:border-white/10">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="default">默认</SelectItem>
-                  <SelectItem value="low">低</SelectItem>
-                  <SelectItem value="medium">中</SelectItem>
-                  <SelectItem value="high">高</SelectItem>
-                  <SelectItem value="xhigh">超高</SelectItem>
+                  <SelectItem value="default">{t("chatPanel.reasoningEffort.default")}</SelectItem>
+                  <SelectItem value="low">{t("chatPanel.reasoningEffort.low")}</SelectItem>
+                  <SelectItem value="medium">{t("chatPanel.reasoningEffort.medium")}</SelectItem>
+                  <SelectItem value="high">{t("chatPanel.reasoningEffort.high")}</SelectItem>
+                  <SelectItem value="xhigh">{t("chatPanel.reasoningEffort.xhigh")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
           <div className="space-y-2">
             <Label htmlFor="chat-input">Message</Label>
-            <Textarea id="chat-input" value={input} onChange={(event) => setInput(event.target.value)} className="min-h-32 rounded-md border-stone-200/70 bg-transparent shadow-none dark:border-white/10" />
+            <Textarea id="chat-input" value={input} onChange={(event) => { isDefaultInputRef.current = false; setInput(event.target.value); }} className="min-h-32 rounded-md border-stone-200/70 bg-transparent shadow-none dark:border-white/10" />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="chat-images">图片</Label>
+            <Label htmlFor="chat-images">{t("chatPanel.imagesLabel")}</Label>
             <label htmlFor="chat-images" className="flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-stone-300 bg-stone-50/70 px-3 py-3 text-sm text-stone-600 transition hover:border-stone-400 hover:bg-stone-100 dark:border-white/10 dark:bg-white/[0.03] dark:text-stone-300 dark:hover:bg-white/[0.06]">
               <ImagePlus className="size-4" />
-              选择图片
+              {t("chatPanel.selectImages")}
             </label>
             <input id="chat-images" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple className="sr-only" onChange={(event) => {
               void handleImagesChange(event.target.files);
@@ -175,7 +188,7 @@ export function ChatPanel() {
                 {selectedImages.map((image) => (
                   <div key={image.id} className="group relative overflow-hidden rounded-md border border-stone-200 bg-white dark:border-white/10 dark:bg-white/[0.04]">
                     <img src={image.url} alt={image.name} className="aspect-square w-full object-cover" />
-                    <button type="button" aria-label={`移除 ${image.name}`} onClick={() => setSelectedImages((current) => current.filter((item) => item.id !== image.id))} className="absolute top-1 right-1 flex size-7 items-center justify-center rounded-md bg-white/90 text-stone-700 shadow-sm transition hover:bg-white dark:bg-stone-950/90 dark:text-stone-100">
+                    <button type="button" aria-label={t("chatPanel.removeImage", { name: image.name })} onClick={() => setSelectedImages((current) => current.filter((item) => item.id !== image.id))} className="absolute top-1 right-1 flex size-7 items-center justify-center rounded-md bg-white/90 text-stone-700 shadow-sm transition hover:bg-white dark:bg-stone-950/90 dark:text-stone-100">
                       <X className="size-4" />
                     </button>
                     <div className="absolute inset-x-0 bottom-0 truncate bg-white/90 px-2 py-1 text-xs text-stone-600 dark:bg-stone-950/90 dark:text-stone-300">{image.name}</div>
@@ -187,10 +200,10 @@ export function ChatPanel() {
           <div className="flex gap-2">
             <Button size="sm" onClick={() => void sendChat()} disabled={loading || (!input.trim() && !selectedImages.length)}>
               {loading ? <LoaderCircle className="animate-spin" /> : <Send />}
-              发送
+              {t("chatPanel.send")}
             </Button>
             <Button size="sm" variant="outline" onClick={clearChat}>
-              清空
+              {t("chatPanel.clear")}
             </Button>
           </div>
           {error ? <div className="rounded-md border border-rose-200 bg-rose-50/60 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-rose-300">{error}</div> : null}
@@ -199,7 +212,7 @@ export function ChatPanel() {
       </section>
       <section className="flex min-h-0 flex-col">
         <div className="border-b border-stone-200/70 pb-3 dark:border-white/10">
-          <h2 className="text-sm font-medium text-stone-500 dark:text-stone-400">对话</h2>
+          <h2 className="text-sm font-medium text-stone-500 dark:text-stone-400">{t("chatPanel.title")}</h2>
         </div>
         <div className="min-h-0 flex-1 space-y-4 overflow-auto pt-4">
           {messages.length ? messages.map((message, index) => (
@@ -215,7 +228,7 @@ export function ChatPanel() {
               {messageText(message) ? <div className="whitespace-pre-wrap leading-7 text-stone-700 dark:text-stone-300">{messageText(message)}</div> : null}
             </div>
           )) : (
-            <div className="flex h-full items-center justify-center text-sm text-stone-400 dark:text-stone-500">暂无对话消息</div>
+            <div className="flex h-full items-center justify-center text-sm text-stone-400 dark:text-stone-500">{t("chatPanel.emptyConversation")}</div>
           )}
         </div>
       </section>

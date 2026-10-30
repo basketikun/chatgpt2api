@@ -3,6 +3,7 @@
 import { format, parse } from "date-fns";
 import { CalendarIcon } from "lucide-react";
 import type { DateRange } from "react-day-picker";
+import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -16,6 +17,7 @@ type DateRangeFilterProps = {
 };
 
 export function DateRangeFilter({ startDate, endDate, onChange }: DateRangeFilterProps) {
+  const { t } = useTranslation("common");
   const selected: DateRange | undefined = startDate
     ? {
         from: parse(startDate, "yyyy-MM-dd", new Date()),
@@ -23,7 +25,9 @@ export function DateRangeFilter({ startDate, endDate, onChange }: DateRangeFilte
       }
     : undefined;
 
-  const label = startDate ? `${startDate} 至 ${endDate || startDate}` : "选择日期范围";
+  const label = startDate
+    ? t("dateRange.rangeLabel", { startDate, endDate: endDate || startDate })
+    : t("dateRange.placeholder");
 
   return (
     <Field className="w-[240px]">

@@ -1,6 +1,7 @@
 "use client";
 
 import { Eye, EyeOff, Link2, LoaderCircle, Save, Unplug } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -16,6 +17,8 @@ import { Input } from "@/components/ui/input";
 import { useSettingsStore } from "../store";
 
 export function CPAPoolDialog() {
+  const { t } = useTranslation("settings");
+  const { t: tCommon } = useTranslation("common");
   const dialogOpen = useSettingsStore((state) => state.dialogOpen);
   const editingPool = useSettingsStore((state) => state.editingPool);
   const formName = useSettingsStore((state) => state.formName);
@@ -34,25 +37,25 @@ export function CPAPoolDialog() {
     <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
       <DialogContent showCloseButton={false} className="rounded-2xl p-6">
         <DialogHeader className="gap-2">
-          <DialogTitle>{editingPool ? "编辑连接" : "添加连接"}</DialogTitle>
+          <DialogTitle>{editingPool ? t("cpa.dialog.titleEdit") : t("cpa.actions.addConnection")}</DialogTitle>
           <DialogDescription className="text-sm leading-6">
-            {editingPool ? "修改 CPA 连接信息" : "添加一个新的 CLIProxyAPI 连接"}
+            {editingPool ? t("cpa.dialog.descriptionEdit") : t("cpa.dialog.descriptionAdd")}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">
-            <label className="text-sm font-medium text-stone-700">名称（可选）</label>
+            <label className="text-sm font-medium text-stone-700">{t("cpa.dialog.nameLabel")}</label>
             <Input
               value={formName}
               onChange={(event) => setFormName(event.target.value)}
-              placeholder="例如：主号池、备用池"
+              placeholder={t("cpa.dialog.namePlaceholder")}
               className="h-11 rounded-xl border-stone-200 bg-white"
             />
           </div>
           <div className="space-y-2">
             <label className="flex items-center gap-1.5 text-sm font-medium text-stone-700">
               <Link2 className="size-3.5" />
-              CPA 地址
+              {t("cpa.dialog.urlLabel")}
             </label>
             <Input
               value={formBaseUrl}
@@ -71,7 +74,7 @@ export function CPAPoolDialog() {
                 type={showSecret ? "text" : "password"}
                 value={formSecretKey}
                 onChange={(event) => setFormSecretKey(event.target.value)}
-                placeholder={editingPool ? "留空则不修改密钥" : "CPA 管理密钥"}
+                placeholder={editingPool ? t("cpa.dialog.secretKeyPlaceholderKeep") : t("cpa.dialog.secretKeyPlaceholderNew")}
                 className="h-11 rounded-xl border-stone-200 bg-white pr-10"
               />
               <button
@@ -91,7 +94,7 @@ export function CPAPoolDialog() {
             onClick={() => setDialogOpen(false)}
             disabled={isSavingPool}
           >
-            取消
+            {tCommon("canvasDialog.cancel")}
           </Button>
           <Button
             className="h-10 rounded-xl bg-stone-950 px-5 text-white hover:bg-stone-800"
@@ -99,7 +102,7 @@ export function CPAPoolDialog() {
             disabled={isSavingPool}
           >
             {isSavingPool ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
-            {editingPool ? "保存修改" : "添加"}
+            {editingPool ? t("cpa.dialog.saveButton") : t("cpa.dialog.addButton")}
           </Button>
         </DialogFooter>
       </DialogContent>

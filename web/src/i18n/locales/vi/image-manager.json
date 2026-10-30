@@ -1,0 +1,88 @@
+{
+  "filters": {
+    "clear": "Xóa bộ lọc",
+    "search": "Tìm kiếm",
+    "deleteMatchingDate": "Xóa theo ngày đã chọn"
+  },
+  "tagsFilter": {
+    "label": "Lọc theo thẻ:",
+    "clear": "Xóa"
+  },
+  "storage": {
+    "diskTotal": "Tổng dung lượng đĩa",
+    "diskFree": "Dung lượng còn trống",
+    "imageCount": "Số lượng ảnh",
+    "imageSize": "Dung lượng ảnh đã dùng",
+    "quickActionsLabel": "Thao tác nhanh",
+    "loading": "Đang tải thông tin lưu trữ...",
+    "loadFailed": "Tải thông tin lưu trữ thất bại"
+  },
+  "storageActions": {
+    "compress": "Nén tối ưu",
+    "compressFailed": "Nén thất bại",
+    "compressSuccess": "Đã nén {{savedMb}}MB",
+    "deleteByDate": "Xóa theo ngày",
+    "cleanupTo": "Dọn còn lại",
+    "cleanupFailed": "Dọn dẹp thất bại",
+    "cleanupSuccess": "Đã xóa {{count}} ảnh, giải phóng {{freedMb}}MB",
+    "remainingUnit": "còn lại"
+  },
+  "byDateDialog": {
+    "title": "Xóa ảnh theo ngày",
+    "beforeSuffix": "trước ngày này",
+    "warning": "Thao tác này không thể hoàn tác, sẽ xóa vĩnh viễn toàn bộ ảnh khớp ngày cùng ảnh thu nhỏ của chúng."
+  },
+  "actions": {
+    "delete": "Xóa",
+    "confirmDelete": "Xác nhận xóa",
+    "refresh": "Làm mới"
+  },
+  "toolbar": {
+    "total": "{{total}} ảnh",
+    "filteredFrom": "(lọc từ {{total}} ảnh)",
+    "selectPage": "Chọn toàn bộ trang",
+    "selectAll": "Chọn tất cả kết quả",
+    "selected": "Đã chọn {{total}} ảnh",
+    "clearSelection": "Bỏ chọn",
+    "downloadSelected": "Tải ảnh đã chọn",
+    "deleteSelected": "Xóa mục đã chọn"
+  },
+  "gallery": {
+    "deleteImageTitle": "Xóa ảnh",
+    "urlCopied": "Đã sao chép địa chỉ ảnh",
+    "addTag": "Thêm thẻ",
+    "tagNamePlaceholder": "Nhập tên thẻ"
+  },
+  "pagination": {
+    "info": "Trang {{page}} / {{pageCount}}, tổng {{total}} ảnh"
+  },
+  "empty": {
+    "noImages": "Không tìm thấy ảnh nào"
+  },
+  "deleteDialog": {
+    "description": "Xác nhận xóa ảnh này? Sau khi xóa sẽ không thể khôi phục."
+  },
+  "bulkDeleteDialog": {
+    "titleFiltered": "Xóa ảnh khớp ngày đã chọn",
+    "titleSelected": "Xóa ảnh đã chọn",
+    "description": "Xác nhận xóa {{count}} ảnh? Sau khi xóa sẽ không thể khôi phục."
+  },
+  "tagDeleteDialog": {
+    "title": "Xóa thẻ",
+    "descriptionBefore": "Xác nhận xóa thẻ",
+    "descriptionAfter": "? Thẻ này sẽ được gỡ khỏi tất cả ảnh."
+  },
+  "toasts": {
+    "loadImagesFailed": "Tải ảnh thất bại",
+    "imageDeleted": "Đã xóa ảnh",
+    "deleteFailed": "Xóa thất bại",
+    "deleteImagesFailed": "Xóa ảnh thất bại",
+    "deleteSuccessCount": "Đã xóa {{count}} ảnh",
+    "downloadFailed": "Tải xuống thất bại",
+    "downloadSuccessCount": "Đã tải xuống {{count}} ảnh",
+    "setTagsFailed": "Đặt thẻ thất bại",
+    "tagExists": "Thẻ đã tồn tại",
+    "deleteTagFailed": "Xóa thẻ thất bại",
+    "tagDeleted": "Đã xóa thẻ \"{{tag}}\", ảnh hưởng {{count}} ảnh"
+  }
+}

@@ -1,6 +1,7 @@
 import axios, {AxiosError, type AxiosRequestConfig} from "axios";
 
 import webConfig from "@/constants/common-env";
+import i18n from "@/i18n/config";
 import {clearStoredAuthSession, getStoredAuthKey} from "@/store/auth";
 
 type RequestConfig = AxiosRequestConfig & {
@@ -39,6 +40,9 @@ request.interceptors.request.use(async (config) => {
     if (authKey && !headers.Authorization) {
         headers.Authorization = `Bearer ${authKey}`;
     }
+    if (!headers["Accept-Language"]) {
+        headers["Accept-Language"] = i18n.language;
+    }
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-expect-error
     nextConfig.headers = headers;
@@ -67,7 +71,7 @@ request.interceptors.response.use(
             errorMessageFromValue(payload?.error) ||
             payload?.message ||
             error.message ||
-            `请求失败 (${status || 500})`;
+            i18n.t("errors.requestFailed", { status: status || 500 });
         return Promise.reject(new Error(message));
     },
 );

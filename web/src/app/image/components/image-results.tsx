@@ -1,7 +1,9 @@
 "use client";
 
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Clock3, Download, EyeOff, LoaderCircle, RotateCcw, Sparkles, Trash2 } from "lucide-react";
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -97,9 +99,11 @@ export function ImageResults({
   onDismissErrors,
   formatConversationTime,
 }: ImageResultsProps) {
+  const { t } = useTranslation("image");
+  const progressLabels = useMemo(() => buildProgressLabels(t), [t]);
   const imageDimensionsRef = useRef<Record<string, string>>({});
   const [currentTime, setCurrentTime] = useState(Date.now());
-  
+
   // 仅在存在 loading 图片时启动定时器，避免空闲时无谓重渲染
   const hasLoadingImages = selectedConversation?.turns.some(
     (turn) => !turn.resultsDeleted && turn.images.some((image) => image.status === "loading"),
@@ -138,7 +142,7 @@ export function ImageResults({
               fontFamily: '"Palatino Linotype","Book Antiqua","URW Palladio L","Times New Roman",serif',
             }}
           >
-            在同一窗口里保留本地历史与任务状态，并从已有结果图继续发起新的无状态编辑。
+            {t("results.empty.subtitle")}
           </p>
         </div>
       </div>
@@ -172,11 +176,11 @@ export function ImageResults({
               <div className="flex justify-end">
                 <div className="max-w-[90%] px-1 py-1 text-[14px] leading-6 text-stone-900 sm:max-w-[82%] sm:text-[15px] sm:leading-7">
                   <div className="mb-1.5 flex flex-wrap justify-end gap-2 text-[11px] text-stone-400 sm:mb-2">
-                    <span>第 {turnIndex + 1} 轮</span>
+                    <span>{t("results.turn.label", { index: turnIndex + 1 })}</span>
                     <span>
-                      {turn.mode === "edit" ? "编辑图" : "文生图"}
+                      {turn.mode === "edit" ? t("results.turn.modeEdit") : t("results.turn.modeGenerate")}
                     </span>
-                    <span>{getTurnStatusLabel(turn.status)}</span>
+                    <span>{getTurnStatusLabel(turn.status, t)}</span>
                     <span>{formatConversationTime(turn.createdAt)}</span>
                   </div>
                   <div className="text-right">{turn.prompt}</div>
@@ -186,13 +190,13 @@ export function ImageResults({
                       onClick={() => void onReuseTurnConfig(selectedConversation.id, turn.id)}
                       className="inline-flex items-center gap-1 rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-medium text-stone-600 transition hover:bg-stone-200 hover:text-stone-900"
                     >
-                      复用配置
+                      {t("results.turn.reuseConfig")}
                     </button>
                     <button
                       type="button"
                       onClick={() => onDeletePrompt(selectedConversation.id, turn.id)}
                       className="inline-flex size-6 items-center justify-center rounded-full text-stone-300 transition hover:bg-rose-50 hover:text-rose-500"
-                      aria-label="删除提示词记录"
+                      aria-label={t("results.turn.deletePromptLabel")}
                     >
                       <Trash2 className="size-3" />
                     </button>
@@ -206,7 +210,7 @@ export function ImageResults({
                 <div className="w-full p-1">
                   {turn.referenceImages.length > 0 ? (
                     <div className="mb-4 flex flex-col items-end">
-                      <div className="mb-3 text-xs font-medium text-stone-500">本轮参考图</div>
+                      <div className="mb-3 text-xs font-medium text-stone-500">{t("results.turn.referenceImagesLabel")}</div>
                       <div className="flex flex-wrap justify-end gap-3">
                         {turn.referenceImages.map((image, index) => (
                           <div key={`${turn.id}-${image.name}-${index}`} className="flex flex-col items-end gap-2">
@@ -214,11 +218,11 @@ export function ImageResults({
                               type="button"
                               onClick={() => onOpenLightbox(referenceLightboxImages, index)}
                               className="group relative h-24 w-24 overflow-hidden border border-stone-200/80 bg-stone-100/60 text-left transition hover:border-stone-300"
-                              aria-label={`预览参考图 ${image.name || index + 1}`}
+                              aria-label={t("results.turn.referencePreviewLabel", { name: image.name || index + 1 })}
                             >
                               <img
                                 src={image.dataUrl}
-                                alt={image.name || `参考图 ${index + 1}`}
+                                alt={image.name || t("results.turn.referenceAltFallback", { index: index + 1 })}
                                 className="absolute inset-0 h-full w-full object-cover transition duration-200 group-hover:scale-[1.02]"
                               />
                             </button>
@@ -229,7 +233,7 @@ export function ImageResults({
                               onClick={() => onContinueEdit(selectedConversation.id, image)}
                             >
                               <Sparkles className="size-4" />
-                              加入编辑
+                              {t("results.image.addToEdit")}
                             </Button>
                           </div>
                         ))}
@@ -238,10 +242,10 @@ export function ImageResults({
                   ) : null}
 
                   <div className="mb-3 flex flex-wrap items-center gap-1.5 text-[11px] text-stone-500 sm:mb-4 sm:gap-2 sm:text-xs">
-                    <span className="rounded-full bg-stone-100 px-3 py-1">{turn.count} 张</span>
-                    <span className="rounded-full bg-stone-100 px-3 py-1">{getTurnStatusLabel(turn.status)}</span>
+                    <span className="rounded-full bg-stone-100 px-3 py-1">{t("results.turn.countUnit", { count: turn.count })}</span>
+                    <span className="rounded-full bg-stone-100 px-3 py-1">{getTurnStatusLabel(turn.status, t)}</span>
                     {turn.status === "queued" ? (
-                      <span className="rounded-full bg-amber-50 px-3 py-1 text-amber-700">等待当前对话中的前序任务完成</span>
+                      <span className="rounded-full bg-amber-50 px-3 py-1 text-amber-700">{t("results.turn.waitingQueue")}</span>
                     ) : null}
                   </div>
 
@@ -274,7 +278,7 @@ export function ImageResults({
                             />
                             <div className="flex flex-col gap-1 px-0.5 py-1 text-[10px] sm:flex-row sm:items-center sm:justify-between sm:gap-2 sm:px-3 sm:py-3 sm:text-xs">
                               <div className="min-w-0 text-stone-500">
-                                <span>结果 {index + 1}</span>
+                                <span>{t("results.image.resultLabel", { index: index + 1 })}</span>
                                 {image.durationMs != null ? <span className="text-stone-400 sm:ml-2">{formatDuration(image.durationMs)}</span> : null}
                                 {imageMeta ? <span className="block text-stone-400">{imageMeta}</span> : null}
                               </div>
@@ -284,20 +288,20 @@ export function ImageResults({
                                   size="sm"
                                   className="h-7 w-7 rounded-full border-stone-200 bg-white px-0 text-[10px] text-stone-700 hover:bg-stone-50 sm:h-8 sm:w-fit sm:px-3 sm:text-xs"
                                   onClick={() => onContinueEdit(selectedConversation.id, image)}
-                                  aria-label="加入编辑"
+                                  aria-label={t("results.image.addToEdit")}
                                 >
                                   <Sparkles className="size-3 sm:size-4" />
-                                  <span className="hidden sm:inline">加入编辑</span>
+                                  <span className="hidden sm:inline">{t("results.image.addToEdit")}</span>
                                 </Button>
                                 <Button
                                   variant="outline"
                                   size="sm"
                                   className="h-7 w-7 rounded-full border-stone-200 bg-white px-0 text-[10px] text-stone-700 hover:bg-stone-50 sm:h-8 sm:w-fit sm:px-3 sm:text-xs"
                                   onClick={() => void downloadStoredImage(image, index)}
-                                  aria-label="下载"
+                                  aria-label={t("results.image.downloadLabel")}
                                 >
                                   <Download className="size-3 sm:size-4" />
-                                  <span className="hidden sm:inline">下载</span>
+                                  <span className="hidden sm:inline">{t("results.image.downloadLabel")}</span>
                                 </Button>
                               </div>
                             </div>
@@ -321,8 +325,8 @@ export function ImageResults({
                               )}
                             >
                             <div className="flex h-full min-h-16 flex-col items-center justify-center gap-1.5 px-2 py-2 text-center text-[11px] leading-4 text-rose-600 sm:gap-3 sm:px-6 sm:py-8 sm:text-sm sm:leading-6">
-                              <p className="font-medium">图片 {index + 1}/{turn.images.length}</p>
-                              <span className="line-clamp-2 sm:line-clamp-none">{image.error || "生成失败"}</span>
+                              <p className="font-medium">{t("results.image.indexLabel", { index: index + 1, total: turn.images.length })}</p>
+                              <span className="line-clamp-2 sm:line-clamp-none">{image.error || t("errors.generationFailed")}</span>
                               <div className="flex items-center gap-2">
                                 {isTimeoutError && (
                                   <button
@@ -330,7 +334,7 @@ export function ImageResults({
                                     onClick={() => void onTimeoutRetryContinue(image.taskId!)}
                                     className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-medium text-emerald-600 shadow-sm transition hover:bg-emerald-200 sm:px-3 sm:text-xs"
                                   >
-                                    继续等待
+                                    {t("results.image.continueWaiting")}
                                   </button>
                                 )}
                                 <button
@@ -338,14 +342,14 @@ export function ImageResults({
                                   onClick={() => void onRetryImage(selectedConversation.id, turn.id, image.id)}
                                   className="rounded-full bg-white px-2 py-1 text-[10px] font-medium text-rose-600 shadow-sm transition hover:bg-rose-100 sm:px-3 sm:text-xs"
                                 >
-                                  重新生成这一张
+                                  {t("results.image.retryOne")}
                                 </button>
                               </div>
                             </div>
                             </div>
                             <div className="flex flex-col gap-1 px-0.5 py-1 text-[10px] sm:flex-row sm:items-center sm:justify-between sm:gap-2 sm:px-3 sm:py-3 sm:text-xs">
                               <div className="min-w-0 text-stone-500">
-                                <span>结果 {index + 1}</span>
+                                <span>{t("results.image.resultLabel", { index: index + 1 })}</span>
                                 {image.durationMs != null ? <span className="text-stone-400 sm:ml-2">{formatDuration(image.durationMs)}</span> : null}
                                 <span className="block text-transparent">-</span>
                               </div>
@@ -355,7 +359,7 @@ export function ImageResults({
                       }
 
                       const imageTaskStatus = image.taskStatus || (turn.status === "queued" ? "queued" : "running");
-                      const imageStatusLabel = imageTaskStatus === "queued" ? "排队中" : getProgressLabel(image.progress);
+                      const imageStatusLabel = imageTaskStatus === "queued" ? t("results.status.queued") : getProgressLabel(image.progress, progressLabels, t);
                       const showElapsed = imageTaskStatus === "running" && image.elapsedSecs != null;
                       const elapsedDisplay = showElapsed
                         ? formatElapsed(
@@ -385,7 +389,7 @@ export function ImageResults({
                               )}
                             </div>
                             <p className="text-[11px] font-medium leading-4 sm:text-sm">
-                              图片 {index + 1}/{turn.images.length}
+                              {t("results.image.indexLabel", { index: index + 1, total: turn.images.length })}
                             </p>
                             <p className="text-[10px] leading-4 text-stone-400 sm:text-xs">
                               {imageStatusLabel}
@@ -409,7 +413,7 @@ export function ImageResults({
                         className="ml-3 inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-medium text-amber-700 transition hover:bg-amber-200 hover:text-amber-900"
                       >
                         <EyeOff className="size-3" />
-                        忽略错误
+                        {t("results.turn.dismissErrors")}
                       </button>
                     </div>
                   ) : null}
@@ -421,13 +425,13 @@ export function ImageResults({
                       className="inline-flex items-center gap-1 rounded-full bg-stone-100 px-2.5 py-1 font-medium text-stone-500 transition hover:bg-stone-200 hover:text-stone-900"
                     >
                       <RotateCcw className="size-3" />
-                      全部重新生成
+                      {t("results.turn.regenerateAll")}
                     </button>
                     <button
                       type="button"
                       onClick={() => onDeleteResults(selectedConversation.id, turn.id)}
                       className="inline-flex size-6 items-center justify-center rounded-full text-stone-300 transition hover:bg-rose-50 hover:text-rose-500"
-                      aria-label="删除生成结果"
+                      aria-label={t("results.turn.deleteResultsLabel")}
                     >
                       <Trash2 className="size-3" />
                     </button>
@@ -442,35 +446,37 @@ export function ImageResults({
   );
 }
 
-function getTurnStatusLabel(status: ImageTurnStatus) {
+function getTurnStatusLabel(status: ImageTurnStatus, t: TFunction) {
   if (status === "queued") {
-    return "排队中";
+    return t("results.status.queued");
   }
   if (status === "generating") {
-    return "处理中";
+    return t("results.status.generating");
   }
   if (status === "success") {
-    return "已完成";
+    return t("results.status.success");
   }
-  return "失败";
+  return t("results.status.failed");
 }
 
-const PROGRESS_LABELS: Record<string, string> = {
-  getting_account: "确认可用账号",
-  uploading: "上传图片",
-  bootstrapping: "预热首页",
-  getting_token: "获取 token",
-  preparing_conversation: "准备会话",
-  starting_generation: "启动生成",
-  generating: "生成中",
-  receiving_image: "接收图片中",
-};
+function buildProgressLabels(t: TFunction): Record<string, string> {
+  return {
+    getting_account: t("results.progress.gettingAccount"),
+    uploading: t("results.progress.uploading"),
+    bootstrapping: t("results.progress.bootstrapping"),
+    getting_token: t("results.progress.gettingToken"),
+    preparing_conversation: t("results.progress.preparingConversation"),
+    starting_generation: t("results.progress.startingGeneration"),
+    generating: t("results.progress.generating"),
+    receiving_image: t("results.progress.receivingImage"),
+  };
+}
 
-function getProgressLabel(progress?: string) {
+function getProgressLabel(progress: string | undefined, progressLabels: Record<string, string>, t: TFunction) {
   if (!progress) {
-    return "生成中";
+    return t("results.progress.generating");
   }
-  return PROGRESS_LABELS[progress] || "生成中";
+  return progressLabels[progress] || t("results.progress.generating");
 }
 
 function formatElapsed(seconds: number): string {

@@ -1,0 +1,72 @@
+{
+  "app": {
+    "title": "ChatGPT Account Pool"
+  },
+  "language": {
+    "label": "Language",
+    "zh": "中文",
+    "en": "English",
+    "vi": "Tiếng Việt"
+  },
+  "logType": { "call": "Call Log", "account": "Account Management Log" },
+  "nav": {
+    "openMenu": "Open navigation",
+    "infiniteCanvas": "Infinite canvas",
+    "image": "Generate image",
+    "imageUser": "Draw image",
+    "accounts": "Account pool",
+    "imageManager": "Image manager",
+    "logs": "Logs",
+    "debug": "Debug",
+    "settings": "Settings",
+    "logout": "Log out"
+  },
+  "role": {
+    "admin": "Admin",
+    "user": "User"
+  },
+  "canvasDialog": {
+    "title": "Go to third-party app",
+    "warning": "This entry is for personal testing only; we recommend self-hosting for long-term use. The redirect URL includes this project's address and your current key by default to auto-fill connection info. If you're not comfortable with that, cancel and enter the app manually.",
+    "fullUrl": "Full redirect URL",
+    "cancel": "Cancel",
+    "continue": "Continue"
+  },
+  "imageLightbox": {
+    "title": "Image preview",
+    "download": "Download image",
+    "close": "Close",
+    "prev": "Previous",
+    "next": "Next"
+  },
+  "themeToggle": {
+    "label": "Toggle theme"
+  },
+  "dateRange": {
+    "placeholder": "Select date range",
+    "rangeLabel": "{{startDate}} to {{endDate}}"
+  },
+  "versionDialog": {
+    "viewUpdates": "View version updates",
+    "title": "Version updates",
+    "currentVersion": "Current version",
+    "latestVersion": "Latest version",
+    "checking": "Checking...",
+    "checkUpdate": "Check for updates",
+    "unreleased": "Unreleased",
+    "latest": "Latest",
+    "current": "Current",
+    "githubUpdate": "Go to GitHub to update",
+    "typeNew": "Added",
+    "typeFix": "Fixed",
+    "typeUpdate": "Changed",
+    "typeDocs": "Docs"
+  },
+  "versionCheck": {
+    "fetchSuccess": "Fetched the latest version info",
+    "fetchFailed": "Failed to fetch the latest version info"
+  },
+  "errors": {
+    "requestFailed": "Request failed ({{status}})"
+  }
+}

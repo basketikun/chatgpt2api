@@ -1,0 +1,255 @@
+{
+  "accountStatus": {
+    "normal": "正常",
+    "rateLimited": "限流",
+    "error": "异常",
+    "disabled": "禁用"
+  },
+  "header": {
+    "refresh": "刷新",
+    "refreshAll": "一键刷新所有账号信息和额度",
+    "exportTokens": "导出全部 Token"
+  },
+  "filters": {
+    "statusAll": "全部状态",
+    "typeAll": "全部类型",
+    "searchPlaceholder": "搜索邮箱"
+  },
+  "metrics": {
+    "total": "账户总数",
+    "active": "正常账户",
+    "limited": "限流账户",
+    "abnormal": "异常账户",
+    "disabled": "禁用账户",
+    "quota": "剩余额度"
+  },
+  "models": {
+    "title": "系统可用模型",
+    "loading": "正在加载模型列表...",
+    "empty": "当前暂无可用模型",
+    "copyTitle": "点击复制 {{id}}",
+    "copiedToast": "模型名已复制"
+  },
+  "table": {
+    "listTitle": "账户列表",
+    "columnToken": "token",
+    "columnType": "类型",
+    "columnSource": "来源",
+    "columnStatus": "状态",
+    "columnAccountInfo": "账号信息",
+    "columnCreatedAt": "创建时间",
+    "columnQuota": "额度",
+    "columnRestoreAt": "恢复时间",
+    "columnInflight": "在途",
+    "columnSuccess": "成功",
+    "columnFail": "失败",
+    "columnActions": "操作",
+    "tokenCopied": "token 已复制",
+    "emptyTitle": "没有匹配的账户",
+    "emptySubtitle": "调整筛选条件或搜索关键字后重试。",
+    "loadingTitle": "正在加载账户",
+    "loadingSubtitle": "从后端同步账号列表和状态。"
+  },
+  "restore": {
+    "remaining": "剩余 {{days}}d {{hours}}h",
+    "due": "已到恢复时间"
+  },
+  "inflight": {
+    "activeTooltip": "当前正在生成的图片数。号池空闲时此值持续 > 0，说明并发槽位泄漏、该账号已被静默排除出调度",
+    "idleTooltip": "当前无在途生图任务"
+  },
+  "toolbar": {
+    "refreshSelected": "刷新选中账号信息和额度",
+    "tryRecoverAbnormal": "尝试恢复异常账号",
+    "tryRecoverAbnormalTitle": "尝试密码登录恢复账号",
+    "removeAbnormal": "移除异常账号",
+    "deleteSelected": "删除所选",
+    "selectedCount": "已选择 {{count}} 项"
+  },
+  "pagination": {
+    "info": "显示第 {{from}} - {{to}} 条，共 {{total}} 条",
+    "pageInfo": "{{page}} / {{pageCount}} 页",
+    "perPage": "{{size}} / 页"
+  },
+  "editDialog": {
+    "title": "编辑账户",
+    "description": "手动修改账号状态和专属代理。",
+    "statusLabel": "状态",
+    "proxyLabel": "账号代理",
+    "proxyPlaceholder": "留空走全局代理，例如 http://127.0.0.1:7890",
+    "testButton": "测试",
+    "saveButton": "保存修改"
+  },
+  "progress": {
+    "refreshing": "正在刷新账号信息...",
+    "refreshComplete": "刷新完成",
+    "recoveringAbnormal": "正在尝试对 {{count}} 个账号进行移除异常状态",
+    "removeAbnormalComplete": "移除异常状态完成",
+    "tryingRecoverAbnormal": "正在尝试恢复异常账号...",
+    "recoverFlowComplete": "恢复流程已完成",
+    "recoverComplete": "恢复完成",
+    "recoverProcessed": "已处理 {{processed}}/{{total}}",
+    "recoverFailedOne": "失败: {{token}} {{error}}"
+  },
+  "toasts": {
+    "loadAccountsFailed": "加载账户失败",
+    "loadModelsFailed": "加载模型列表失败",
+    "selectAccountsToDelete": "请先选择要删除的账户",
+    "deleteAccountsSuccess": "删除 {{count}} 个账户",
+    "deleteAccountsFailed": "删除账户失败",
+    "noAccountsToRefresh": "没有需要刷新的账户",
+    "refreshAccountsFailed": "刷新账户失败",
+    "refreshResultEmpty": "刷新结果为空",
+    "refreshSuccessWithErrors": "刷新成功 {{refreshed}} 个，失败 {{failed}} 个",
+    "firstErrorSuffix": "，首个错误：{{error}}",
+    "refreshSuccess": "刷新成功 {{count}} 个账户",
+    "reloginTriggeredSuffix": "，已触发 {{count}} 个账号重新登录",
+    "selectAccountsToRecover": "请先选择要恢复的账户",
+    "noAbnormalAccountsSelected": "选中账号中没有异常账号",
+    "filteredNonAbnormal": "已过滤 {{count}} 个非异常账号",
+    "recoverAllComplete": "恢复流程已全部完成",
+    "reloginFailed": "重新登录失败",
+    "proxyAddressRequired": "请先填写代理地址",
+    "proxyAvailable": "代理可用（{{latency}} ms，HTTP {{status}}）",
+    "proxyUnavailable": "代理不可用：{{error}}",
+    "unknownError": "未知错误",
+    "testProxyFailed": "测试代理失败",
+    "accountUpdated": "账号信息已更新",
+    "updateAccountFailed": "更新账号失败"
+  },
+  "importDialog": {
+    "triggerButton": "导入",
+    "back": "返回导入方式",
+    "title": {
+      "menu": "导入账户",
+      "token": "导入 Access Token",
+      "session": "导入 Session JSON",
+      "codexAuth": "导入 Codex 认证 JSON",
+      "oauthDialog": "OAuth 登录已有账号",
+      "accountJsonDialog": "导入账号 JSON"
+    },
+    "description": {
+      "menu": "选择一种导入方式。导入成功后会自动拉取邮箱、类型和额度。",
+      "token": "支持手动粘贴或从 TXT 文件导入，一行一个 Token。",
+      "session": "粘贴完整 Session JSON，系统会自动提取 accessToken。",
+      "codexAuth": "粘贴 Codex 认证 JSON，系统会按 codex 来源导入。",
+      "oauth": "用浏览器跑一遍 OpenAI 标准 OAuth，拿回 refresh_token 后系统会自动续期。",
+      "accountJson": "支持读取本项目导出的单账号对象或全部账号数组，并在提交前做数量确认。"
+    },
+    "menu": {
+      "oauth": {
+        "title": "OAuth 登录已有账号（带自动刷新）",
+        "description": "用浏览器登录自己的 ChatGPT 账号，回填 callback URL 即可拿到 refresh_token，后台会自动续期。"
+      },
+      "token": {
+        "description": "支持直接粘贴，一行一个；也支持从 TXT 文件读取，一行一个。"
+      },
+      "session": {
+        "description": "从 chatgpt.com 的 session 接口复制完整 JSON，自动提取 accessToken。"
+      },
+      "codexAuth": {
+        "description": "粘贴 Codex 认证 JSON，导入后账号来源标记为 codex。"
+      },
+      "accountJson": {
+        "title": "导入账号 JSON 文件",
+        "description": "支持本项目导出的单账号 JSON 或全部账号数组，也兼容 CPA JSON 文件。"
+      },
+      "cpaImport": {
+        "title": "从远程 CPA 服务器导入",
+        "description": "前往设置页面配置远程 CPA 服务器后再执行导入。"
+      },
+      "sub2apiImport": {
+        "title": "从 Sub2API 服务器导入",
+        "description": "前往设置页面配置 Sub2API 服务器，再选择其中的 OpenAI 账号导入。"
+      }
+    },
+    "token": {
+      "recognizedCount": "当前识别 {{count}} 个 Token",
+      "listLabel": "Access Token 列表",
+      "placeholder": "每行一个 Access Token...",
+      "fromTxtTitle": "从 TXT 文件导入",
+      "fromTxtHint": "支持 `.txt`，文件内容也是一行一个 Token。",
+      "chooseTxtButton": "选择 TXT"
+    },
+    "session": {
+      "openPrefix": "打开",
+      "instructionSuffix": "，复制页面返回的完整 JSON，系统会自动提取其中的 `accessToken` 导入。",
+      "riskTitle": "风险提示",
+      "riskBody": "不要使用自己的大号，尽量使用不常用的小号进行导入，避免出现封号风险。本项目不承担任何封号风险责任。",
+      "jsonLabel": "Session JSON",
+      "placeholder": "粘贴完整 JSON，例如包含 \"accessToken\" 的对象..."
+    },
+    "oauth": {
+      "stepsTitle": "操作步骤",
+      "step1": "（可选）填写你 ChatGPT 账号的邮箱，登录页会预填。",
+      "step2": "点击下方\"打开授权页面\"，在新标签里登录自己的 ChatGPT 账号。",
+      "step3Prefix": "登录完成后浏览器会跳到 ",
+      "step3Suffix": "。立刻从地址栏复制整段 URL（或开 F12 在 Network 里抓到 callback 那一行，右键 Copy → Copy URL）。",
+      "step4": "把 callback URL 粘到下面输入框，点\"完成导入\"。",
+      "emailLabel": "邮箱（可选预填）",
+      "openAuthButton": "打开授权页面",
+      "copyAuthUrlButton": "复制授权 URL",
+      "reopenButton": "再次打开",
+      "regenerateButton": "重新生成",
+      "pasteCallbackLabel": "粘贴 callback URL（或仅 code）",
+      "noteTitle": "注意",
+      "noteBody": "授权码（code）只能使用一次。如果浏览器的 callback 页加载完成、显示了 OpenAI 的错误页，那 code 大概率已经被消耗， 请点击\"重新生成\"再走一次。整个流程在 10 分钟内完成即可。"
+    },
+    "accountJson": {
+      "chooseTitle": "选择本地账号 JSON 文件",
+      "hint": "支持本项目导出的单账号对象或全部账号数组，也兼容每个文件一个账号对象的 CPA JSON。 系统会自动提取 `access_token` 或 `accessToken`。",
+      "chooseButton": "选择 JSON 文件",
+      "lastRead": "最近一次读取到 {{count}} 个 Token",
+      "extraFailedSuffix": "，另有 {{count}} 个文件未提取成功",
+      "extraFailedSuffixPeriod": "，另有 {{count}} 个文件未提取成功。",
+      "periodSuffix": "。",
+      "confirmTitle": "确认导入账号 Token",
+      "confirmReady": "确认识别到 {{count}} 个 Token，是否确认导入？",
+      "confirmEmpty": "尚未读取到可导入的 Token。",
+      "backButton": "返回",
+      "confirmButton": "确认导入"
+    },
+    "codexAuth": {
+      "label": "Codex 认证 JSON",
+      "placeholder": "粘贴包含 \"access_token\"、\"refresh_token\"、\"id_token\" 的 Codex 认证 JSON..."
+    },
+    "footer": {
+      "importTokenButton": "导入 Token",
+      "importJsonButton": "导入 JSON",
+      "finishImportButton": "完成导入",
+      "viewConfirmButton": "查看导入确认"
+    },
+    "toasts": {
+      "provideTokenRequired": "请先提供至少一个可用 Token",
+      "importFailed": "导入账户失败",
+      "tokenImportComplete": "Access Token 导入完成",
+      "txtNoTokens": "TXT 文件里没有读取到有效 Token",
+      "txtReadSuccess": "已从 {{name}} 读取 {{count}} 个 Token",
+      "readTxtFailed": "读取 TXT 文件失败",
+      "sessionRequired": "请先粘贴完整 Session JSON",
+      "sessionNoToken": "未从 Session JSON 中提取到 accessToken",
+      "sessionImportComplete": "Session JSON 导入完成",
+      "sessionParseFailed": "Session JSON 解析失败",
+      "codexAuthRequired": "请先粘贴 Codex 认证 JSON",
+      "codexAuthNoToken": "未从 Codex 认证 JSON 中提取到 access_token",
+      "codexImportComplete": "Codex 认证 JSON 导入完成",
+      "codexAuthParseFailed": "Codex 认证 JSON 解析失败",
+      "accountJsonNoTokens": "这些账号 JSON 文件里没有读取到可用 access_token",
+      "accountJsonReadFailed": "读取账号 JSON 文件失败",
+      "accountJsonImportComplete": "账号 JSON 导入完成",
+      "readFileFailed": "读取文件失败: {{name}}",
+      "importCompleteDefault": "导入完成",
+      "oauthLoginComplete": "OAuth 登录完成",
+      "oauthOpened": "已打开 OpenAI 授权页面，请在登录后复制 callback URL 回来",
+      "oauthStartFailed": "OAuth 起始失败",
+      "oauthSessionMissing": "请先点击\"打开授权页面\"获取 session",
+      "pasteCallbackRequired": "请粘贴 callback URL 或 code",
+      "oauthExchangeFailed": "OAuth 换 token 失败",
+      "authUrlCopied": "授权 URL 已复制到剪贴板",
+      "copyUnsupported": "当前环境不支持自动复制，请手动选择并复制",
+      "copyFailed": "复制失败，请手动选择并复制",
+      "resultWithErrors": "{{prefix}}，新增 {{added}} 个，已刷新 {{refreshed}} 个，失败 {{failed}} 个",
+      "resultSuccess": "{{prefix}}，新增 {{added}} 个，跳过 {{count}} 个重复项，已自动刷新账号信息"
+    }
+  }
+}

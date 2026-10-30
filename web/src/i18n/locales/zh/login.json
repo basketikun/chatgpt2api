@@ -1,0 +1,15 @@
+{
+  "header": {
+    "title": "欢迎回来",
+    "subtitle": "输入密钥后继续使用账号管理和图片生成功能。"
+  },
+  "form": {
+    "label": "密钥",
+    "placeholder": "请输入密钥",
+    "submit": "登录"
+  },
+  "errors": {
+    "keyRequired": "请输入 密钥",
+    "loginFailed": "登录失败"
+  }
+}

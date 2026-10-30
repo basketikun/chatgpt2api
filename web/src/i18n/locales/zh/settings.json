@@ -1,0 +1,740 @@
+{
+  "proxy": {
+    "runtime": {
+      "title": "FlareSolverr 清障",
+      "description": "默认关闭。用于上游请求遇到 Cloudflare 拦截后获取 clearance，可配合 WARP / Privoxy 代理链路重试。",
+      "status": { "enabled": "已启用", "disabled": "未启用" },
+      "priorityNote": "代理优先级：账号代理 > FlareSolverr 代理链路 > 显式代理 > 全局代理。Cookie / cf_clearance 不会在接口响应中明文返回。",
+      "dockerWarning": "使用 FlareSolverr 模式前，请先通过 Docker 启动 flaresolverr、privoxy、warp-proxy 等相关容器；容器内 URL 通常填写 http://flaresolverr:8191。",
+      "fields": {
+        "enable": "启用 FlareSolverr 清障",
+        "egressMode": {
+          "label": "出站模式",
+          "direct": "直连",
+          "singleProxy": "单代理/WARP",
+          "hint": "WARP compose 默认使用 single_proxy。"
+        },
+        "proxyUrl": {
+          "label": "清障代理 URL",
+          "hint": "支持 http/https/socks5/socks5h，socks5 会转为 socks5h。带认证格式：协议://账号:密码@主机:端口，也可直接粘贴 主机:端口:账号:密码。"
+        },
+        "resourceProxyUrl": {
+          "label": "资源代理 URL",
+          "placeholder": "留空则复用清障代理"
+        },
+        "resetStatusCodes": {
+          "label": "重置会话状态码",
+          "hint": "默认 403，只对 Cloudflare/挑战类错误触发。"
+        },
+        "skipSslVerify": "跳过 SSL 校验"
+      },
+      "actions": { "testProxy": "测试当前清障代理", "save": "保存配置" },
+      "testResult": {
+        "available": "代理可用：HTTP {{status}}，用时 {{latency}} ms，来源 {{source}}",
+        "unavailable": "代理不可用：{{error}}（用时 {{latency}} ms）"
+      },
+      "clearance": {
+        "modeLabel": "Clearance 模式",
+        "modeOptions": { "none": "不启用", "manual": "手动 Cookie" },
+        "timeoutLabel": "超时秒数",
+        "refreshIntervalLabel": "刷新间隔秒数",
+        "manualCookiePlaceholder": "可选：foo=bar; cf_clearance=...",
+        "manualCookieHint": {
+          "stored": "服务端已保存过 Cookie/clearance；留空保存不会清空已有值。",
+          "empty": "留空表示不使用手动 Cookie。"
+        },
+        "cfClearanceLabel": "单独 cf_clearance",
+        "cfClearancePlaceholder": "可选：只填写 cf_clearance 值",
+        "warmUpLabel": "启动时预热 Clearance",
+        "testUrlLabel": "测试目标 URL",
+        "testButton": "测试 Clearance",
+        "testResult": {
+          "hasCookies": "已获取 Cookie",
+          "noCookies": "无 Cookie",
+          "available": "Clearance 可用：{{cookieStatus}}，用时 {{latency}} ms",
+          "unavailable": "Clearance 不可用：{{error}}（用时 {{latency}} ms）"
+        }
+      },
+      "toasts": {
+        "proxyAvailable": "清障代理可用（{{latency}} ms，HTTP {{status}}）",
+        "proxyUnavailable": "清障代理不可用：{{error}}",
+        "testProxyFailed": "测试清障代理失败",
+        "clearanceSuccess": "Clearance 获取成功（{{latency}} ms）",
+        "clearanceFailed": "Clearance 获取失败：{{error}}",
+        "clearanceTestFailed": "测试 Clearance 失败",
+        "unknownError": "未知错误"
+      }
+    },
+    "upstream": {
+      "header": {
+        "title": "上游代理配置",
+        "description": "为 chatgpt.com 的请求配置出网代理，适合国内服务器部署；Sub2API / CPA 请求不受影响。"
+      },
+      "fields": {
+        "enableLabel": "启用代理",
+        "enableHint": "关闭后 chatgpt.com 请求会直连。保存后立即生效，无需重启。",
+        "urlLabel": "代理地址",
+        "urlPlaceholder": "http://user:pass@host:port 或 socks5://host:port",
+        "urlHintPrefix": "支持",
+        "urlHintSuffix": "。"
+      },
+      "testResult": {
+        "available": "代理可用：HTTP {{status}}，用时 {{latency}} ms",
+        "unavailable": "代理不可用：{{error}}（用时 {{latency}} ms）"
+      },
+      "toasts": {
+        "loadFailed": "加载代理配置失败",
+        "enableRequiresUrl": "启用代理时必须填写代理地址",
+        "saved": "代理配置已保存",
+        "saveFailed": "保存失败",
+        "fillUrlFirst": "请先填写代理地址",
+        "testAvailable": "代理可用（{{latency}} ms，HTTP {{status}}）",
+        "testUnavailable": "代理不可用：{{error}}",
+        "testFailed": "测试代理失败",
+        "unknownError": "未知错误"
+      },
+      "actions": { "save": "保存", "test": "测试连通" }
+    },
+    "global": {
+      "header": {
+        "title": "全局代理",
+        "description": "为系统中的出站请求配置统一代理，保存后会立即生效。"
+      },
+      "status": { "configured": "已配置", "notConfigured": "未配置" },
+      "fields": {
+        "urlLabel": "代理地址",
+        "urlHint": "留空表示不使用代理。请按完整地址填写，例如 `http://127.0.0.1:7890`、`http://用户名:密码@127.0.0.1:7890` 或 `socks5://127.0.0.1:7890`。"
+      },
+      "testResult": {
+        "available": "代理可用：HTTP {{status}}，用时 {{latency}} ms",
+        "unavailable": "代理不可用：{{error}}（用时 {{latency}} ms）"
+      },
+      "toasts": {
+        "fillUrlFirst": "请先填写代理地址",
+        "testAvailable": "代理可用（{{latency}} ms，HTTP {{status}}）",
+        "testUnavailable": "代理不可用：{{error}}",
+        "testFailed": "测试代理失败",
+        "unknownError": "未知错误"
+      },
+      "actions": { "test": "测试代理", "save": "保存配置" }
+    }
+  },
+  "backup": {
+    "header": {
+      "title": "R2 备份管理",
+      "description": "将关键数据定时备份到 Cloudflare R2，支持可选加密、轮替、手动执行与历史清理。"
+    },
+    "status": { "running": "备份中", "success": "最近成功", "failed": "最近失败", "idle": "未执行" },
+    "banner": "账号与用户密钥会从当前存储后端导出逻辑快照，不依赖底层是 `json`、`sqlite`、`postgres` 还是 `git`。图片目录默认不备份，避免备份体积过大。",
+    "fields": {
+      "enableScheduled": "启用定时备份",
+      "enableEncryption": "启用备份加密",
+      "bucket": "Bucket 名称",
+      "prefix": { "label": "备份前缀", "hint": "R2 内对象前缀，例如 `backups/prod`。" },
+      "intervalMinutes": { "label": "定时备份间隔", "hint": "单位分钟，服务启动后会按此间隔自动轮询执行。" },
+      "rotationKeep": { "label": "保留备份数量", "hint": "成功上传后自动删除更旧的备份。填 `0` 表示不自动轮替。" },
+      "passphrase": {
+        "label": "加密口令",
+        "placeholderRequired": "启用加密后必填",
+        "placeholderEmpty": "留空",
+        "hint": "仅在启用加密时使用。请妥善保管，否则无法解密备份内容。"
+      }
+    },
+    "include": {
+      "title": "备份内容",
+      "description": "按组件勾选需要进入备份包的数据。",
+      "items": {
+        "config": "系统配置",
+        "cpa": "CPA 配置",
+        "sub2api": "Sub2API 配置",
+        "logs": "调度与调用日志",
+        "imageTasks": "图片任务记录",
+        "accountsSnapshot": "账号快照",
+        "authKeysSnapshot": "用户密钥快照",
+        "images": "图片文件目录"
+      }
+    },
+    "state": { "lastStarted": "最近开始", "lastFinished": "最近完成", "lastObject": "最近对象", "lastError": "最近错误" },
+    "actions": { "testConnection": "测试连接", "refreshList": "刷新列表", "runNow": "立即备份", "save": "保存配置" },
+    "history": {
+      "title": "历史备份",
+      "description": "支持查看对象信息并直接删除远端备份。",
+      "empty": "暂无远端备份记录。保存配置并执行一次手动备份后会出现在这里。",
+      "encryptedBadge": "已加密",
+      "size": "大小 {{size}}",
+      "updatedAt": "更新时间 {{date}}",
+      "objectKey": "对象 key {{key}}",
+      "download": "下载",
+      "viewDetail": "查看详情",
+      "delete": "删除"
+    },
+    "detail": {
+      "title": "备份详情",
+      "empty": "暂时无法读取备份详情；如果这是加密备份，请确认当前已填写正确的加密口令并先保存配置。",
+      "objectName": "对象名称",
+      "createdAt": "创建时间",
+      "trigger": "触发方式",
+      "appVersion": "应用版本",
+      "storageBackend": "存储后端",
+      "filesTitle": "文件内容",
+      "fileExists": "已包含",
+      "fileMissing": "缺失",
+      "sha256": "SHA256 {{hash}}",
+      "snapshotsTitle": "快照内容",
+      "recordCount": "记录数 {{total}}"
+    },
+    "toasts": {
+      "fetchDetailFailed": "读取备份详情失败",
+      "authExpired": "当前登录态已失效，请重新登录后再下载",
+      "downloadFailedDefault": "下载备份失败",
+      "reauthRequired": "登录已失效，请重新登录后再试",
+      "downloadStarted": "备份下载已开始",
+      "loadFailed": "加载备份列表失败",
+      "runSuccess": "备份已完成：{{key}}",
+      "runFailed": "执行备份失败",
+      "deleteSuccess": "备份已删除",
+      "deleteFailed": "删除备份失败",
+      "testAvailable": "R2 连接正常（HTTP {{status}}）",
+      "testFailed": "测试备份连接失败"
+    }
+  },
+  "core": {
+    "tabs": {
+      "basic": "基础配置",
+      "backup": "备份",
+      "keys": "用户密钥",
+      "apiDocs": "接口接入",
+      "canvas": "画布入口"
+    },
+    "banner": "管理员登录密钥继续从部署配置读取，不再在此页面展示；如需分发给其他人，请在下方创建普通用户密钥。",
+    "fields": {
+      "refreshInterval": {
+        "label": "账号刷新间隔",
+        "placeholder": "分钟",
+        "hint": "单位分钟，控制账号自动刷新频率。"
+      },
+      "proxy": {
+        "label": "全局代理",
+        "hint": "留空表示不使用代理。支持协议://账号:密码@主机:端口，也可直接粘贴代理商的 主机:端口:账号:密码；示例 http://user:pass@127.0.0.1:7890、127.0.0.1:7890:user:pass。账号密码含 @/: 等特殊字符时需 URL 编码。",
+        "testButton": "测试代理",
+        "testResult": {
+          "available": "代理可用：HTTP {{status}}，用时 {{latency}} ms",
+          "unavailable": "代理不可用：{{error}}（用时 {{latency}} ms）"
+        },
+        "toasts": {
+          "fillUrlFirst": "请先填写代理地址",
+          "testAvailable": "代理可用（{{latency}} ms，HTTP {{status}}）",
+          "testUnavailable": "代理不可用：{{error}}",
+          "testFailed": "测试代理失败",
+          "unknownError": "未知错误"
+        }
+      },
+      "imageBaseUrl": {
+        "label": "图片访问地址",
+        "hint": "用于生成图片结果的访问前缀地址。"
+      },
+      "defaultUpstreamModel": {
+        "label": "默认请求上游模型名称",
+        "hint": "gpt-image-2 发起图片请求时使用的上游模型名称，默认 gpt-5-5。"
+      },
+      "defaultThinkingEffort": {
+        "label": "默认思考强度",
+        "options": { "auto": "Auto（不传递）" },
+        "hint": "模型名称以 -standard、-extended 或 -max 结尾时，模型后缀优先。"
+      },
+      "imageRetentionDays": {
+        "label": "图片自动清理",
+        "hint": "自动删除多少天前的本地图片。"
+      },
+      "imagePollTimeout": {
+        "label": "图片轮询超时",
+        "hint": "单位秒，等待上游图片结果的最长时间。"
+      },
+      "imageAccountConcurrency": {
+        "label": "单账号图片并发",
+        "hint": "限制每个账号同时处理的图片请求数量，默认 3。"
+      },
+      "autoRemoveInvalidAccounts": {
+        "label": "自动移除异常账号",
+        "hint": "刷新时检测并移除"
+      },
+      "imageSettleEnabled": {
+        "label": "图片二次确认机制",
+        "hint": "打开后能稍微提升获取图片的成功率。"
+      },
+      "imageRemoveConversationAfterResult": {
+        "label": "出图后移除本地对话",
+        "hint": "成功拿到图片后，异步隐藏 ChatGPT 侧对应的本地对话记录。"
+      },
+      "imageRemoveConversationAlways": {
+        "label": "没出图也移除本地对话",
+        "hint": "失败、超时或只返回文本时也一并隐藏对话记录（打开后包含出图成功的情况）。"
+      },
+      "imageTimeoutRetrySecs": {
+        "label": "图片超时继续等待时间",
+        "hint": "单位秒，超时后点击\"继续等待\"额外等待的时间。"
+      },
+      "imageSettleSecs": {
+        "label": "图片二次确认等待时间",
+        "hint": "单位秒，找到图片后等待多久再次确认。需配合图片二次确认机制使用。"
+      },
+      "autoReloginAfterRefresh": {
+        "label": "刷新后自动尝试移除异常状态",
+        "hint": "开启后刷新时自动尝试密码登录恢复账号。"
+      },
+      "autoRemoveRateLimitedAccounts": {
+        "label": "自动移除限流账号"
+      },
+      "logLevel": {
+        "label": "控制台日志级别",
+        "hint": "不选择时使用默认 info / warning / error。"
+      },
+      "globalSystemPrompt": {
+        "label": "全局附加指令",
+        "placeholder": "例如：先判断用户提示词是否合规；遇到违法、色情、暴力、仇恨等请求时拒绝回答。",
+        "hint": "每次请求都会作为 system 消息注入，可用于审核用户提示词、避免违规内容、统一约束模型行为或固定角色设定。"
+      },
+      "sensitiveWords": {
+        "label": "敏感词",
+        "placeholder": "一行一个，命中即拒绝",
+        "hint": "只要用户请求包含任意敏感词，就直接返回拒绝。"
+      }
+    },
+    "imageStorage": {
+      "enableLabel": "启用 WebDAV 图片存储",
+      "testButton": "测试 WebDAV",
+      "syncButton": "全量同步",
+      "syncHint": "生成时只处理本次新图片；全量同步用于把已有本地图片补传到 WebDAV。",
+      "currentModeLabel": "当前待保存模式：",
+      "modeSaveHint": "修改后需要点保存，或通过测试/同步按钮自动保存。",
+      "modes": { "local": "仅本机", "webdav": "仅 WebDAV", "both": "本机 + WebDAV" },
+      "fields": {
+        "saveMode": { "label": "保存模式" },
+        "username": { "label": "用户名" },
+        "password": { "label": "密码" },
+        "remotePath": { "label": "远端目录" },
+        "publicBaseUrl": {
+          "label": "公开访问前缀",
+          "hint": "留空时返回本应用 /images/... 代理地址；填入后直接返回公开图片地址。"
+        }
+      },
+      "toasts": {
+        "testAvailable": "WebDAV 连接可用：HTTP {{status}}",
+        "testUnavailable": "WebDAV 连接失败：{{error}}",
+        "testFailed": "测试 WebDAV 失败",
+        "syncComplete": "同步完成：上传 {{uploaded}}，跳过 {{skipped}}，失败 {{failed}}",
+        "syncFailed": "同步图片失败"
+      }
+    },
+    "aiReview": {
+      "enableLabel": "启用 AI 审核",
+      "hint": "开启后会在请求进入生图账号前先调用审核模型，审核不通过会直接拒绝，减少违规提示词触达账号造成风控或封号的风险。",
+      "fields": {
+        "prompt": {
+          "label": "审核提示词",
+          "placeholder": "判断用户请求是否允许。只回答 ALLOW 或 REJECT。"
+        }
+      }
+    },
+    "actions": { "save": "保存" },
+    "toasts": {
+      "loadFailed": "加载系统配置失败",
+      "saveSuccess": "配置已保存",
+      "saveFailed": "保存系统配置失败"
+    },
+    "baseUrlCard": {
+      "title": "基础地址",
+      "description": "设置 `CHATGPT2API_BASE_URL` 的本地配置值，保存后立即生效。",
+      "status": { "configured": "已配置", "notConfigured": "未配置" },
+      "hint": "留空则使用环境变量或默认值，保存时会自动去掉首尾空格。",
+      "saveButton": "保存配置"
+    }
+  },
+  "apiDocs": {
+    "header": {
+      "title": "接口接入说明",
+      "description": "第三方应用按 OpenAI 兼容接口接入；文件任务接口也使用同一套鉴权方式。"
+    },
+    "info": {
+      "serviceUrl": "服务地址",
+      "openaiBaseUrl": "Base URL（OpenAI）",
+      "requestHeader": "请求头",
+      "noKeyPlaceholder": "<当前密钥>"
+    },
+    "models": {
+      "label": "常用模型，也可请求 /v1/models 获取"
+    },
+    "table": { "param": "参数", "type": "类型", "description": "说明" },
+    "sections": { "input": "输入参数", "output": "输出参数", "example": "调用示例" },
+    "docs": {
+      "models": {
+        "title": "模型列表",
+        "input": { "authorization": "Bearer <auth-key>。" },
+        "output": { "data": "模型列表，包含 id、object、created、owned_by。" }
+      },
+      "chatCompletions": {
+        "title": "聊天补全",
+        "input": {
+          "model": "模型名，例如 gpt-5-mini，也可用于图片兼容场景。",
+          "messages": "OpenAI 兼容消息数组。",
+          "stream": "可选，是否流式返回。",
+          "n": "可选，图片兼容场景会解析为生成数量。"
+        },
+        "output": {
+          "id": "响应 ID。",
+          "choices": "OpenAI 兼容 choices。",
+          "usage": "可选，token 使用信息。"
+        },
+        "examplePrompt": "你好"
+      },
+      "responses": {
+        "input": {
+          "model": "模型名。",
+          "input": "用户输入，图片生成会从中解析提示词。",
+          "tools": "可选，Responses 工具定义。",
+          "stream": "可选，是否流式返回。"
+        },
+        "output": {
+          "id": "响应 ID。",
+          "output": "Responses 兼容输出。",
+          "status": "响应状态。"
+        },
+        "examplePrompt": "生成一张未来城市图片"
+      },
+      "search": {
+        "title": "搜索",
+        "input": { "prompt": "搜索问题或检索指令。" },
+        "output": {
+          "answer": "搜索后的回答内容，具体字段以返回结果为准。",
+          "sources": "可选，搜索引用来源。",
+          "accountEmail": "本次使用的账号邮箱。"
+        },
+        "examplePrompt": "搜索 chatgpt2api 最新使用方式"
+      },
+      "imageGenerations": {
+        "title": "图片生成",
+        "input": {
+          "prompt": "图片生成提示词。",
+          "model": "可选，默认 gpt-image-2。",
+          "n": "可选，生成数量，当前限制 1-4。",
+          "size": "可选，图片尺寸。",
+          "quality": "可选，默认 auto。",
+          "responseFormat": "可选，默认 b64_json。"
+        },
+        "output": {
+          "data": "图片结果列表。",
+          "dataB64Json": "base64 图片内容。",
+          "dataUrl": "部分配置下返回图片 URL。"
+        },
+        "examplePrompt": "一张极简产品海报"
+      },
+      "imageEdits": {
+        "title": "图片编辑",
+        "input": {
+          "image": "参考图，支持 multipart 上传，也支持 JSON 图片链接。",
+          "prompt": "编辑提示词。",
+          "model": "可选，默认 gpt-image-2。",
+          "n": "可选，生成数量，当前限制 1-4。",
+          "size": "可选，图片尺寸。",
+          "quality": "可选，默认 auto。"
+        },
+        "output": {
+          "data": "编辑后的图片结果列表。",
+          "dataB64Json": "base64 图片内容。",
+          "dataUrl": "部分配置下返回图片 URL。"
+        },
+        "examplePrompt": "改成赛博朋克夜景"
+      },
+      "pptTask": {
+        "title": "创建 PPT 任务",
+        "input": {
+          "prompt": "PPT 需求描述，可为空但建议填写完整主题、页数、风格和内容结构。",
+          "base64Images": "可选，图片 data URL/base64，用作 PPT 参考素材。",
+          "clientTaskId": "可选，客户端幂等任务 ID；重复提交同 ID 会返回已有任务。"
+        },
+        "output": {
+          "idOrTaskId": "任务 ID，用于轮询状态。",
+          "status": "任务状态。",
+          "kind": "任务类型。",
+          "createdUpdatedAt": "任务创建和更新时间。"
+        },
+        "examplePrompt": "制作一份 8 页以内的季度业务汇报 PPT"
+      },
+      "psdTask": {
+        "title": "创建 PSD 任务",
+        "input": {
+          "prompt": "PSD 拆分与合成要求，例如保留图层、位置、背景和素材 zip。",
+          "base64Images": "必填，至少一张图片 data URL/base64，作为 PSD 拆分源图。",
+          "clientTaskId": "可选，客户端幂等任务 ID。"
+        },
+        "output": {
+          "idOrTaskId": "任务 ID，用于轮询状态。",
+          "status": "任务状态。",
+          "kind": "任务类型。",
+          "error": "失败时返回错误信息。"
+        },
+        "examplePrompt": "按原图位置拆分海报元素并合成可编辑 PSD"
+      },
+      "taskStatus": {
+        "title": "任务状态查询",
+        "input": { "ids": "可选，逗号分隔任务 ID；不传则返回当前用户全部可编辑文件任务。" },
+        "output": {
+          "items": "任务列表。成功任务的 result 内包含 primary_url 和 zip_url。",
+          "missingIds": "查询指定 ids 时，返回未找到的任务 ID。",
+          "resultPrimaryUrl": "主文件下载地址。",
+          "resultZipUrl": "素材 zip 下载地址。"
+        }
+      },
+      "fileDownload": {
+        "title": "结果文件下载",
+        "input": { "filePath": "由任务 result.primary_url 或 result.zip_url 返回，通常不需要手动拼接。" },
+        "output": { "binary": "返回 pptx/psd/zip 文件流。" }
+      }
+    }
+  },
+  "userKeys": {
+    "header": {
+      "title": "用户密钥管理",
+      "description": "为普通用户创建专用密钥；普通用户只能进入画图页，不能查看设置和号池。",
+      "createButton": "创建用户密钥"
+    },
+    "revealedKey": {
+      "title": "新密钥仅展示一次，请立即保存：",
+      "copyButton": "复制"
+    },
+    "empty": {
+      "description": "暂无普通用户密钥。点击右上角按钮后即可创建并分发给其他人。"
+    },
+    "item": {
+      "badge": { "enabled": "已启用", "disabled": "已禁用" },
+      "createdAt": "创建时间 {{date}}",
+      "lastUsedAt": "最近使用 {{date}}",
+      "editButton": "编辑",
+      "deleteButton": "删除",
+      "actions": { "enable": "启用", "disable": "禁用" }
+    },
+    "namePlaceholder": "例如：设计同学 A、运营临时账号",
+    "createDialog": {
+      "title": "创建用户密钥",
+      "description": "可选填写一个备注名称，方便区分不同使用者；创建后会生成一条只能查看一次的原始密钥。",
+      "nameLabel": "名称（可选）",
+      "createButton": "创建"
+    },
+    "deleteDialog": {
+      "title": "删除用户密钥",
+      "description": "确认删除用户密钥「{{name}}」吗？删除后该密钥将无法继续调用接口。",
+      "confirmButton": "删除"
+    },
+    "editDialog": {
+      "title": "编辑用户密钥",
+      "description": "可以修改备注名称；如需更换专用密钥，直接填写新的原始密钥即可。留空则保持当前密钥不变。",
+      "nameLabel": "名称",
+      "newKeyLabel": "新的专用密钥（可选）",
+      "newKeyPlaceholder": "例如：sk-your-custom-user-key",
+      "newKeyHint": "保存后旧密钥会立即失效，新密钥生效。系统仍只保存哈希，不会回显当前密钥。",
+      "saveButton": "保存"
+    },
+    "toasts": {
+      "loadFailed": "加载用户密钥失败",
+      "createSuccess": "用户密钥已创建",
+      "createFailed": "创建用户密钥失败",
+      "enableSuccess": "用户密钥已启用",
+      "disableSuccess": "用户密钥已禁用",
+      "updateFailed": "更新用户密钥失败",
+      "deleteSuccess": "用户密钥已删除",
+      "deleteFailed": "删除用户密钥失败",
+      "editKeySuccess": "用户密钥已更新",
+      "editNameSuccess": "用户名称已更新",
+      "copySuccess": "已复制到剪贴板",
+      "copyFailed": "复制失败，请手动复制"
+    }
+  },
+  "sub2api": {
+    "header": {
+      "title": "Sub2API 连接管理",
+      "description": "配置 Sub2API 服务器后，可查询其中的 OpenAI OAuth 账号并批量导入本地号池。",
+      "connectionCount": "{{count}} 个连接"
+    },
+    "actions": {
+      "addConnection": "添加连接",
+      "edit": "编辑",
+      "delete": "删除",
+      "sync": "同步"
+    },
+    "empty": {
+      "title": "暂无 Sub2API 连接",
+      "description": "点击「添加连接」保存你的 Sub2API 信息。"
+    },
+    "item": {
+      "group": "分组 {{id}}",
+      "allGroups": "全部分组",
+      "importJobLabel": "导入任务",
+      "importStatus": "状态 {{status}}，已处理 {{completed}}/{{total}}",
+      "jobMeta": "任务 {{jobId}} · {{createdAt}}",
+      "added": "新增 {{count}}",
+      "skipped": "跳过 {{count}}",
+      "refreshed": "刷新 {{count}}",
+      "failed": "失败 {{count}}"
+    },
+    "help": {
+      "title": "使用说明",
+      "step1": "输入 Sub2API 地址和管理员账户（或 Admin API Key），保存为一个连接。",
+      "step2": "点击某个连接的「同步」会拉取其中 platform=openai 且 type=oauth 的账号列表。",
+      "step3": "勾选需要的账号后后端会并发拉取 access_token，自动导入本地号池并刷新状态。",
+      "step4": "仅会读取 sub2api 凭据中的 access_token；refresh_token 等字段不会写入本地。"
+    },
+    "dialog": {
+      "titleEdit": "编辑连接",
+      "descriptionEdit": "修改 Sub2API 连接信息",
+      "descriptionAdd": "添加一个新的 Sub2API 连接",
+      "nameLabel": "名称（可选）",
+      "namePlaceholder": "例如：自建 sub2api",
+      "urlLabel": "Sub2API 地址",
+      "authModeLabel": "认证方式",
+      "authModePassword": "管理员邮箱 + 密码",
+      "emailLabel": "管理员邮箱",
+      "passwordLabel": "管理员密码",
+      "passwordPlaceholderKeep": "留空则不修改密码",
+      "apiKeyPlaceholderKeep": "留空则不修改密钥",
+      "groupLabel": "分组（可选）",
+      "selectGroupPlaceholder": "选择分组",
+      "allGroupsUnrestricted": "全部分组（不限制）",
+      "ungrouped": "未分组",
+      "groupPlaceholder": "留空则同步所有分组；或填写分组 ID / ungrouped",
+      "groupSyncHint": "同步时会用分组 ID 过滤，留空 = 同步所有 OpenAI OAuth 账号。",
+      "fetchGroups": "拉取分组",
+      "refetchGroups": "重新拉取",
+      "groupHintNew": "添加完连接后可在编辑对话框里点「拉取分组」选择具体分组。",
+      "saveButton": "保存修改",
+      "addButton": "添加"
+    },
+    "browser": {
+      "title": "选择要导入的账号",
+      "descriptionFrom": "来自 {{name}}",
+      "descriptionDefault": "Sub2API 上的 OpenAI OAuth 账号",
+      "searchPlaceholder": "搜索邮箱、套餐或名称",
+      "pageSizeOption": "{{size}} / 页",
+      "deselectAll": "取消全选",
+      "selectAllFiltered": "全选筛选结果",
+      "filteredCount": "筛选结果 {{total}} 个",
+      "selectedCount": "已选 {{total}} 个",
+      "emptyAccounts": "没有匹配的账号",
+      "expiresAt": "过期 {{date}}",
+      "pageRange": "第 {{from}} - {{to}} 条，共 {{total}} 条",
+      "prevPage": "上一页",
+      "nextPage": "下一页",
+      "importSelected": "导入选中账号"
+    },
+    "toasts": {
+      "loadFailed": "加载 Sub2API 连接失败",
+      "pollFailed": "查询导入进度失败",
+      "saveConnectionFirst": "请先保存连接后再拉取分组",
+      "noRemoteGroups": "远端没有配置分组",
+      "fetchedGroups": "读取到 {{count}} 个分组",
+      "fetchGroupsFailed": "拉取分组失败",
+      "baseUrlRequired": "请输入 Sub2API 地址",
+      "emailRequired": "请输入管理员邮箱",
+      "passwordRequired": "请输入管理员密码",
+      "apiKeyRequired": "请输入 Admin API Key",
+      "updateSuccess": "连接已更新",
+      "createSuccess": "连接已添加",
+      "saveFailed": "保存失败",
+      "deleteSuccess": "连接已删除",
+      "deleteFailed": "删除失败",
+      "fetchAccountsSuccess": "读取成功，共 {{count}} 个 OpenAI 账号",
+      "fetchAccountsFailed": "读取 Sub2API 账号失败",
+      "selectAccountsFirst": "请先选择要导入的账号",
+      "importStarted": "导入任务已启动",
+      "importStartFailed": "启动导入失败"
+    }
+  },
+  "cpa": {
+    "header": {
+      "title": "CPA 连接管理",
+      "description": "先配置连接，再按需查询远程账号并选择导入到本地号池。",
+      "connectionCount": "{{count}} 个连接"
+    },
+    "actions": {
+      "addConnection": "添加连接",
+      "edit": "编辑",
+      "delete": "删除",
+      "sync": "同步"
+    },
+    "empty": {
+      "title": "暂无 CPA 连接",
+      "description": "点击「添加连接」保存你的 CLIProxyAPI 信息。"
+    },
+    "item": {
+      "importJobLabel": "导入任务",
+      "importStatus": "状态 {{status}}，已处理 {{completed}}/{{total}}",
+      "jobMeta": "任务 {{jobId}} · {{createdAt}}",
+      "added": "新增 {{count}}",
+      "skipped": "跳过 {{count}}",
+      "refreshed": "刷新 {{count}}",
+      "failed": "失败 {{count}}"
+    },
+    "help": {
+      "title": "使用说明",
+      "step1": "页面进入后先读取系统里已配置的 CPA 连接。",
+      "step2": "点击某个连接的「同步」后，会先读取远程账号列表并展示给前端选择。",
+      "step3": "确认选择后，后端后台下载对应 access_token 并导入本地号池。",
+      "step4": "前端只轮询导入进度，不直接参与 download。"
+    },
+    "dialog": {
+      "titleEdit": "编辑连接",
+      "descriptionEdit": "修改 CPA 连接信息",
+      "descriptionAdd": "添加一个新的 CLIProxyAPI 连接",
+      "nameLabel": "名称（可选）",
+      "namePlaceholder": "例如：主号池、备用池",
+      "urlLabel": "CPA 地址",
+      "secretKeyPlaceholderKeep": "留空则不修改密钥",
+      "secretKeyPlaceholderNew": "CPA 管理密钥",
+      "saveButton": "保存修改",
+      "addButton": "添加"
+    },
+    "toasts": {
+      "loadFailed": "加载 CPA 连接失败",
+      "baseUrlRequired": "请输入 CPA 地址",
+      "secretKeyRequired": "请输入 Secret Key",
+      "updateSuccess": "连接已更新",
+      "createSuccess": "连接已添加",
+      "saveFailed": "保存失败",
+      "deleteSuccess": "连接已删除",
+      "deleteFailed": "删除失败"
+    }
+  },
+  "importBrowser": {
+    "title": "选择要导入的账号",
+    "descriptionFrom": "来自 {{name}}",
+    "descriptionDefault": "读取到的远程账号列表",
+    "searchPlaceholder": "搜索 email 或文件名",
+    "pageSizeOption": "{{size}} / 页",
+    "deselectAll": "取消全选",
+    "selectAllFiltered": "全选筛选结果",
+    "filteredCount": "筛选结果 {{total}} 个",
+    "selectedCount": "已选 {{total}} 个",
+    "emptyAccounts": "没有匹配的远程账号",
+    "pageRange": "第 {{from}} - {{to}} 条，共 {{total}} 条",
+    "prevPage": "上一页",
+    "nextPage": "下一页",
+    "importSelected": "导入选中账号",
+    "toasts": {
+      "fetchFilesSuccess": "读取成功，共 {{count}} 个远程账号",
+      "fetchFilesFailed": "读取远程账号失败",
+      "selectFilesFirst": "请先选择要导入的账号",
+      "importStarted": "导入任务已启动",
+      "importStartFailed": "启动导入失败"
+    }
+  },
+  "thirdParty": {
+    "saveButton": "保存",
+    "enableCanvas": "启用无限画布",
+    "enabledBadge": "已启用",
+    "disabledBadge": "未启用",
+    "entryTitle": "无限画布入口",
+    "entryDescription": "开启后会在顶部导航显示入口，跳转时自动附带本项目地址和当前密钥。",
+    "urlLabel": "无限画布地址",
+    "urlHint": "顶部入口跳转时会追加 apiKey 和 baseUrl 参数；关闭后顶部导航不显示无限画布。",
+    "warningHint": "该入口仅供个人测试使用；长期使用建议自行本机部署无限画布。"
+  }
+}

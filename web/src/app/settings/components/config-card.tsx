@@ -2,6 +2,7 @@
 
 import { Cloud, LoaderCircle, PlugZap, RefreshCw, Save } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,7 @@ import { testProxy, type ProxyTestResult } from "@/lib/api";
 import { useSettingsStore } from "../store";
 
 export function ConfigCard() {
+  const { t } = useTranslation("settings");
   const [isTestingProxy, setIsTestingProxy] = useState(false);
   const [proxyTestResult, setProxyTestResult] = useState<ProxyTestResult | null>(null);
   const logLevelOptions = ["debug", "info", "warning", "error"];
@@ -52,7 +54,7 @@ export function ConfigCard() {
   const handleTestProxy = async () => {
     const candidate = String(config?.proxy || "").trim();
     if (!candidate) {
-      toast.error("请先填写代理地址");
+      toast.error(t("core.fields.proxy.toasts.fillUrlFirst"));
       return;
     }
     setIsTestingProxy(true);
@@ -61,12 +63,12 @@ export function ConfigCard() {
       const data = await testProxy(candidate);
       setProxyTestResult(data.result);
       if (data.result.ok) {
-        toast.success(`代理可用（${data.result.latency_ms} ms，HTTP ${data.result.status}）`);
+        toast.success(t("core.fields.proxy.toasts.testAvailable", { latency: data.result.latency_ms, status: data.result.status }));
       } else {
-        toast.error(`代理不可用：${data.result.error ?? "未知错误"}`);
+        toast.error(t("core.fields.proxy.toasts.testUnavailable", { error: data.result.error ?? t("core.fields.proxy.toasts.unknownError") }));
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "测试代理失败");
+      toast.error(error instanceof Error ? error.message : t("core.fields.proxy.toasts.testFailed"));
     } finally {
       setIsTestingProxy(false);
     }
@@ -86,21 +88,21 @@ export function ConfigCard() {
     <Card className="rounded-2xl border-white/80 bg-white/90 shadow-sm">
       <CardContent className="space-y-4 p-6">
         <div className="rounded-xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm leading-6 text-stone-600">
-          管理员登录密钥继续从部署配置读取，不再在此页面展示；如需分发给其他人，请在下方创建普通用户密钥。
+          {t("core.banner")}
         </div>
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
-            <label className="text-sm text-stone-700">账号刷新间隔</label>
+            <label className="text-sm text-stone-700">{t("core.fields.refreshInterval.label")}</label>
             <Input
               value={String(config?.refresh_account_interval_minute || "")}
               onChange={(event) => setRefreshAccountIntervalMinute(event.target.value)}
-              placeholder="分钟"
+              placeholder={t("core.fields.refreshInterval.placeholder")}
               className="h-10 rounded-xl border-stone-200 bg-white"
             />
-            <p className="text-xs text-stone-500">单位分钟，控制账号自动刷新频率。</p>
+            <p className="text-xs text-stone-500">{t("core.fields.refreshInterval.hint")}</p>
           </div>
           <div className="space-y-2">
-            <label className="text-sm text-stone-700">全局代理</label>
+            <label className="text-sm text-stone-700">{t("core.fields.proxy.label")}</label>
             <Input
               value={String(config?.proxy || "")}
               onChange={(event) => {
@@ -111,7 +113,7 @@ export function ConfigCard() {
               className="h-10 rounded-xl border-stone-200 bg-white"
             />
             <p className="text-xs leading-5 text-stone-500">
-              留空表示不使用代理。支持协议://账号:密码@主机:端口，也可直接粘贴代理商的 主机:端口:账号:密码；示例 http://user:pass@127.0.0.1:7890、127.0.0.1:7890:user:pass。账号密码含 @/: 等特殊字符时需 URL 编码。
+              {t("core.fields.proxy.hint")}
             </p>
             {proxyTestResult ? (
               <div
@@ -122,8 +124,8 @@ export function ConfigCard() {
                 }`}
               >
                 {proxyTestResult.ok
-                  ? `代理可用：HTTP ${proxyTestResult.status}，用时 ${proxyTestResult.latency_ms} ms`
-                  : `代理不可用：${proxyTestResult.error ?? "未知错误"}（用时 ${proxyTestResult.latency_ms} ms）`}
+                  ? t("core.fields.proxy.testResult.available", { status: proxyTestResult.status, latency: proxyTestResult.latency_ms })
+                  : t("core.fields.proxy.testResult.unavailable", { error: proxyTestResult.error ?? t("core.fields.proxy.toasts.unknownError"), latency: proxyTestResult.latency_ms })}
               </div>
             ) : null}
             <div className="flex justify-end">
@@ -135,32 +137,32 @@ export function ConfigCard() {
                 disabled={isTestingProxy}
               >
                 {isTestingProxy ? <LoaderCircle className="size-4 animate-spin" /> : <PlugZap className="size-4" />}
-                测试代理
+                {t("core.fields.proxy.testButton")}
               </Button>
             </div>
           </div>
           <div className="space-y-2">
-            <label className="text-sm text-stone-700">图片访问地址</label>
+            <label className="text-sm text-stone-700">{t("core.fields.imageBaseUrl.label")}</label>
             <Input
               value={String(config?.base_url || "")}
               onChange={(event) => setBaseUrl(event.target.value)}
               placeholder="https://example.com"
               className="h-10 rounded-xl border-stone-200 bg-white"
             />
-            <p className="text-xs text-stone-500">用于生成图片结果的访问前缀地址。</p>
+            <p className="text-xs text-stone-500">{t("core.fields.imageBaseUrl.hint")}</p>
           </div>
           <div className="space-y-2">
-            <label className="text-sm text-stone-700">默认请求上游模型名称</label>
+            <label className="text-sm text-stone-700">{t("core.fields.defaultUpstreamModel.label")}</label>
             <Input
               value={String(config?.default_upstream_model_name || "")}
               onChange={(event) => setDefaultUpstreamModelName(event.target.value)}
               placeholder="gpt-5-5"
               className="h-10 rounded-xl border-stone-200 bg-white"
             />
-            <p className="text-xs text-stone-500">gpt-image-2 发起图片请求时使用的上游模型名称，默认 gpt-5-5。</p>
+            <p className="text-xs text-stone-500">{t("core.fields.defaultUpstreamModel.hint")}</p>
           </div>
           <div className="space-y-2">
-            <label className="text-sm text-stone-700">默认思考强度</label>
+            <label className="text-sm text-stone-700">{t("core.fields.defaultThinkingEffort.label")}</label>
             <Select
               value={String(config?.default_thinking_effort || "auto")}
               onValueChange={(value) => setDefaultThinkingEffort(value as "auto" | "standard" | "extended" | "max")}
@@ -169,43 +171,43 @@ export function ConfigCard() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="auto">Auto（不传递）</SelectItem>
+                <SelectItem value="auto">{t("core.fields.defaultThinkingEffort.options.auto")}</SelectItem>
                 <SelectItem value="standard">Standard</SelectItem>
                 <SelectItem value="extended">Extended</SelectItem>
                 <SelectItem value="max">Max</SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-xs text-stone-500">模型名称以 -standard、-extended 或 -max 结尾时，模型后缀优先。</p>
+            <p className="text-xs text-stone-500">{t("core.fields.defaultThinkingEffort.hint")}</p>
           </div>
           <div className="space-y-2">
-            <label className="text-sm text-stone-700">图片自动清理</label>
+            <label className="text-sm text-stone-700">{t("core.fields.imageRetentionDays.label")}</label>
             <Input
               value={String(config?.image_retention_days || "")}
               onChange={(event) => setImageRetentionDays(event.target.value)}
               placeholder="30"
               className="h-10 rounded-xl border-stone-200 bg-white"
             />
-            <p className="text-xs text-stone-500">自动删除多少天前的本地图片。</p>
+            <p className="text-xs text-stone-500">{t("core.fields.imageRetentionDays.hint")}</p>
           </div>
           <div className="space-y-2">
-            <label className="text-sm text-stone-700">图片轮询超时</label>
+            <label className="text-sm text-stone-700">{t("core.fields.imagePollTimeout.label")}</label>
             <Input
               value={String(config?.image_poll_timeout_secs || "")}
               onChange={(event) => setImagePollTimeoutSecs(event.target.value)}
               placeholder="120"
               className="h-10 rounded-xl border-stone-200 bg-white"
             />
-            <p className="text-xs text-stone-500">单位秒，等待上游图片结果的最长时间。</p>
+            <p className="text-xs text-stone-500">{t("core.fields.imagePollTimeout.hint")}</p>
           </div>
           <div className="space-y-2">
-            <label className="text-sm text-stone-700">单账号图片并发</label>
+            <label className="text-sm text-stone-700">{t("core.fields.imageAccountConcurrency.label")}</label>
             <Input
               value={String(config?.image_account_concurrency || "")}
               onChange={(event) => setImageAccountConcurrency(event.target.value)}
               placeholder="1"
               className="h-10 rounded-xl border-stone-200 bg-white"
             />
-            <p className="text-xs text-stone-500">限制每个账号同时处理的图片请求数量，默认 3。</p>
+            <p className="text-xs text-stone-500">{t("core.fields.imageAccountConcurrency.hint")}</p>
           </div>
           <div className="space-y-2">
             <label className="flex items-center gap-3 rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700">
@@ -213,9 +215,9 @@ export function ConfigCard() {
                 checked={Boolean(config?.auto_remove_invalid_accounts)}
                 onCheckedChange={(checked) => setAutoRemoveInvalidAccounts(Boolean(checked))}
               />
-              自动移除异常账号
+              {t("core.fields.autoRemoveInvalidAccounts.label")}
             </label>
-            <p className="text-xs text-stone-500">刷新时检测并移除</p>
+            <p className="text-xs text-stone-500">{t("core.fields.autoRemoveInvalidAccounts.hint")}</p>
           </div>
           <div className="space-y-2">
             <div className="flex items-center gap-3 rounded-xl border border-stone-200 bg-white px-4 py-3">
@@ -223,9 +225,9 @@ export function ConfigCard() {
                 checked={Boolean(config?.image_settle_enabled !== false)}
                 onCheckedChange={(checked) => setImageSettleEnabled(Boolean(checked))}
               />
-              <span className="text-sm text-stone-700">图片二次确认机制</span>
+              <span className="text-sm text-stone-700">{t("core.fields.imageSettleEnabled.label")}</span>
             </div>
-            <p className="text-xs text-stone-500">打开后能稍微提升获取图片的成功率。</p>
+            <p className="text-xs text-stone-500">{t("core.fields.imageSettleEnabled.hint")}</p>
           </div>
           <div className="space-y-2">
             <div className="flex items-center gap-3 rounded-xl border border-stone-200 bg-white px-4 py-3">
@@ -233,9 +235,9 @@ export function ConfigCard() {
                 checked={Boolean(config?.image_remove_conversation_after_result)}
                 onCheckedChange={(checked) => setImageRemoveConversationAfterResult(Boolean(checked))}
               />
-              <span className="text-sm text-stone-700">出图后移除本地对话</span>
+              <span className="text-sm text-stone-700">{t("core.fields.imageRemoveConversationAfterResult.label")}</span>
             </div>
-            <p className="text-xs text-stone-500">成功拿到图片后，异步隐藏 ChatGPT 侧对应的本地对话记录。</p>
+            <p className="text-xs text-stone-500">{t("core.fields.imageRemoveConversationAfterResult.hint")}</p>
           </div>
           <div className="space-y-2">
             <div className="flex items-center gap-3 rounded-xl border border-stone-200 bg-white px-4 py-3">
@@ -243,22 +245,22 @@ export function ConfigCard() {
                 checked={Boolean(config?.image_remove_conversation_always)}
                 onCheckedChange={(checked) => setImageRemoveConversationAlways(Boolean(checked))}
               />
-              <span className="text-sm text-stone-700">没出图也移除本地对话</span>
+              <span className="text-sm text-stone-700">{t("core.fields.imageRemoveConversationAlways.label")}</span>
             </div>
-            <p className="text-xs text-stone-500">失败、超时或只返回文本时也一并隐藏对话记录（打开后包含出图成功的情况）。</p>
+            <p className="text-xs text-stone-500">{t("core.fields.imageRemoveConversationAlways.hint")}</p>
           </div>
           <div className="space-y-2">
-            <label className="text-sm text-stone-700">图片超时继续等待时间</label>
+            <label className="text-sm text-stone-700">{t("core.fields.imageTimeoutRetrySecs.label")}</label>
             <Input
               value={String(config?.image_timeout_retry_secs || "30")}
               onChange={(event) => setImageTimeoutRetrySecs(event.target.value)}
               placeholder="30"
               className="h-10 rounded-xl border-stone-200 bg-white"
             />
-            <p className="text-xs text-stone-500">单位秒，超时后点击"继续等待"额外等待的时间。</p>
+            <p className="text-xs text-stone-500">{t("core.fields.imageTimeoutRetrySecs.hint")}</p>
           </div>
           <div className="space-y-2">
-            <label className="text-sm text-stone-700">图片二次确认等待时间</label>
+            <label className="text-sm text-stone-700">{t("core.fields.imageSettleSecs.label")}</label>
             <Input
               value={String(config?.image_settle_secs || "2.0")}
               onChange={(event) => setImageSettleSecs(event.target.value)}
@@ -266,7 +268,7 @@ export function ConfigCard() {
               className="h-10 rounded-xl border-stone-200 bg-white disabled:cursor-not-allowed disabled:opacity-50"
               disabled={!config?.image_settle_enabled}
             />
-            <p className="text-xs text-stone-500">单位秒，找到图片后等待多久再次确认。需配合图片二次确认机制使用。</p>
+            <p className="text-xs text-stone-500">{t("core.fields.imageSettleSecs.hint")}</p>
           </div>
           <div className="flex gap-4 md:col-span-2">
             <div className="flex-1 space-y-2">
@@ -275,9 +277,9 @@ export function ConfigCard() {
                   checked={Boolean(config?.auto_relogin_after_refresh)}
                   onCheckedChange={(checked) => setAutoReloginAfterRefresh(Boolean(checked))}
                 />
-                刷新后自动尝试移除异常状态
+                {t("core.fields.autoReloginAfterRefresh.label")}
               </label>
-              <p className="text-xs text-stone-500">开启后刷新时自动尝试密码登录恢复账号。</p>
+              <p className="text-xs text-stone-500">{t("core.fields.autoReloginAfterRefresh.hint")}</p>
             </div>
             <div className="flex-1" aria-hidden="true" />
           </div>
@@ -286,12 +288,12 @@ export function ConfigCard() {
               checked={Boolean(config?.auto_remove_rate_limited_accounts)}
               onCheckedChange={(checked) => setAutoRemoveRateLimitedAccounts(Boolean(checked))}
             />
-            自动移除限流账号
+            {t("core.fields.autoRemoveRateLimitedAccounts.label")}
           </label>
           <div className="space-y-3 rounded-xl border border-stone-200 bg-white px-4 py-3">
             <div>
-              <label className="text-sm text-stone-700">控制台日志级别</label>
-              <p className="mt-1 text-xs text-stone-500">不选择时使用默认 info / warning / error。</p>
+              <label className="text-sm text-stone-700">{t("core.fields.logLevel.label")}</label>
+              <p className="mt-1 text-xs text-stone-500">{t("core.fields.logLevel.hint")}</p>
             </div>
             <div className="grid grid-cols-2 gap-2">
               {logLevelOptions.map((level) => (
@@ -306,24 +308,24 @@ export function ConfigCard() {
             </div>
           </div>
           <div className="space-y-2 md:col-span-2">
-            <label className="text-sm text-stone-700">全局附加指令</label>
+            <label className="text-sm text-stone-700">{t("core.fields.globalSystemPrompt.label")}</label>
             <Textarea
               value={String(config?.global_system_prompt || "")}
               onChange={(event) => setGlobalSystemPrompt(event.target.value)}
-              placeholder="例如：先判断用户提示词是否合规；遇到违法、色情、暴力、仇恨等请求时拒绝回答。"
+              placeholder={t("core.fields.globalSystemPrompt.placeholder")}
               className="min-h-28 rounded-xl border-stone-200 bg-white font-mono text-xs shadow-none"
             />
-            <p className="text-xs text-stone-500">每次请求都会作为 system 消息注入，可用于审核用户提示词、避免违规内容、统一约束模型行为或固定角色设定。</p>
+            <p className="text-xs text-stone-500">{t("core.fields.globalSystemPrompt.hint")}</p>
           </div>
           <div className="space-y-2 md:col-span-2">
-            <label className="text-sm text-stone-700">敏感词</label>
+            <label className="text-sm text-stone-700">{t("core.fields.sensitiveWords.label")}</label>
             <Textarea
               value={(config?.sensitive_words || []).join("\n")}
               onChange={(event) => setSensitiveWordsText(event.target.value)}
-              placeholder="一行一个，命中即拒绝"
+              placeholder={t("core.fields.sensitiveWords.placeholder")}
               className="min-h-28 rounded-xl border-stone-200 bg-white font-mono text-xs shadow-none"
             />
-            <p className="text-xs text-stone-500">只要用户请求包含任意敏感词，就直接返回拒绝。</p>
+            <p className="text-xs text-stone-500">{t("core.fields.sensitiveWords.hint")}</p>
           </div>
           <div className="space-y-4 rounded-xl border border-stone-200 bg-white px-4 py-3 md:col-span-2">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -332,7 +334,7 @@ export function ConfigCard() {
                   checked={Boolean(config?.image_storage?.enabled)}
                   onCheckedChange={(checked) => setImageStorageField("enabled", Boolean(checked))}
                 />
-                启用 WebDAV 图片存储
+                {t("core.imageStorage.enableLabel")}
               </label>
               <div className="flex flex-wrap gap-2">
                 <Button
@@ -343,7 +345,7 @@ export function ConfigCard() {
                   disabled={isTestingImageStorage || !config?.image_storage?.enabled}
                 >
                   {isTestingImageStorage ? <LoaderCircle className="size-4 animate-spin" /> : <Cloud className="size-4" />}
-                  测试 WebDAV
+                  {t("core.imageStorage.testButton")}
                 </Button>
                 <Button
                   type="button"
@@ -353,29 +355,29 @@ export function ConfigCard() {
                   disabled={isSyncingImageStorage || !config?.image_storage?.enabled || config?.image_storage?.mode === "local"}
                 >
                   {isSyncingImageStorage ? <LoaderCircle className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-                  全量同步
+                  {t("core.imageStorage.syncButton")}
                 </Button>
               </div>
             </div>
             <p className="text-xs leading-6 text-stone-500">
-              生成时只处理本次新图片；全量同步用于把已有本地图片补传到 WebDAV。
+              {t("core.imageStorage.syncHint")}
             </p>
             <div className="rounded-lg border border-stone-100 bg-stone-50 px-3 py-2 text-xs text-stone-600">
-              当前待保存模式：
+              {t("core.imageStorage.currentModeLabel")}
               <span className="ml-1 font-medium text-stone-900">
                 {config?.image_storage?.enabled
                   ? config.image_storage.mode === "both"
-                    ? "本机 + WebDAV"
+                    ? t("core.imageStorage.modes.both")
                     : config.image_storage.mode === "webdav"
-                      ? "仅 WebDAV"
-                      : "仅本机"
-                  : "仅本机"}
+                      ? t("core.imageStorage.modes.webdav")
+                      : t("core.imageStorage.modes.local")
+                  : t("core.imageStorage.modes.local")}
               </span>
-              <span className="ml-2 text-stone-400">修改后需要点保存，或通过测试/同步按钮自动保存。</span>
+              <span className="ml-2 text-stone-400">{t("core.imageStorage.modeSaveHint")}</span>
             </div>
             <div className="grid gap-4 md:grid-cols-3">
               <div className="space-y-2">
-                <label className="text-sm text-stone-700">保存模式</label>
+                <label className="text-sm text-stone-700">{t("core.imageStorage.fields.saveMode.label")}</label>
                 <Select
                   value={String(config?.image_storage?.mode || "local")}
                   onValueChange={(value) => setImageStorageField("mode", value as ImageStorageMode)}
@@ -385,9 +387,9 @@ export function ConfigCard() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="local">仅本机</SelectItem>
-                    <SelectItem value="webdav">仅 WebDAV</SelectItem>
-                    <SelectItem value="both">本机 + WebDAV</SelectItem>
+                    <SelectItem value="local">{t("core.imageStorage.modes.local")}</SelectItem>
+                    <SelectItem value="webdav">{t("core.imageStorage.modes.webdav")}</SelectItem>
+                    <SelectItem value="both">{t("core.imageStorage.modes.both")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -402,7 +404,7 @@ export function ConfigCard() {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm text-stone-700">用户名</label>
+                <label className="text-sm text-stone-700">{t("core.imageStorage.fields.username.label")}</label>
                 <Input
                   value={String(config?.image_storage?.webdav_username || "")}
                   onChange={(event) => setImageStorageField("webdav_username", event.target.value)}
@@ -411,7 +413,7 @@ export function ConfigCard() {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm text-stone-700">密码</label>
+                <label className="text-sm text-stone-700">{t("core.imageStorage.fields.password.label")}</label>
                 <Input
                   type="password"
                   value={String(config?.image_storage?.webdav_password || "")}
@@ -421,7 +423,7 @@ export function ConfigCard() {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm text-stone-700">远端目录</label>
+                <label className="text-sm text-stone-700">{t("core.imageStorage.fields.remotePath.label")}</label>
                 <Input
                   value={String(config?.image_storage?.webdav_root_path || "")}
                   onChange={(event) => setImageStorageField("webdav_root_path", event.target.value)}
@@ -431,7 +433,7 @@ export function ConfigCard() {
                 />
               </div>
               <div className="space-y-2 md:col-span-3">
-                <label className="text-sm text-stone-700">公开访问前缀</label>
+                <label className="text-sm text-stone-700">{t("core.imageStorage.fields.publicBaseUrl.label")}</label>
                 <Input
                   value={String(config?.image_storage?.public_base_url || "")}
                   onChange={(event) => setImageStorageField("public_base_url", event.target.value)}
@@ -439,7 +441,7 @@ export function ConfigCard() {
                   className="h-10 rounded-xl border-stone-200 bg-white"
                   disabled={!config?.image_storage?.enabled}
                 />
-                <p className="text-xs text-stone-500">留空时返回本应用 /images/... 代理地址；填入后直接返回公开图片地址。</p>
+                <p className="text-xs text-stone-500">{t("core.imageStorage.fields.publicBaseUrl.hint")}</p>
               </div>
             </div>
           </div>
@@ -449,10 +451,10 @@ export function ConfigCard() {
                 checked={Boolean(config?.ai_review?.enabled)}
                 onCheckedChange={(checked) => setAIReviewField("enabled", Boolean(checked))}
               />
-              启用 AI 审核
+              {t("core.aiReview.enableLabel")}
             </label>
             <p className="text-xs leading-6 text-stone-500">
-              开启后会在请求进入生图账号前先调用审核模型，审核不通过会直接拒绝，减少违规提示词触达账号造成风控或封号的风险。
+              {t("core.aiReview.hint")}
             </p>
             <div className="grid gap-4 md:grid-cols-3">
               <div className="space-y-2">
@@ -469,8 +471,8 @@ export function ConfigCard() {
               </div>
             </div>
             <div className="space-y-2">
-              <label className="text-sm text-stone-700">审核提示词</label>
-              <Textarea value={String(config?.ai_review?.prompt || "")} onChange={(event) => setAIReviewField("prompt", event.target.value)} placeholder="判断用户请求是否允许。只回答 ALLOW 或 REJECT。" className="min-h-24 rounded-xl border-stone-200 bg-white text-xs shadow-none" />
+              <label className="text-sm text-stone-700">{t("core.aiReview.fields.prompt.label")}</label>
+              <Textarea value={String(config?.ai_review?.prompt || "")} onChange={(event) => setAIReviewField("prompt", event.target.value)} placeholder={t("core.aiReview.fields.prompt.placeholder")} className="min-h-24 rounded-xl border-stone-200 bg-white text-xs shadow-none" />
             </div>
           </div>
         </div>
@@ -482,7 +484,7 @@ export function ConfigCard() {
             disabled={isSavingConfig}
           >
             {isSavingConfig ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
-            保存
+            {t("core.actions.save")}
           </Button>
         </div>
       </CardContent>

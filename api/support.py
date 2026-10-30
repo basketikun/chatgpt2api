@@ -4,13 +4,40 @@ from pathlib import Path
 from threading import Event, Thread
 
 from fastapi import HTTPException, Request
+from starlette.datastructures import Headers
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from services.account_service import account_service
 from services.auth_service import auth_service
 from services.config import config
+from utils.i18n import parse_accept_language, reset_locale, set_locale, t
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 WEB_DIST_DIR = BASE_DIR / "web_dist"
+
+
+def request_locale(request: Request) -> str:
+    return parse_accept_language(request.headers.get("accept-language"))
+
+
+class LocaleMiddleware:
+    """Pure ASGI middleware, so it runs in the request's own task instead of the
+    separate task BaseHTTPMiddleware spawns to pump every response chunk through
+    an anyio stream - which would add two task hops per SSE chunk on the chat
+    completions hot path just to localise a handful of error strings."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        token = set_locale(parse_accept_language(Headers(scope=scope).get("accept-language")))
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            reset_locale(token)
 
 
 def extract_bearer_token(authorization: str | None) -> str:
@@ -23,7 +50,7 @@ def extract_bearer_token(authorization: str | None) -> str:
 def _legacy_admin_identity(token: str) -> dict[str, object] | None:
     auth_key = str(config.auth_key or "").strip()
     if auth_key and token == auth_key:
-        return {"id": "admin", "name": "管理员", "role": "admin"}
+        return {"id": "admin", "name": t("identity.admin_name"), "role": "admin"}
     return None
 
 
@@ -31,7 +58,7 @@ def require_identity(authorization: str | None) -> dict[str, object]:
     token = extract_bearer_token(authorization)
     identity = _legacy_admin_identity(token) or auth_service.authenticate(token)
     if identity is None:
-        raise HTTPException(status_code=401, detail={"error": "密钥无效或已失效，请重新登录"})
+        raise HTTPException(status_code=401, detail={"error": t("auth.key_invalid")})
     return identity
 
 
@@ -42,7 +69,7 @@ def require_auth_key(authorization: str | None) -> None:
 def require_admin(authorization: str | None) -> dict[str, object]:
     identity = require_identity(authorization)
     if identity.get("role") != "admin":
-        raise HTTPException(status_code=403, detail={"error": "需要管理员权限才能执行这个操作"})
+        raise HTTPException(status_code=403, detail={"error": t("auth.admin_required")})
     return identity
 
 

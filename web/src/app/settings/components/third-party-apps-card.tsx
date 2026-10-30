@@ -1,6 +1,7 @@
 "use client";
 
 import { ExternalLink, LoaderCircle, Save } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { useSettingsStore } from "../store";
 
 export function ThirdPartyAppsCard() {
+  const { t } = useTranslation("settings");
   const config = useSettingsStore((state) => state.config);
   const isLoadingConfig = useSettingsStore((state) => state.isLoadingConfig);
   const isSavingConfig = useSettingsStore((state) => state.isSavingConfig);
@@ -35,12 +37,12 @@ export function ThirdPartyAppsCard() {
           <div>
             <div className="flex items-center gap-2 text-base font-semibold text-stone-900">
               <ExternalLink className="size-5 text-stone-500" />
-              无限画布入口
+              {t("thirdParty.entryTitle")}
             </div>
-            <p className="mt-1 text-xs leading-6 text-stone-500">开启后会在顶部导航显示入口，跳转时自动附带本项目地址和当前密钥。</p>
+            <p className="mt-1 text-xs leading-6 text-stone-500">{t("thirdParty.entryDescription")}</p>
           </div>
           <span className={`rounded-full px-3 py-1 text-xs ${canvas.enabled ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-500"}`}>
-            {canvas.enabled ? "已启用" : "未启用"}
+            {canvas.enabled ? t("thirdParty.enabledBadge") : t("thirdParty.disabledBadge")}
           </span>
         </div>
 
@@ -50,10 +52,10 @@ export function ThirdPartyAppsCard() {
               checked={Boolean(canvas.enabled)}
               onCheckedChange={(checked) => setInfiniteCanvasField("enabled", Boolean(checked))}
             />
-            启用无限画布
+            {t("thirdParty.enableCanvas")}
           </label>
           <div className="space-y-2">
-            <label className="text-sm text-stone-700">无限画布地址</label>
+            <label className="text-sm text-stone-700">{t("thirdParty.urlLabel")}</label>
             <Input
               value={canvas.url}
               onChange={(event) => setInfiniteCanvasField("url", event.target.value)}
@@ -61,10 +63,10 @@ export function ThirdPartyAppsCard() {
               className="h-10 rounded-xl border-stone-200 bg-white"
             />
             <p className="text-xs leading-5 text-stone-500">
-              顶部入口跳转时会追加 apiKey 和 baseUrl 参数；关闭后顶部导航不显示无限画布。
+              {t("thirdParty.urlHint")}
             </p>
             <p className="text-xs leading-5 text-amber-700">
-              该入口仅供个人测试使用；长期使用建议自行本机部署无限画布。
+              {t("thirdParty.warningHint")}
             </p>
           </div>
         </div>
@@ -72,7 +74,7 @@ export function ThirdPartyAppsCard() {
         <div className="flex justify-end">
           <Button className="h-10 rounded-xl bg-stone-950 px-5 text-white hover:bg-stone-800" onClick={() => void saveConfig()} disabled={isSavingConfig}>
             {isSavingConfig ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
-            保存
+            {t("thirdParty.saveButton")}
           </Button>
         </div>
       </CardContent>

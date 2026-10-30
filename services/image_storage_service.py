@@ -15,6 +15,7 @@ from fastapi import HTTPException
 from PIL import Image
 
 from services.config import DATA_DIR, config
+from utils.i18n import t
 
 IMAGE_INDEX_FILE = DATA_DIR / "image_index.json"
 IMAGE_INDEX_LOCK = Lock()
@@ -359,7 +360,7 @@ class ImageStorageService:
     def sync_all(self) -> dict[str, int]:
         settings = self.settings()
         if self.mode() not in {"webdav", "both"}:
-            raise ImageStorageError("WebDAV 图片存储未启用")
+            raise ImageStorageError(t("image.webdav_disabled"))
         uploaded = 0
         skipped = 0
         failed = 0

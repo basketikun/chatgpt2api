@@ -9,6 +9,7 @@ from pathlib import Path
 import time
 
 from services.storage.base import StorageBackend
+from utils.i18n import t
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = BASE_DIR / "data"
@@ -291,9 +292,9 @@ def _validate_image_storage_settings(settings: dict[str, object]) -> None:
     if not _normalize_bool(settings.get("enabled"), False):
         return
     if not str(settings.get("webdav_url") or "").strip():
-        raise ValueError("启用 WebDAV 图片存储后必须填写 WebDAV URL")
+        raise ValueError(t("config.webdav_url_required"))
     if not str(settings.get("webdav_password") or "").strip():
-        raise ValueError("启用 WebDAV 图片存储后必须填写 WebDAV 密码")
+        raise ValueError(t("config.webdav_password_required"))
 
 
 @dataclass(frozen=True)

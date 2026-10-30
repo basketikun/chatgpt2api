@@ -12,7 +12,7 @@ RUN npm install
 COPY VERSION /app/VERSION
 COPY CHANGELOG.md /app/CHANGELOG.md
 COPY web ./
-RUN NEXT_PUBLIC_APP_VERSION="$(cat /app/VERSION)" npm run build
+RUN npm run check:locales && NEXT_PUBLIC_APP_VERSION="$(cat /app/VERSION)" npm run build
 
 
 FROM --platform=$TARGETPLATFORM python:3.13-slim AS app

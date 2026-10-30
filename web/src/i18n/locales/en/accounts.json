@@ -1,0 +1,268 @@
+{
+  "accountStatus": {
+    "normal": "Normal",
+    "rateLimited": "Rate limited",
+    "error": "Error",
+    "disabled": "Disabled"
+  },
+  "header": {
+    "refresh": "Refresh",
+    "refreshAll": "Refresh all account info and quota",
+    "exportTokens": "Export all tokens"
+  },
+  "filters": {
+    "statusAll": "All statuses",
+    "typeAll": "All types",
+    "searchPlaceholder": "Search by email"
+  },
+  "metrics": {
+    "total": "Total accounts",
+    "active": "Normal accounts",
+    "limited": "Rate-limited accounts",
+    "abnormal": "Abnormal accounts",
+    "disabled": "Disabled accounts",
+    "quota": "Remaining quota"
+  },
+  "models": {
+    "title": "Available models",
+    "loading": "Loading model list...",
+    "empty": "No models available right now",
+    "copyTitle": "Click to copy {{id}}",
+    "copiedToast": "Model name copied"
+  },
+  "table": {
+    "listTitle": "Account list",
+    "columnToken": "token",
+    "columnType": "Type",
+    "columnSource": "Source",
+    "columnStatus": "Status",
+    "columnAccountInfo": "Account info",
+    "columnCreatedAt": "Created at",
+    "columnQuota": "Quota",
+    "columnRestoreAt": "Restore at",
+    "columnInflight": "In flight",
+    "columnSuccess": "Success",
+    "columnFail": "Fail",
+    "columnActions": "Actions",
+    "tokenCopied": "Token copied",
+    "emptyTitle": "No matching accounts",
+    "emptySubtitle": "Adjust the filters or search keyword and try again.",
+    "loadingTitle": "Loading accounts",
+    "loadingSubtitle": "Syncing account list and status from the backend."
+  },
+  "restore": {
+    "remaining": "{{days}}d {{hours}}h remaining",
+    "due": "Restore time reached"
+  },
+  "inflight": {
+    "activeTooltip": "The number of images currently being generated. If this stays above 0 while the account pool is idle, a concurrency slot may have leaked and this account has been silently excluded from scheduling.",
+    "idleTooltip": "No image generation task in flight right now"
+  },
+  "toolbar": {
+    "refreshSelected": "Refresh selected accounts' info and quota",
+    "tryRecoverAbnormal": "Try to recover abnormal accounts",
+    "tryRecoverAbnormalTitle": "Try password login to recover the account",
+    "removeAbnormal": "Remove abnormal accounts",
+    "deleteSelected": "Delete selected",
+    "selectedCount_one": "{{count}} item selected",
+    "selectedCount_other": "{{count}} items selected"
+  },
+  "pagination": {
+    "info": "Showing {{from}} - {{to}} of {{total}}",
+    "pageInfo": "Page {{page}} / {{pageCount}}",
+    "perPage": "{{size}} / page"
+  },
+  "editDialog": {
+    "title": "Edit account",
+    "description": "Manually adjust the account status and dedicated proxy.",
+    "statusLabel": "Status",
+    "proxyLabel": "Account proxy",
+    "proxyPlaceholder": "Leave blank to use the global proxy, e.g. http://127.0.0.1:7890",
+    "testButton": "Test",
+    "saveButton": "Save changes"
+  },
+  "progress": {
+    "refreshing": "Refreshing account info...",
+    "refreshComplete": "Refresh complete",
+    "recoveringAbnormal_one": "Attempting to clear the abnormal status for {{count}} account",
+    "recoveringAbnormal_other": "Attempting to clear the abnormal status for {{count}} accounts",
+    "removeAbnormalComplete": "Abnormal status removal complete",
+    "tryingRecoverAbnormal": "Attempting to recover abnormal accounts...",
+    "recoverFlowComplete": "Recovery flow complete",
+    "recoverComplete": "Recovery complete",
+    "recoverProcessed": "Processed {{processed}}/{{total}}",
+    "recoverFailedOne": "Failed: {{token}} {{error}}"
+  },
+  "toasts": {
+    "loadAccountsFailed": "Failed to load accounts",
+    "loadModelsFailed": "Failed to load model list",
+    "selectAccountsToDelete": "Select the accounts to delete first",
+    "deleteAccountsSuccess_one": "Deleted {{count}} account",
+    "deleteAccountsSuccess_other": "Deleted {{count}} accounts",
+    "deleteAccountsFailed": "Failed to delete accounts",
+    "noAccountsToRefresh": "No accounts need refreshing",
+    "refreshAccountsFailed": "Failed to refresh accounts",
+    "refreshResultEmpty": "Refresh result was empty",
+    "refreshSuccessWithErrors": "Refreshed {{refreshed}}, failed {{failed}}",
+    "firstErrorSuffix": ", first error: {{error}}",
+    "refreshSuccess_one": "Refreshed {{count}} account",
+    "refreshSuccess_other": "Refreshed {{count}} accounts",
+    "reloginTriggeredSuffix_one": ", triggered re-login for {{count}} account",
+    "reloginTriggeredSuffix_other": ", triggered re-login for {{count}} accounts",
+    "selectAccountsToRecover": "Select the accounts to recover first",
+    "noAbnormalAccountsSelected": "No abnormal accounts among the selection",
+    "filteredNonAbnormal_one": "Filtered out {{count}} non-abnormal account",
+    "filteredNonAbnormal_other": "Filtered out {{count}} non-abnormal accounts",
+    "recoverAllComplete": "Recovery flow fully complete",
+    "reloginFailed": "Re-login failed",
+    "proxyAddressRequired": "Enter the proxy address first",
+    "proxyAvailable": "Proxy available ({{latency}} ms, HTTP {{status}})",
+    "proxyUnavailable": "Proxy unavailable: {{error}}",
+    "unknownError": "Unknown error",
+    "testProxyFailed": "Failed to test the proxy",
+    "accountUpdated": "Account info updated",
+    "updateAccountFailed": "Failed to update the account"
+  },
+  "importDialog": {
+    "triggerButton": "Import",
+    "back": "Back to import methods",
+    "title": {
+      "menu": "Import accounts",
+      "token": "Import Access Token",
+      "session": "Import Session JSON",
+      "codexAuth": "Import Codex auth JSON",
+      "oauthDialog": "OAuth login to an existing account",
+      "accountJsonDialog": "Import account JSON"
+    },
+    "description": {
+      "menu": "Choose an import method. Email, type and quota are fetched automatically after a successful import.",
+      "token": "Supports manual paste or import from a TXT file, one token per line.",
+      "session": "Paste the full Session JSON; accessToken is extracted automatically.",
+      "codexAuth": "Paste the Codex auth JSON; it will be imported under the codex source.",
+      "oauth": "Runs the standard OpenAI OAuth flow in your browser; refresh_token is then renewed automatically.",
+      "accountJson": "Reads a single account object or a full account array exported by this project, with a count confirmation before submitting."
+    },
+    "menu": {
+      "oauth": {
+        "title": "OAuth login to an existing account (with auto refresh)",
+        "description": "Log in to your own ChatGPT account in the browser, then paste back the callback URL to get a refresh_token; the backend renews it automatically."
+      },
+      "token": {
+        "description": "Supports pasting directly, one per line, or reading from a TXT file, one per line."
+      },
+      "session": {
+        "description": "Copy the full JSON from chatgpt.com's session endpoint; accessToken is extracted automatically."
+      },
+      "codexAuth": {
+        "description": "Paste the Codex auth JSON; the account source is marked as codex after import."
+      },
+      "accountJson": {
+        "title": "Import an account JSON file",
+        "description": "Supports a single-account JSON or a full account array exported by this project, and is also compatible with CPA JSON files."
+      },
+      "cpaImport": {
+        "title": "Import from a remote CPA server",
+        "description": "Go to the settings page to configure the remote CPA server before importing."
+      },
+      "sub2apiImport": {
+        "title": "Import from a Sub2API server",
+        "description": "Go to the settings page to configure the Sub2API server, then pick OpenAI accounts from it to import."
+      }
+    },
+    "token": {
+      "recognizedCount_one": "Currently recognized {{count}} token",
+      "recognizedCount_other": "Currently recognized {{count}} tokens",
+      "listLabel": "Access Token list",
+      "placeholder": "One Access Token per line...",
+      "fromTxtTitle": "Import from a TXT file",
+      "fromTxtHint": "Supports `.txt`; the file content is also one token per line.",
+      "chooseTxtButton": "Choose TXT"
+    },
+    "session": {
+      "openPrefix": "Open",
+      "instructionSuffix": ", copy the full JSON returned by the page; `accessToken` inside it is extracted automatically.",
+      "riskTitle": "Risk notice",
+      "riskBody": "Do not use your main account; prefer a less important one for import to avoid ban risk. This project accepts no liability for any account ban.",
+      "jsonLabel": "Session JSON",
+      "placeholder": "Paste the full JSON, e.g. an object containing \"accessToken\"..."
+    },
+    "oauth": {
+      "stepsTitle": "Steps",
+      "step1": "(Optional) Enter your ChatGPT account's email; it will be prefilled on the login page.",
+      "step2": "Click \"Open authorization page\" below, then log in to your own ChatGPT account in the new tab.",
+      "step3Prefix": "After login the browser jumps to ",
+      "step3Suffix": ". Copy the full URL from the address bar right away (or open F12, find the callback request in Network, right-click Copy → Copy URL).",
+      "step4": "Paste the callback URL into the field below, then click \"Finish import\".",
+      "emailLabel": "Email (optional, prefilled)",
+      "openAuthButton": "Open authorization page",
+      "copyAuthUrlButton": "Copy authorize URL",
+      "reopenButton": "Open again",
+      "regenerateButton": "Regenerate",
+      "pasteCallbackLabel": "Paste the callback URL (or just the code)",
+      "noteTitle": "Note",
+      "noteBody": "The authorization code can only be used once. If the browser's callback page finishes loading and shows an OpenAI error page, the code has most likely already been consumed; click \"Regenerate\" and go through it again. The whole flow just needs to finish within 10 minutes."
+    },
+    "accountJson": {
+      "chooseTitle": "Choose a local account JSON file",
+      "hint": "Supports a single-account object or a full account array exported by this project, and is also compatible with CPA JSON that has one account object per file. `access_token` or `accessToken` is extracted automatically.",
+      "chooseButton": "Choose JSON file",
+      "lastRead_one": "Last read {{count}} token",
+      "lastRead_other": "Last read {{count}} tokens",
+      "extraFailedSuffix_one": ", and {{count}} file failed to extract",
+      "extraFailedSuffix_other": ", and {{count}} files failed to extract",
+      "extraFailedSuffixPeriod_one": ", and {{count}} file failed to extract.",
+      "extraFailedSuffixPeriod_other": ", and {{count}} files failed to extract.",
+      "periodSuffix": ".",
+      "confirmTitle": "Confirm importing account tokens",
+      "confirmReady_one": "Detected {{count}} token; import it?",
+      "confirmReady_other": "Detected {{count}} tokens; import them?",
+      "confirmEmpty": "No importable tokens have been read yet.",
+      "backButton": "Back",
+      "confirmButton": "Confirm import"
+    },
+    "codexAuth": {
+      "label": "Codex auth JSON",
+      "placeholder": "Paste a Codex auth JSON containing \"access_token\", \"refresh_token\", \"id_token\"..."
+    },
+    "footer": {
+      "importTokenButton": "Import token",
+      "importJsonButton": "Import JSON",
+      "finishImportButton": "Finish import",
+      "viewConfirmButton": "View import confirmation"
+    },
+    "toasts": {
+      "provideTokenRequired": "Provide at least one usable token first",
+      "importFailed": "Failed to import accounts",
+      "tokenImportComplete": "Access Token import complete",
+      "txtNoTokens": "No valid token was read from the TXT file",
+      "txtReadSuccess_one": "Read {{count}} token from {{name}}",
+      "txtReadSuccess_other": "Read {{count}} tokens from {{name}}",
+      "readTxtFailed": "Failed to read the TXT file",
+      "sessionRequired": "Paste the full Session JSON first",
+      "sessionNoToken": "Could not extract accessToken from the Session JSON",
+      "sessionImportComplete": "Session JSON import complete",
+      "sessionParseFailed": "Failed to parse the Session JSON",
+      "codexAuthRequired": "Paste the Codex auth JSON first",
+      "codexAuthNoToken": "Could not extract access_token from the Codex auth JSON",
+      "codexImportComplete": "Codex auth JSON import complete",
+      "codexAuthParseFailed": "Failed to parse the Codex auth JSON",
+      "accountJsonNoTokens": "No usable access_token was read from these account JSON files",
+      "accountJsonReadFailed": "Failed to read the account JSON file",
+      "accountJsonImportComplete": "Account JSON import complete",
+      "readFileFailed": "Failed to read file: {{name}}",
+      "importCompleteDefault": "Import complete",
+      "oauthLoginComplete": "OAuth login complete",
+      "oauthOpened": "Opened the OpenAI authorization page; copy the callback URL back here after logging in",
+      "oauthStartFailed": "Failed to start OAuth",
+      "oauthSessionMissing": "Click \"Open authorization page\" first to get a session",
+      "pasteCallbackRequired": "Paste the callback URL or code",
+      "oauthExchangeFailed": "Failed to exchange the OAuth token",
+      "authUrlCopied": "Authorize URL copied to clipboard",
+      "copyUnsupported": "Automatic copy isn't supported here; select and copy manually",
+      "copyFailed": "Copy failed; select and copy manually",
+      "resultWithErrors": "{{prefix}}, added {{added}}, refreshed {{refreshed}}, failed {{failed}}",
+      "resultSuccess_one": "{{prefix}}, added {{added}}, skipped {{count}} duplicate, account info refreshed automatically",
+      "resultSuccess_other": "{{prefix}}, added {{added}}, skipped {{count}} duplicates, account info refreshed automatically"
+    }
+  }
+}

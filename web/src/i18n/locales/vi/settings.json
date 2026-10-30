@@ -1,0 +1,740 @@
+{
+  "proxy": {
+    "runtime": {
+      "title": "Vượt chặn FlareSolverr",
+      "description": "Mặc định tắt. Dùng để lấy clearance khi yêu cầu upstream bị Cloudflare chặn, có thể kết hợp với chuỗi proxy WARP / Privoxy để thử lại.",
+      "status": { "enabled": "Đã bật", "disabled": "Chưa bật" },
+      "priorityNote": "Thứ tự ưu tiên proxy: proxy tài khoản > chuỗi proxy FlareSolverr > proxy tường minh > proxy toàn cục. Cookie / cf_clearance không bao giờ được trả về dạng plaintext trong phản hồi API.",
+      "dockerWarning": "Trước khi dùng chế độ FlareSolverr, hãy khởi động các container flaresolverr, privoxy, warp-proxy bằng Docker trước; URL trong container thường là http://flaresolverr:8191.",
+      "fields": {
+        "enable": "Bật vượt chặn FlareSolverr",
+        "egressMode": {
+          "label": "Chế độ egress",
+          "direct": "Kết nối trực tiếp",
+          "singleProxy": "Proxy đơn / WARP",
+          "hint": "Cấu hình WARP compose mặc định dùng single_proxy."
+        },
+        "proxyUrl": {
+          "label": "URL proxy vượt chặn",
+          "hint": "Hỗ trợ http/https/socks5/socks5h; socks5 sẽ được chuyển thành socks5h. Định dạng có xác thực: scheme://tài khoản:mật khẩu@host:port, hoặc dán trực tiếp host:port:tài khoản:mật khẩu."
+        },
+        "resourceProxyUrl": {
+          "label": "URL proxy tài nguyên",
+          "placeholder": "Để trống để dùng lại proxy vượt chặn"
+        },
+        "resetStatusCodes": {
+          "label": "Mã trạng thái đặt lại phiên",
+          "hint": "Mặc định là 403, chỉ kích hoạt với lỗi Cloudflare / dạng challenge."
+        },
+        "skipSslVerify": "Bỏ qua xác thực SSL"
+      },
+      "actions": { "testProxy": "Kiểm tra proxy vượt chặn hiện tại", "save": "Lưu cấu hình" },
+      "testResult": {
+        "available": "Proxy khả dụng: HTTP {{status}}, {{latency}} ms, nguồn {{source}}",
+        "unavailable": "Proxy không khả dụng: {{error}} ({{latency}} ms)"
+      },
+      "clearance": {
+        "modeLabel": "Chế độ Clearance",
+        "modeOptions": { "none": "Không bật", "manual": "Cookie thủ công" },
+        "timeoutLabel": "Thời gian chờ (giây)",
+        "refreshIntervalLabel": "Khoảng làm mới (giây)",
+        "manualCookiePlaceholder": "Tùy chọn: foo=bar; cf_clearance=...",
+        "manualCookieHint": {
+          "stored": "Máy chủ đã lưu Cookie/clearance trước đó; lưu để trống sẽ không xóa giá trị hiện có.",
+          "empty": "Để trống nghĩa là không dùng cookie thủ công."
+        },
+        "cfClearanceLabel": "cf_clearance riêng lẻ",
+        "cfClearancePlaceholder": "Tùy chọn: chỉ nhập giá trị cf_clearance",
+        "warmUpLabel": "Làm nóng Clearance khi khởi động",
+        "testUrlLabel": "URL mục tiêu kiểm tra",
+        "testButton": "Kiểm tra Clearance",
+        "testResult": {
+          "hasCookies": "Đã lấy được Cookie",
+          "noCookies": "Không có Cookie",
+          "available": "Clearance khả dụng: {{cookieStatus}}, {{latency}} ms",
+          "unavailable": "Clearance không khả dụng: {{error}} ({{latency}} ms)"
+        }
+      },
+      "toasts": {
+        "proxyAvailable": "Proxy vượt chặn khả dụng ({{latency}} ms, HTTP {{status}})",
+        "proxyUnavailable": "Proxy vượt chặn không khả dụng: {{error}}",
+        "testProxyFailed": "Kiểm tra proxy vượt chặn thất bại",
+        "clearanceSuccess": "Lấy clearance thành công ({{latency}} ms)",
+        "clearanceFailed": "Lấy clearance thất bại: {{error}}",
+        "clearanceTestFailed": "Kiểm tra Clearance thất bại",
+        "unknownError": "Lỗi không xác định"
+      }
+    },
+    "upstream": {
+      "header": {
+        "title": "Cấu hình proxy upstream",
+        "description": "Cấu hình proxy egress cho các yêu cầu tới chatgpt.com, phù hợp khi triển khai trên máy chủ trong nước; các yêu cầu Sub2API / CPA không bị ảnh hưởng."
+      },
+      "fields": {
+        "enableLabel": "Bật proxy",
+        "enableHint": "Khi tắt, các yêu cầu tới chatgpt.com sẽ kết nối trực tiếp. Thay đổi có hiệu lực ngay sau khi lưu, không cần khởi động lại.",
+        "urlLabel": "Địa chỉ proxy",
+        "urlPlaceholder": "http://user:pass@host:port hoặc socks5://host:port",
+        "urlHintPrefix": "Hỗ trợ",
+        "urlHintSuffix": "."
+      },
+      "testResult": {
+        "available": "Proxy khả dụng: HTTP {{status}}, {{latency}} ms",
+        "unavailable": "Proxy không khả dụng: {{error}} ({{latency}} ms)"
+      },
+      "toasts": {
+        "loadFailed": "Tải cấu hình proxy thất bại",
+        "enableRequiresUrl": "Phải nhập địa chỉ proxy khi bật proxy",
+        "saved": "Đã lưu cấu hình proxy",
+        "saveFailed": "Lưu thất bại",
+        "fillUrlFirst": "Vui lòng nhập địa chỉ proxy trước",
+        "testAvailable": "Proxy khả dụng ({{latency}} ms, HTTP {{status}})",
+        "testUnavailable": "Proxy không khả dụng: {{error}}",
+        "testFailed": "Kiểm tra proxy thất bại",
+        "unknownError": "Lỗi không xác định"
+      },
+      "actions": { "save": "Lưu", "test": "Kiểm tra kết nối" }
+    },
+    "global": {
+      "header": {
+        "title": "Proxy toàn cục",
+        "description": "Cấu hình proxy thống nhất cho các yêu cầu ra ngoài của hệ thống, có hiệu lực ngay sau khi lưu."
+      },
+      "status": { "configured": "Đã cấu hình", "notConfigured": "Chưa cấu hình" },
+      "fields": {
+        "urlLabel": "Địa chỉ proxy",
+        "urlHint": "Để trống nghĩa là không dùng proxy. Vui lòng nhập địa chỉ đầy đủ, ví dụ `http://127.0.0.1:7890`, `http://tên đăng nhập:mật khẩu@127.0.0.1:7890` hoặc `socks5://127.0.0.1:7890`."
+      },
+      "testResult": {
+        "available": "Proxy khả dụng: HTTP {{status}}, {{latency}} ms",
+        "unavailable": "Proxy không khả dụng: {{error}} ({{latency}} ms)"
+      },
+      "toasts": {
+        "fillUrlFirst": "Vui lòng nhập địa chỉ proxy trước",
+        "testAvailable": "Proxy khả dụng ({{latency}} ms, HTTP {{status}})",
+        "testUnavailable": "Proxy không khả dụng: {{error}}",
+        "testFailed": "Kiểm tra proxy thất bại",
+        "unknownError": "Lỗi không xác định"
+      },
+      "actions": { "test": "Kiểm tra proxy", "save": "Lưu cấu hình" }
+    }
+  },
+  "backup": {
+    "header": {
+      "title": "Quản lý sao lưu R2",
+      "description": "Sao lưu định kỳ dữ liệu quan trọng lên Cloudflare R2, hỗ trợ mã hóa tùy chọn, xoay vòng, chạy thủ công và dọn lịch sử."
+    },
+    "status": { "running": "Đang sao lưu", "success": "Lần gần nhất thành công", "failed": "Lần gần nhất thất bại", "idle": "Chưa chạy" },
+    "banner": "Tài khoản và khóa người dùng được xuất dưới dạng snapshot logic từ backend lưu trữ hiện tại, không phụ thuộc việc tầng dưới là `json`, `sqlite`, `postgres` hay `git`. Thư mục ảnh mặc định không được sao lưu, để tránh bản sao lưu quá lớn.",
+    "fields": {
+      "enableScheduled": "Bật sao lưu định kỳ",
+      "enableEncryption": "Bật mã hóa sao lưu",
+      "bucket": "Tên Bucket",
+      "prefix": { "label": "Tiền tố sao lưu", "hint": "Tiền tố object key trong R2, ví dụ `backups/prod`." },
+      "intervalMinutes": { "label": "Khoảng thời gian sao lưu định kỳ", "hint": "Đơn vị phút; sau khi khởi động, dịch vụ sẽ tự động chạy theo chu kỳ này." },
+      "rotationKeep": { "label": "Số bản sao lưu giữ lại", "hint": "Các bản sao lưu cũ hơn sẽ tự động bị xóa sau khi tải lên thành công. Nhập `0` để tắt xoay vòng tự động." },
+      "passphrase": {
+        "label": "Cụm mật khẩu mã hóa",
+        "placeholderRequired": "Bắt buộc khi đã bật mã hóa",
+        "placeholderEmpty": "Để trống",
+        "hint": "Chỉ dùng khi bật mã hóa. Hãy lưu giữ cẩn thận, nếu không sẽ không thể giải mã nội dung sao lưu."
+      }
+    },
+    "include": {
+      "title": "Nội dung sao lưu",
+      "description": "Chọn các thành phần cần đưa vào gói sao lưu.",
+      "items": {
+        "config": "Cấu hình hệ thống",
+        "cpa": "Cấu hình CPA",
+        "sub2api": "Cấu hình Sub2API",
+        "logs": "Nhật ký lập lịch và gọi API",
+        "imageTasks": "Bản ghi tác vụ ảnh",
+        "accountsSnapshot": "Snapshot tài khoản",
+        "authKeysSnapshot": "Snapshot khóa người dùng",
+        "images": "Thư mục tệp ảnh"
+      }
+    },
+    "state": { "lastStarted": "Lần bắt đầu gần nhất", "lastFinished": "Lần hoàn thành gần nhất", "lastObject": "Object gần nhất", "lastError": "Lỗi gần nhất" },
+    "actions": { "testConnection": "Kiểm tra kết nối", "refreshList": "Làm mới danh sách", "runNow": "Sao lưu ngay", "save": "Lưu cấu hình" },
+    "history": {
+      "title": "Lịch sử sao lưu",
+      "description": "Xem thông tin object và xóa trực tiếp bản sao lưu từ xa.",
+      "empty": "Chưa có bản ghi sao lưu từ xa nào. Chúng sẽ xuất hiện ở đây sau khi bạn lưu cấu hình và chạy sao lưu thủ công.",
+      "encryptedBadge": "Đã mã hóa",
+      "size": "Kích thước {{size}}",
+      "updatedAt": "Cập nhật {{date}}",
+      "objectKey": "Object key {{key}}",
+      "download": "Tải xuống",
+      "viewDetail": "Xem chi tiết",
+      "delete": "Xóa"
+    },
+    "detail": {
+      "title": "Chi tiết sao lưu",
+      "empty": "Hiện chưa thể đọc chi tiết bản sao lưu; nếu đây là bản sao lưu đã mã hóa, hãy đảm bảo đã nhập đúng cụm mật khẩu và lưu cấu hình trước.",
+      "objectName": "Tên object",
+      "createdAt": "Thời gian tạo",
+      "trigger": "Cách kích hoạt",
+      "appVersion": "Phiên bản ứng dụng",
+      "storageBackend": "Backend lưu trữ",
+      "filesTitle": "Nội dung tệp",
+      "fileExists": "Đã bao gồm",
+      "fileMissing": "Thiếu",
+      "sha256": "SHA256 {{hash}}",
+      "snapshotsTitle": "Nội dung snapshot",
+      "recordCount": "Số bản ghi {{total}}"
+    },
+    "toasts": {
+      "fetchDetailFailed": "Đọc chi tiết sao lưu thất bại",
+      "authExpired": "Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại trước khi tải xuống",
+      "downloadFailedDefault": "Tải xuống bản sao lưu thất bại",
+      "reauthRequired": "Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại và thử lại",
+      "downloadStarted": "Đã bắt đầu tải xuống bản sao lưu",
+      "loadFailed": "Tải danh sách sao lưu thất bại",
+      "runSuccess": "Sao lưu hoàn tất: {{key}}",
+      "runFailed": "Thực hiện sao lưu thất bại",
+      "deleteSuccess": "Đã xóa bản sao lưu",
+      "deleteFailed": "Xóa bản sao lưu thất bại",
+      "testAvailable": "Kết nối R2 bình thường (HTTP {{status}})",
+      "testFailed": "Kiểm tra kết nối sao lưu thất bại"
+    }
+  },
+  "core": {
+    "tabs": {
+      "basic": "Cấu hình cơ bản",
+      "backup": "Sao lưu",
+      "keys": "Khóa người dùng",
+      "apiDocs": "Tích hợp API",
+      "canvas": "Lối vào canvas"
+    },
+    "banner": "Khóa đăng nhập quản trị viên tiếp tục được đọc từ cấu hình triển khai và không còn hiển thị trên trang này; nếu cần chia sẻ cho người khác, hãy tạo khóa người dùng thường bên dưới.",
+    "fields": {
+      "refreshInterval": {
+        "label": "Chu kỳ làm mới tài khoản",
+        "placeholder": "Phút",
+        "hint": "Đơn vị phút, kiểm soát tần suất tự động làm mới tài khoản."
+      },
+      "proxy": {
+        "label": "Proxy toàn cục",
+        "hint": "Để trống nghĩa là không dùng proxy. Hỗ trợ scheme://tài khoản:mật khẩu@host:port, hoặc dán trực tiếp host:port:tài khoản:mật khẩu từ nhà cung cấp; ví dụ http://user:pass@127.0.0.1:7890, 127.0.0.1:7890:user:pass. Cần mã hóa URL nếu tài khoản hoặc mật khẩu chứa ký tự đặc biệt như @ hoặc :.",
+        "testButton": "Kiểm tra proxy",
+        "testResult": {
+          "available": "Proxy khả dụng: HTTP {{status}}, mất {{latency}} ms",
+          "unavailable": "Proxy không khả dụng: {{error}} (mất {{latency}} ms)"
+        },
+        "toasts": {
+          "fillUrlFirst": "Vui lòng nhập địa chỉ proxy trước",
+          "testAvailable": "Proxy khả dụng ({{latency}} ms, HTTP {{status}})",
+          "testUnavailable": "Proxy không khả dụng: {{error}}",
+          "testFailed": "Kiểm tra proxy thất bại",
+          "unknownError": "Lỗi không xác định"
+        }
+      },
+      "imageBaseUrl": {
+        "label": "Địa chỉ truy cập ảnh",
+        "hint": "Tiền tố địa chỉ truy cập dùng để tạo kết quả ảnh."
+      },
+      "defaultUpstreamModel": {
+        "label": "Tên mô hình upstream mặc định khi gửi yêu cầu",
+        "hint": "Tên mô hình upstream mà gpt-image-2 dùng khi gửi yêu cầu tạo ảnh, mặc định là gpt-5-5."
+      },
+      "defaultThinkingEffort": {
+        "label": "Mức độ suy luận mặc định",
+        "options": { "auto": "Auto (không gửi)" },
+        "hint": "Khi tên mô hình kết thúc bằng -standard, -extended hoặc -max, hậu tố mô hình được ưu tiên."
+      },
+      "imageRetentionDays": {
+        "label": "Tự động dọn ảnh",
+        "hint": "Tự động xóa ảnh cục bộ cũ hơn số ngày này."
+      },
+      "imagePollTimeout": {
+        "label": "Thời gian chờ poll ảnh",
+        "hint": "Đơn vị giây, thời gian chờ tối đa kết quả ảnh từ upstream."
+      },
+      "imageAccountConcurrency": {
+        "label": "Số ảnh xử lý đồng thời mỗi tài khoản",
+        "hint": "Giới hạn số yêu cầu ảnh mỗi tài khoản xử lý cùng lúc, mặc định 3."
+      },
+      "autoRemoveInvalidAccounts": {
+        "label": "Tự động loại bỏ tài khoản lỗi",
+        "hint": "Phát hiện và loại bỏ khi làm mới"
+      },
+      "imageSettleEnabled": {
+        "label": "Cơ chế xác nhận ảnh lần hai",
+        "hint": "Bật lên sẽ tăng nhẹ tỷ lệ lấy ảnh thành công."
+      },
+      "imageRemoveConversationAfterResult": {
+        "label": "Xóa cuộc trò chuyện cục bộ sau khi ra ảnh",
+        "hint": "Sau khi lấy ảnh thành công, ẩn không đồng bộ cuộc trò chuyện cục bộ tương ứng phía ChatGPT."
+      },
+      "imageRemoveConversationAlways": {
+        "label": "Xóa cuộc trò chuyện cục bộ kể cả khi không ra ảnh",
+        "hint": "Khi thất bại, hết thời gian chờ hoặc chỉ trả về văn bản cũng ẩn cuộc trò chuyện (bật lên sẽ bao gồm cả trường hợp ra ảnh thành công)."
+      },
+      "imageTimeoutRetrySecs": {
+        "label": "Thời gian chờ thêm khi ảnh hết thời gian chờ",
+        "hint": "Đơn vị giây, thời gian chờ thêm sau khi bấm \"Tiếp tục chờ\" khi hết thời gian chờ."
+      },
+      "imageSettleSecs": {
+        "label": "Thời gian chờ xác nhận ảnh lần hai",
+        "hint": "Đơn vị giây, thời gian chờ trước khi xác nhận lại sau khi tìm thấy ảnh. Cần bật kèm cơ chế xác nhận ảnh lần hai."
+      },
+      "autoReloginAfterRefresh": {
+        "label": "Tự động thử khôi phục trạng thái bất thường sau khi làm mới",
+        "hint": "Bật lên sẽ tự động thử đăng nhập lại bằng mật khẩu để khôi phục tài khoản khi làm mới."
+      },
+      "autoRemoveRateLimitedAccounts": {
+        "label": "Tự động loại bỏ tài khoản bị giới hạn tần suất"
+      },
+      "logLevel": {
+        "label": "Mức log console",
+        "hint": "Không chọn sẽ dùng mặc định info / warning / error."
+      },
+      "globalSystemPrompt": {
+        "label": "Chỉ dẫn bổ sung toàn cục",
+        "placeholder": "Ví dụ: kiểm tra prompt người dùng có hợp lệ không trước; từ chối các yêu cầu liên quan nội dung phi pháp, khiêu dâm, bạo lực, thù ghét.",
+        "hint": "Được chèn vào như một system message trong mỗi yêu cầu, dùng để kiểm duyệt prompt người dùng, tránh nội dung vi phạm, thống nhất hành vi mô hình hoặc cố định vai trò."
+      },
+      "sensitiveWords": {
+        "label": "Từ nhạy cảm",
+        "placeholder": "Mỗi dòng một từ, khớp là từ chối",
+        "hint": "Chỉ cần yêu cầu người dùng chứa bất kỳ từ nhạy cảm nào sẽ bị từ chối ngay."
+      }
+    },
+    "imageStorage": {
+      "enableLabel": "Bật lưu trữ ảnh qua WebDAV",
+      "testButton": "Kiểm tra WebDAV",
+      "syncButton": "Đồng bộ toàn bộ",
+      "syncHint": "Khi tạo ảnh chỉ xử lý ảnh mới; đồng bộ toàn bộ dùng để tải ảnh cục bộ hiện có lên WebDAV.",
+      "currentModeLabel": "Chế độ đang chờ lưu:",
+      "modeSaveHint": "Cần bấm lưu sau khi thay đổi, hoặc tự động lưu qua nút kiểm tra/đồng bộ.",
+      "modes": { "local": "Chỉ máy cục bộ", "webdav": "Chỉ WebDAV", "both": "Máy cục bộ + WebDAV" },
+      "fields": {
+        "saveMode": { "label": "Chế độ lưu" },
+        "username": { "label": "Tên đăng nhập" },
+        "password": { "label": "Mật khẩu" },
+        "remotePath": { "label": "Thư mục từ xa" },
+        "publicBaseUrl": {
+          "label": "Tiền tố truy cập công khai",
+          "hint": "Để trống sẽ trả về địa chỉ proxy /images/... của ứng dụng này; điền vào sẽ trả về trực tiếp địa chỉ ảnh công khai."
+        }
+      },
+      "toasts": {
+        "testAvailable": "Kết nối WebDAV khả dụng: HTTP {{status}}",
+        "testUnavailable": "Kết nối WebDAV thất bại: {{error}}",
+        "testFailed": "Kiểm tra WebDAV thất bại",
+        "syncComplete": "Đồng bộ hoàn tất: đã tải lên {{uploaded}}, bỏ qua {{skipped}}, lỗi {{failed}}",
+        "syncFailed": "Đồng bộ ảnh thất bại"
+      }
+    },
+    "aiReview": {
+      "enableLabel": "Bật kiểm duyệt AI",
+      "hint": "Khi bật, mô hình kiểm duyệt sẽ được gọi trước khi yêu cầu vào tài khoản tạo ảnh; không qua kiểm duyệt sẽ bị từ chối ngay, giảm rủi ro prompt vi phạm chạm tới tài khoản gây rủi ro kiểm soát hoặc khóa tài khoản.",
+      "fields": {
+        "prompt": {
+          "label": "Prompt kiểm duyệt",
+          "placeholder": "Xác định yêu cầu của người dùng có được phép không. Chỉ trả lời ALLOW hoặc REJECT."
+        }
+      }
+    },
+    "actions": { "save": "Lưu" },
+    "toasts": {
+      "loadFailed": "Tải cấu hình hệ thống thất bại",
+      "saveSuccess": "Đã lưu cấu hình",
+      "saveFailed": "Lưu cấu hình hệ thống thất bại"
+    },
+    "baseUrlCard": {
+      "title": "Địa chỉ cơ sở",
+      "description": "Đặt giá trị cấu hình cục bộ cho `CHATGPT2API_BASE_URL`, có hiệu lực ngay sau khi lưu.",
+      "status": { "configured": "Đã cấu hình", "notConfigured": "Chưa cấu hình" },
+      "hint": "Để trống sẽ dùng biến môi trường hoặc giá trị mặc định, khi lưu sẽ tự động bỏ khoảng trắng đầu cuối.",
+      "saveButton": "Lưu cấu hình"
+    }
+  },
+  "apiDocs": {
+    "header": {
+      "title": "Hướng dẫn tích hợp API",
+      "description": "Ứng dụng bên thứ ba tích hợp qua API tương thích OpenAI; API tác vụ tệp cũng dùng chung cách xác thực này."
+    },
+    "info": {
+      "serviceUrl": "Địa chỉ dịch vụ",
+      "openaiBaseUrl": "Base URL (OpenAI)",
+      "requestHeader": "Header yêu cầu",
+      "noKeyPlaceholder": "<khóa hiện tại>"
+    },
+    "models": {
+      "label": "Các mô hình thường dùng, cũng có thể gọi /v1/models để lấy danh sách"
+    },
+    "table": { "param": "Tham số", "type": "Loại", "description": "Mô tả" },
+    "sections": { "input": "Tham số đầu vào", "output": "Tham số đầu ra", "example": "Ví dụ gọi" },
+    "docs": {
+      "models": {
+        "title": "Danh sách mô hình",
+        "input": { "authorization": "Bearer <auth-key>." },
+        "output": { "data": "Danh sách mô hình, gồm id, object, created, owned_by." }
+      },
+      "chatCompletions": {
+        "title": "Hoàn thành hội thoại",
+        "input": {
+          "model": "Tên mô hình, ví dụ gpt-5-mini, cũng dùng được cho kịch bản tương thích ảnh.",
+          "messages": "Mảng messages tương thích OpenAI.",
+          "stream": "Tùy chọn, có trả về dạng stream hay không.",
+          "n": "Tùy chọn, trong kịch bản tương thích ảnh sẽ được hiểu là số lượng cần tạo."
+        },
+        "output": {
+          "id": "ID phản hồi.",
+          "choices": "choices tương thích OpenAI.",
+          "usage": "Tùy chọn, thông tin sử dụng token."
+        },
+        "examplePrompt": "Xin chào"
+      },
+      "responses": {
+        "input": {
+          "model": "Tên mô hình.",
+          "input": "Đầu vào của người dùng, khi tạo ảnh sẽ phân tích prompt từ đây.",
+          "tools": "Tùy chọn, định nghĩa công cụ Responses.",
+          "stream": "Tùy chọn, có trả về dạng stream hay không."
+        },
+        "output": {
+          "id": "ID phản hồi.",
+          "output": "Đầu ra tương thích Responses.",
+          "status": "Trạng thái phản hồi."
+        },
+        "examplePrompt": "Tạo một ảnh thành phố tương lai"
+      },
+      "search": {
+        "title": "Tìm kiếm",
+        "input": { "prompt": "Câu hỏi hoặc chỉ dẫn tìm kiếm." },
+        "output": {
+          "answer": "Nội dung trả lời sau khi tìm kiếm, trường cụ thể tùy theo kết quả trả về.",
+          "sources": "Tùy chọn, nguồn tham chiếu tìm kiếm.",
+          "accountEmail": "Email tài khoản dùng cho lần gọi này."
+        },
+        "examplePrompt": "Tìm cách sử dụng chatgpt2api mới nhất"
+      },
+      "imageGenerations": {
+        "title": "Tạo ảnh",
+        "input": {
+          "prompt": "Prompt tạo ảnh.",
+          "model": "Tùy chọn, mặc định gpt-image-2.",
+          "n": "Tùy chọn, số lượng tạo, hiện giới hạn 1-4.",
+          "size": "Tùy chọn, kích thước ảnh.",
+          "quality": "Tùy chọn, mặc định auto.",
+          "responseFormat": "Tùy chọn, mặc định b64_json."
+        },
+        "output": {
+          "data": "Danh sách kết quả ảnh.",
+          "dataB64Json": "Nội dung ảnh base64.",
+          "dataUrl": "Một số cấu hình trả về URL ảnh."
+        },
+        "examplePrompt": "Một poster sản phẩm tối giản"
+      },
+      "imageEdits": {
+        "title": "Chỉnh sửa ảnh",
+        "input": {
+          "image": "Ảnh tham chiếu, hỗ trợ tải lên multipart, cũng hỗ trợ liên kết ảnh JSON.",
+          "prompt": "Prompt chỉnh sửa.",
+          "model": "Tùy chọn, mặc định gpt-image-2.",
+          "n": "Tùy chọn, số lượng tạo, hiện giới hạn 1-4.",
+          "size": "Tùy chọn, kích thước ảnh.",
+          "quality": "Tùy chọn, mặc định auto."
+        },
+        "output": {
+          "data": "Danh sách kết quả ảnh sau chỉnh sửa.",
+          "dataB64Json": "Nội dung ảnh base64.",
+          "dataUrl": "Một số cấu hình trả về URL ảnh."
+        },
+        "examplePrompt": "Đổi thành cảnh đêm cyberpunk"
+      },
+      "pptTask": {
+        "title": "Tạo tác vụ PPT",
+        "input": {
+          "prompt": "Mô tả yêu cầu PPT, có thể để trống nhưng nên điền đầy đủ chủ đề, số trang, phong cách và cấu trúc nội dung.",
+          "base64Images": "Tùy chọn, data URL/base64 ảnh, dùng làm tư liệu tham khảo cho PPT.",
+          "clientTaskId": "Tùy chọn, ID tác vụ idempotent phía client; gửi lại cùng ID sẽ trả về tác vụ đã có."
+        },
+        "output": {
+          "idOrTaskId": "ID tác vụ, dùng để theo dõi trạng thái.",
+          "status": "Trạng thái tác vụ.",
+          "kind": "Loại tác vụ.",
+          "createdUpdatedAt": "Thời gian tạo và cập nhật tác vụ."
+        },
+        "examplePrompt": "Làm một bản PPT báo cáo kinh doanh quý trong tối đa 8 trang"
+      },
+      "psdTask": {
+        "title": "Tạo tác vụ PSD",
+        "input": {
+          "prompt": "Yêu cầu tách và ghép PSD, ví dụ giữ layer, vị trí, nền và file zip tư liệu.",
+          "base64Images": "Bắt buộc, ít nhất một data URL/base64 ảnh, làm ảnh nguồn để tách PSD.",
+          "clientTaskId": "Tùy chọn, ID tác vụ idempotent phía client."
+        },
+        "output": {
+          "idOrTaskId": "ID tác vụ, dùng để theo dõi trạng thái.",
+          "status": "Trạng thái tác vụ.",
+          "kind": "Loại tác vụ.",
+          "error": "Thông tin lỗi khi thất bại."
+        },
+        "examplePrompt": "Tách các thành phần poster theo đúng vị trí gốc và ghép thành file PSD có thể chỉnh sửa"
+      },
+      "taskStatus": {
+        "title": "Tra cứu trạng thái tác vụ",
+        "input": { "ids": "Tùy chọn, danh sách ID tác vụ cách nhau bằng dấu phẩy; không truyền sẽ trả về toàn bộ tác vụ tệp có thể chỉnh sửa của người dùng hiện tại." },
+        "output": {
+          "items": "Danh sách tác vụ. Tác vụ thành công có result chứa primary_url và zip_url.",
+          "missingIds": "Khi tra cứu theo ids chỉ định, các ID tác vụ không tìm thấy.",
+          "resultPrimaryUrl": "Địa chỉ tải file chính.",
+          "resultZipUrl": "Địa chỉ tải file zip tư liệu."
+        }
+      },
+      "fileDownload": {
+        "title": "Tải file kết quả",
+        "input": { "filePath": "Được trả về từ result.primary_url hoặc result.zip_url của tác vụ, thường không cần tự ghép." },
+        "output": { "binary": "Trả về luồng file pptx/psd/zip." }
+      }
+    }
+  },
+  "userKeys": {
+    "header": {
+      "title": "Quản lý khóa người dùng",
+      "description": "Tạo khóa riêng cho người dùng thường; người dùng thường chỉ vào được trang vẽ ảnh, không xem được cài đặt và kho tài khoản.",
+      "createButton": "Tạo khóa người dùng"
+    },
+    "revealedKey": {
+      "title": "Khóa mới chỉ hiển thị một lần, hãy lưu lại ngay:",
+      "copyButton": "Sao chép"
+    },
+    "empty": {
+      "description": "Chưa có khóa người dùng thường nào. Bấm nút ở góc trên bên phải để tạo và chia sẻ cho người khác."
+    },
+    "item": {
+      "badge": { "enabled": "Đã bật", "disabled": "Đã tắt" },
+      "createdAt": "Tạo lúc {{date}}",
+      "lastUsedAt": "Dùng gần nhất {{date}}",
+      "editButton": "Sửa",
+      "deleteButton": "Xóa",
+      "actions": { "enable": "Bật", "disable": "Tắt" }
+    },
+    "namePlaceholder": "Ví dụ: Bạn thiết kế A, tài khoản vận hành tạm thời",
+    "createDialog": {
+      "title": "Tạo khóa người dùng",
+      "description": "Có thể điền tên ghi chú tùy chọn để phân biệt người dùng khác nhau; sau khi tạo sẽ sinh ra một khóa gốc chỉ xem được một lần.",
+      "nameLabel": "Tên (tùy chọn)",
+      "createButton": "Tạo"
+    },
+    "deleteDialog": {
+      "title": "Xóa khóa người dùng",
+      "description": "Xác nhận xóa khóa người dùng \"{{name}}\"? Sau khi xóa, khóa này sẽ không thể tiếp tục gọi API.",
+      "confirmButton": "Xóa"
+    },
+    "editDialog": {
+      "title": "Sửa khóa người dùng",
+      "description": "Có thể đổi tên ghi chú; nếu cần thay khóa riêng, điền trực tiếp khóa gốc mới. Để trống sẽ giữ nguyên khóa hiện tại.",
+      "nameLabel": "Tên",
+      "newKeyLabel": "Khóa riêng mới (tùy chọn)",
+      "newKeyPlaceholder": "Ví dụ: sk-your-custom-user-key",
+      "newKeyHint": "Sau khi lưu, khóa cũ sẽ mất hiệu lực ngay và khóa mới có hiệu lực. Hệ thống chỉ lưu mã băm, không hiển thị lại khóa hiện tại.",
+      "saveButton": "Lưu"
+    },
+    "toasts": {
+      "loadFailed": "Tải khóa người dùng thất bại",
+      "createSuccess": "Đã tạo khóa người dùng",
+      "createFailed": "Tạo khóa người dùng thất bại",
+      "enableSuccess": "Đã bật khóa người dùng",
+      "disableSuccess": "Đã tắt khóa người dùng",
+      "updateFailed": "Cập nhật khóa người dùng thất bại",
+      "deleteSuccess": "Đã xóa khóa người dùng",
+      "deleteFailed": "Xóa khóa người dùng thất bại",
+      "editKeySuccess": "Đã cập nhật khóa người dùng",
+      "editNameSuccess": "Đã cập nhật tên người dùng",
+      "copySuccess": "Đã sao chép vào clipboard",
+      "copyFailed": "Sao chép thất bại, vui lòng sao chép thủ công"
+    }
+  },
+  "sub2api": {
+    "header": {
+      "title": "Quản lý kết nối Sub2API",
+      "description": "Sau khi cấu hình máy chủ Sub2API, bạn có thể truy vấn các tài khoản OpenAI OAuth trên đó và nhập hàng loạt vào kho tài khoản cục bộ.",
+      "connectionCount": "{{count}} kết nối"
+    },
+    "actions": {
+      "addConnection": "Thêm kết nối",
+      "edit": "Sửa",
+      "delete": "Xóa",
+      "sync": "Đồng bộ"
+    },
+    "empty": {
+      "title": "Chưa có kết nối Sub2API nào",
+      "description": "Nhấn \"Thêm kết nối\" để lưu thông tin Sub2API của bạn."
+    },
+    "item": {
+      "group": "Nhóm {{id}}",
+      "allGroups": "Tất cả nhóm",
+      "importJobLabel": "Tác vụ nhập",
+      "importStatus": "Trạng thái {{status}}, đã xử lý {{completed}}/{{total}}",
+      "jobMeta": "Tác vụ {{jobId}} · {{createdAt}}",
+      "added": "Mới {{count}}",
+      "skipped": "Bỏ qua {{count}}",
+      "refreshed": "Làm mới {{count}}",
+      "failed": "Lỗi {{count}}"
+    },
+    "help": {
+      "title": "Hướng dẫn sử dụng",
+      "step1": "Nhập địa chỉ Sub2API và tài khoản quản trị (hoặc Admin API Key), rồi lưu thành một kết nối.",
+      "step2": "Nhấn \"Đồng bộ\" trên một kết nối sẽ lấy danh sách tài khoản có platform=openai và type=oauth.",
+      "step3": "Sau khi chọn các tài khoản cần thiết, backend sẽ lấy access_token đồng thời, tự động nhập vào kho tài khoản cục bộ và làm mới trạng thái.",
+      "step4": "Chỉ đọc access_token trong thông tin xác thực sub2api; các trường như refresh_token sẽ không được ghi vào máy cục bộ."
+    },
+    "dialog": {
+      "titleEdit": "Sửa kết nối",
+      "descriptionEdit": "Cập nhật thông tin kết nối Sub2API",
+      "descriptionAdd": "Thêm một kết nối Sub2API mới",
+      "nameLabel": "Tên (tùy chọn)",
+      "namePlaceholder": "Ví dụ: sub2api tự triển khai",
+      "urlLabel": "Địa chỉ Sub2API",
+      "authModeLabel": "Phương thức xác thực",
+      "authModePassword": "Email quản trị + mật khẩu",
+      "emailLabel": "Email quản trị",
+      "passwordLabel": "Mật khẩu quản trị",
+      "passwordPlaceholderKeep": "Để trống nếu không đổi mật khẩu",
+      "apiKeyPlaceholderKeep": "Để trống nếu không đổi khóa",
+      "groupLabel": "Nhóm (tùy chọn)",
+      "selectGroupPlaceholder": "Chọn nhóm",
+      "allGroupsUnrestricted": "Tất cả nhóm (không giới hạn)",
+      "ungrouped": "Chưa phân nhóm",
+      "groupPlaceholder": "Để trống để đồng bộ tất cả nhóm; hoặc nhập group ID / ungrouped",
+      "groupSyncHint": "Khi đồng bộ sẽ lọc theo group ID; để trống = đồng bộ tất cả tài khoản OpenAI OAuth.",
+      "fetchGroups": "Lấy danh sách nhóm",
+      "refetchGroups": "Lấy lại",
+      "groupHintNew": "Sau khi thêm kết nối, hãy nhấn \"Lấy danh sách nhóm\" trong hộp thoại sửa để chọn nhóm cụ thể.",
+      "saveButton": "Lưu thay đổi",
+      "addButton": "Thêm"
+    },
+    "browser": {
+      "title": "Chọn tài khoản để nhập",
+      "descriptionFrom": "Từ {{name}}",
+      "descriptionDefault": "Tài khoản OpenAI OAuth trên Sub2API",
+      "searchPlaceholder": "Tìm theo email, gói hoặc tên",
+      "pageSizeOption": "{{size}} / trang",
+      "deselectAll": "Bỏ chọn tất cả",
+      "selectAllFiltered": "Chọn tất cả kết quả đã lọc",
+      "filteredCount": "Đã lọc {{total}}",
+      "selectedCount": "Đã chọn {{total}}",
+      "emptyAccounts": "Không có tài khoản khớp",
+      "expiresAt": "Hết hạn {{date}}",
+      "pageRange": "{{from}}-{{to}} trong {{total}}",
+      "prevPage": "Trang trước",
+      "nextPage": "Trang sau",
+      "importSelected": "Nhập tài khoản đã chọn"
+    },
+    "toasts": {
+      "loadFailed": "Tải kết nối Sub2API thất bại",
+      "pollFailed": "Truy vấn tiến trình nhập thất bại",
+      "saveConnectionFirst": "Hãy lưu kết nối trước khi lấy danh sách nhóm",
+      "noRemoteGroups": "Máy chủ từ xa chưa cấu hình nhóm nào",
+      "fetchedGroups": "Đã lấy {{count}} nhóm",
+      "fetchGroupsFailed": "Lấy danh sách nhóm thất bại",
+      "baseUrlRequired": "Vui lòng nhập địa chỉ Sub2API",
+      "emailRequired": "Vui lòng nhập email quản trị",
+      "passwordRequired": "Vui lòng nhập mật khẩu quản trị",
+      "apiKeyRequired": "Vui lòng nhập Admin API Key",
+      "updateSuccess": "Đã cập nhật kết nối",
+      "createSuccess": "Đã thêm kết nối",
+      "saveFailed": "Lưu thất bại",
+      "deleteSuccess": "Đã xóa kết nối",
+      "deleteFailed": "Xóa thất bại",
+      "fetchAccountsSuccess": "Lấy thành công, tổng {{count}} tài khoản OpenAI",
+      "fetchAccountsFailed": "Lấy tài khoản Sub2API thất bại",
+      "selectAccountsFirst": "Vui lòng chọn tài khoản cần nhập trước",
+      "importStarted": "Đã bắt đầu tác vụ nhập",
+      "importStartFailed": "Bắt đầu nhập thất bại"
+    }
+  },
+  "cpa": {
+    "header": {
+      "title": "Quản lý kết nối CPA",
+      "description": "Cấu hình kết nối trước, sau đó truy vấn tài khoản từ xa khi cần và chọn tài khoản để nhập vào kho tài khoản cục bộ.",
+      "connectionCount": "{{count}} kết nối"
+    },
+    "actions": {
+      "addConnection": "Thêm kết nối",
+      "edit": "Sửa",
+      "delete": "Xóa",
+      "sync": "Đồng bộ"
+    },
+    "empty": {
+      "title": "Chưa có kết nối CPA nào",
+      "description": "Nhấn \"Thêm kết nối\" để lưu thông tin CLIProxyAPI của bạn."
+    },
+    "item": {
+      "importJobLabel": "Tác vụ nhập",
+      "importStatus": "Trạng thái {{status}}, đã xử lý {{completed}}/{{total}}",
+      "jobMeta": "Tác vụ {{jobId}} · {{createdAt}}",
+      "added": "Mới {{count}}",
+      "skipped": "Bỏ qua {{count}}",
+      "refreshed": "Làm mới {{count}}",
+      "failed": "Lỗi {{count}}"
+    },
+    "help": {
+      "title": "Hướng dẫn sử dụng",
+      "step1": "Khi vào trang, hệ thống sẽ đọc trước các kết nối CPA đã được cấu hình.",
+      "step2": "Nhấn \"Đồng bộ\" trên một kết nối sẽ đọc danh sách tài khoản từ xa và hiển thị để bạn chọn.",
+      "step3": "Sau khi xác nhận lựa chọn, backend sẽ tải access_token tương ứng ở chế độ nền và nhập vào kho tài khoản cục bộ.",
+      "step4": "Frontend chỉ theo dõi tiến trình nhập, không trực tiếp tham gia download."
+    },
+    "dialog": {
+      "titleEdit": "Sửa kết nối",
+      "descriptionEdit": "Cập nhật thông tin kết nối CPA",
+      "descriptionAdd": "Thêm một kết nối CLIProxyAPI mới",
+      "nameLabel": "Tên (tùy chọn)",
+      "namePlaceholder": "Ví dụ: kho chính, kho dự phòng",
+      "urlLabel": "Địa chỉ CPA",
+      "secretKeyPlaceholderKeep": "Để trống nếu không đổi khóa",
+      "secretKeyPlaceholderNew": "Khóa quản trị CPA",
+      "saveButton": "Lưu thay đổi",
+      "addButton": "Thêm"
+    },
+    "toasts": {
+      "loadFailed": "Tải kết nối CPA thất bại",
+      "baseUrlRequired": "Vui lòng nhập địa chỉ CPA",
+      "secretKeyRequired": "Vui lòng nhập Secret Key",
+      "updateSuccess": "Đã cập nhật kết nối",
+      "createSuccess": "Đã thêm kết nối",
+      "saveFailed": "Lưu thất bại",
+      "deleteSuccess": "Đã xóa kết nối",
+      "deleteFailed": "Xóa thất bại"
+    }
+  },
+  "importBrowser": {
+    "title": "Chọn tài khoản để nhập",
+    "descriptionFrom": "Từ {{name}}",
+    "descriptionDefault": "Danh sách tài khoản từ xa",
+    "searchPlaceholder": "Tìm theo email hoặc tên tệp",
+    "pageSizeOption": "{{size}} / trang",
+    "deselectAll": "Bỏ chọn tất cả",
+    "selectAllFiltered": "Chọn tất cả kết quả đã lọc",
+    "filteredCount": "Đã lọc {{total}}",
+    "selectedCount": "Đã chọn {{total}}",
+    "emptyAccounts": "Không có tài khoản từ xa khớp",
+    "pageRange": "{{from}}-{{to}} trong {{total}}",
+    "prevPage": "Trang trước",
+    "nextPage": "Trang sau",
+    "importSelected": "Nhập tài khoản đã chọn",
+    "toasts": {
+      "fetchFilesSuccess": "Lấy thành công, tổng {{count}} tài khoản từ xa",
+      "fetchFilesFailed": "Lấy tài khoản từ xa thất bại",
+      "selectFilesFirst": "Vui lòng chọn tài khoản cần nhập trước",
+      "importStarted": "Đã bắt đầu tác vụ nhập",
+      "importStartFailed": "Bắt đầu nhập thất bại"
+    }
+  },
+  "thirdParty": {
+    "saveButton": "Lưu",
+    "enableCanvas": "Bật canvas vô hạn",
+    "enabledBadge": "Đã bật",
+    "disabledBadge": "Chưa bật",
+    "entryTitle": "Lối vào canvas vô hạn",
+    "entryDescription": "Khi bật, lối vào sẽ hiển thị trên thanh điều hướng trên cùng; khi chuyển hướng sẽ tự động kèm địa chỉ dự án này và khóa hiện tại.",
+    "urlLabel": "Địa chỉ canvas vô hạn",
+    "urlHint": "Lối vào trên thanh điều hướng sẽ thêm tham số apiKey và baseUrl khi chuyển hướng; khi tắt, sẽ ẩn khỏi thanh điều hướng trên cùng.",
+    "warningHint": "Lối vào này chỉ dành cho thử nghiệm cá nhân; nếu dùng lâu dài, nên tự triển khai canvas vô hạn trên máy riêng."
+  }
+}

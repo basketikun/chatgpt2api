@@ -33,6 +33,7 @@ from services.openai_oauth import (
     user_agent,
 )
 from services.proxy_service import proxy_settings
+from utils.i18n import t
 
 
 class OAuthLoginError(Exception):
@@ -131,7 +132,7 @@ class OAuthLoginService:
             try:
                 parsed = parse_qs(urlparse(raw).query)
             except Exception as exc:
-                raise OAuthLoginError(f"无法解析 callback URL: {exc}") from exc
+                raise OAuthLoginError(t("oauth.callback_url_parse_failed").format(exc=exc)) from exc
             code = str((parsed.get("code") or [""])[0]).strip()
             state = str((parsed.get("state") or [""])[0]).strip()
             if not code:
@@ -152,13 +153,13 @@ class OAuthLoginService:
         body_sid = str(session_id or "").strip()
         code, state = self._extract_code_from_callback(callback)
         if not code:
-            raise OAuthLoginError("缺少 code 或 callback URL")
+            raise OAuthLoginError(t("oauth.code_or_callback_missing"))
 
         # state 里嵌的 session_id 优先级最高
         state_sid = state.split(".", 1)[0] if state else ""
         candidate_sids = [sid for sid in (state_sid, body_sid) if sid]
         if not candidate_sids:
-            raise OAuthLoginError("既未提供 session_id，callback URL 中也未携带 state")
+            raise OAuthLoginError(t("oauth.session_id_missing"))
 
         with self._lock:
             self._purge_expired_locked()
@@ -216,7 +217,7 @@ class OAuthLoginService:
                 timeout=60,
             )
         except Exception as exc:
-            raise OAuthLoginError(f"换 token 网络异常: {exc}") from exc
+            raise OAuthLoginError(t("oauth.token_exchange_network_error").format(exc=exc)) from exc
         finally:
             session.close()
 
@@ -250,7 +251,7 @@ class OAuthLoginService:
         id_token = str(data.get("id_token") or "").strip()
 
         if not access_token:
-            raise OAuthLoginError("OpenAI 返回的 access_token 为空")
+            raise OAuthLoginError(t("oauth.access_token_empty"))
         if not refresh_token:
             # scope 含 offline_access 时正常会下发 refresh_token；这里给出明确提示
             raise OAuthLoginError(

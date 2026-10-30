@@ -1,0 +1,96 @@
+{
+  "page": {
+    "tabs": {
+      "skills": "Search Skills",
+      "search": "Search"
+    }
+  },
+  "pptPanel": {
+    "title": "PPT Generation",
+    "defaultPrompt": "Make a PPT titled \"2026 Q2 E-commerce Operations Report\" for a quarterly management review, no more than 8 slides, in a business-tech style. Highlight sales growth, user growth, ad performance, and the 618 campaign results, using line charts, bar charts, donut charts, and funnel charts."
+  },
+  "psdPanel": {
+    "title": "PSD Generation",
+    "defaultPrompt": "Split the poster elements by their original layout and merge them into an editable PSD, keeping the background and each element's layer position, and also output a zip of each layer's assets."
+  },
+  "editableFilePanel": {
+    "status": {
+      "queued": "Queued",
+      "running": "Generating",
+      "success": "Completed",
+      "error": "Failed"
+    },
+    "history": {
+      "title": "History",
+      "empty": "No history yet"
+    },
+    "renameFallback": "{{kind}} task",
+    "generate": "Generate",
+    "form": {
+      "promptLabel": "Prompt",
+      "referenceImagesLabel": "Reference images",
+      "upload": "Upload image",
+      "clearImages": "Clear images"
+    },
+    "resultPanel": {
+      "title": "Generation status",
+      "empty": "No task yet",
+      "statusLabel": "Status",
+      "elapsedLabel": "Elapsed",
+      "resultTitle": "Result",
+      "fileLabel": "{{format}} file",
+      "zipLabel": "Asset package"
+    },
+    "dialog": {
+      "deleteOneTitle": "Delete history entry",
+      "deleteAllTitle": "Clear history",
+      "deleteOneDescription": "Delete this history entry?",
+      "deleteAllDescription": "Clear all history of this type?",
+      "confirm": "Confirm delete"
+    }
+  },
+  "chatPanel": {
+    "title": "Conversation",
+    "defaultInput": "Hi, please remember my project is called chatgpt2api.",
+    "requestTitle": "Request",
+    "reasoningEffort": {
+      "label": "Reasoning effort",
+      "default": "Default",
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High",
+      "xhigh": "Extra high"
+    },
+    "imagesLabel": "Images",
+    "selectImages": "Select images",
+    "removeImage": "Remove {{name}}",
+    "send": "Send",
+    "clear": "Clear",
+    "emptyConversation": "No messages yet",
+    "errors": {
+      "notImage": "{{fileName}} is not an image file",
+      "tooLarge": "{{fileName}} exceeds 10MB",
+      "readFailed": "Failed to read {{fileName}}"
+    }
+  },
+  "searchPanel": {
+    "intro": "Search the web using ChatGPT's advanced web search capability",
+    "defaultPrompt": "Search for chatgpt2api-related projects for me",
+    "placeholder": "Search the web",
+    "searching": "Searching...",
+    "sourcesTitle": "Sources"
+  },
+  "skillPanel": {
+    "zhTitle": "Chinese install prompt",
+    "zhDescription": "Copy and send this to Codex or Claude to install it locally.",
+    "copied": "Copied",
+    "zhTemplate": "---\nname: chatgpt2api-search\ndescription: 当用户需要联网搜索、查询最新信息、核实事实或需要来源链接时，调用本地 chatgpt2api 搜索接口。\n---\n\n# ChatGPT2API 搜索\n\n当用户要求联网搜索、查询最新信息、核实资料、查新闻、查价格、查文档更新或需要来源链接时，使用这个 skill。\n\n## 接口\n\nPOST {{apiBaseUrl}}/v1/search\n\nHeaders:\n\nAuthorization: Bearer {{authKey}}\nContent-Type: application/json\n\nBody:\n\n{\n  \"prompt\": \"<用户要搜索的问题>\"\n}\n\n## 返回处理\n\n- 使用接口返回的 `answer` 作为主要回答。\n- 如果有 `sources`，在回答里附上来源链接。\n- 如果接口报错，简要说明错误并询问是否重试。",
+    "enTemplate": "---\nname: chatgpt2api-search\ndescription: Use when current web search is needed through this chatgpt2api server. Call the configured HTTP search endpoint with a prompt and return the answer with source URLs.\n---\n\n# ChatGPT2API Search\n\nUse this skill when the user asks for current web search, online lookup, recent information, or source-backed answers. It calls the local chatgpt2api search endpoint and returns an answer with source links.\n\n## When to use\n\n- The user asks to search the web, look something up, verify current information, or find the latest status.\n- The answer needs source URLs, recent details, prices, releases, docs, laws, schedules, or news.\n- Do not use it for purely local codebase questions unless the user explicitly asks for web search.\n\n## Request\n\nPOST {{apiBaseUrl}}/v1/search\n\nHeaders:\n\nAuthorization: Bearer {{authKey}}\nContent-Type: application/json\n\nJSON body:\n\n{\n  \"prompt\": \"<search question>\"\n}\n\n## Response handling\n\n- Use `answer` as the main response.\n- Include source URLs from `sources` when available.\n- If the endpoint returns an error, summarize the error and ask the user whether to retry.\n- Keep the final answer concise unless the user asks for detail.",
+    "zhInstallPrompt": "请帮我在本机安装一个用于联网搜索的 skill。\n\n要求：\n1. 请按你当前环境的 skill 安装规范，把它安装成本地 skill。\n2. skill 名称为：chatgpt2api-search\n3. 文件名为：SKILL.md\n4. 如果你无法确定本地 skills 目录在哪里，先告诉我需要放到哪个目录，不要猜路径。\n5. 只创建或更新这个 skill 文件，不要修改其他无关文件。\n6. SKILL.md 请写入下面的完整内容。\n\nSKILL.md 内容：\n\n```markdown\n{{skillDoc}}\n```",
+    "enInstallPrompt": "Please install a local web-search skill on this machine.\n\nRequirements:\n1. Install this as a local skill according to the skill installation rules of your current environment.\n2. Skill name: chatgpt2api-search\n3. File name: SKILL.md\n4. If you cannot determine the local skills directory, tell me which directory is required before writing files.\n5. Only create or update this skill file. Do not modify unrelated files.\n6. Write the full content below into SKILL.md.\n\nSKILL.md content:\n\n```markdown\n{{skillDoc}}\n```"
+  },
+  "actions": {
+    "download": "Download",
+    "copy": "Copy"
+  }
+}

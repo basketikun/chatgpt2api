@@ -10,6 +10,7 @@ from typing import Literal
 
 from services.config import config
 from services.storage.base import StorageBackend
+from utils.i18n import t
 
 AuthRole = Literal["admin", "user"]
 
@@ -35,7 +36,8 @@ class AuthService:
 
     @staticmethod
     def _default_name(role: object) -> str:
-        return "管理员密钥" if str(role or "").strip().lower() == "admin" else "普通用户"
+        key = "auth.default_key_name_admin" if str(role or "").strip().lower() == "admin" else "auth.default_key_name_user"
+        return t(key)
 
     def _normalize_item(self, raw: object) -> dict[str, object] | None:
         if not isinstance(raw, dict):
@@ -105,13 +107,13 @@ class AuthService:
     def _build_key_hash_locked(self, raw_key: str, *, exclude_id: str = "") -> str:
         candidate = self._clean(raw_key)
         if not candidate:
-            raise ValueError("请输入新的专用密钥")
+            raise ValueError(t("auth.key_required"))
         admin_key = self._clean(config.auth_key)
         if admin_key and hmac.compare_digest(candidate, admin_key):
-            raise ValueError("这个密钥和管理员密钥冲突了，请换一个新的密钥")
+            raise ValueError(t("auth.key_conflicts_with_admin"))
         key_hash = _hash_key(candidate)
         if self._has_key_hash_locked(key_hash, exclude_id=exclude_id):
-            raise ValueError("这个专用密钥已经存在，请换一个新的密钥")
+            raise ValueError(t("auth.key_already_exists"))
         return key_hash
 
     def _has_name_locked(self, name: str, *, role: AuthRole | None = None, exclude_id: str = "") -> bool:
@@ -144,7 +146,7 @@ class AuthService:
         if not candidate:
             return self._build_default_name_locked(role, exclude_id=exclude_id)
         if self._has_name_locked(candidate, role=role, exclude_id=exclude_id):
-            raise ValueError("这个名称已经在使用中了，换一个更容易区分的名称吧")
+            raise ValueError(t("auth.name_already_used"))
         return candidate
 
     def create_key(self, *, role: AuthRole, name: str = "") -> tuple[dict[str, object], str]:

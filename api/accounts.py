@@ -32,6 +32,7 @@ from services.sub2api_service import (
     sub2api_config,
     sub2api_import_service,
 )
+from utils.i18n import t
 
 
 
@@ -157,6 +158,22 @@ def _account_zip_bytes(items: list[dict[str, str]]) -> bytes:
     return buf.getvalue()
 
 
+def _render_relogin_results(results: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
+    """Render each re-login progress entry against the polling request's own
+    locale. The worker that wrote these entries may have run on a detached
+    thread with no request in scope, or in an earlier request with a different
+    Accept-Language than this one, so translation happens here, at read time."""
+    if not results:
+        return results
+    rendered = []
+    for item in results:
+        error = item.get("error")
+        if item.get("error_is_key") and error:
+            error = t(error)
+        rendered.append({"token": item.get("token"), "status": item.get("status"), "error": error})
+    return rendered
+
+
 def create_router() -> APIRouter:
     router = APIRouter()
 
@@ -191,20 +208,20 @@ def create_router() -> APIRouter:
             if value is not None
         }
         if not updates:
-            raise HTTPException(status_code=400, detail={"error": "还没有检测到改动，请修改后再保存"})
+            raise HTTPException(status_code=400, detail={"error": t("account.no_changes")})
         try:
             item = auth_service.update_key(key_id, updates, role="user")
         except ValueError as exc:
             raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
         if item is None:
-            raise HTTPException(status_code=404, detail={"error": "这条用户密钥不存在，可能已经被删除"})
+            raise HTTPException(status_code=404, detail={"error": t("auth.user_key_not_found")})
         return {"item": item, "items": auth_service.list_keys(role="user")}
 
     @router.delete("/api/auth/users/{key_id}")
     async def delete_user_key(key_id: str, authorization: str | None = Header(default=None)):
         require_admin(authorization)
         if not auth_service.delete_key(key_id, role="user"):
-            raise HTTPException(status_code=404, detail={"error": "这条用户密钥不存在，可能已经被删除"})
+            raise HTTPException(status_code=404, detail={"error": t("auth.user_key_not_found")})
         return {"items": auth_service.list_keys(role="user")}
 
     @router.get("/api/accounts")
@@ -301,6 +318,9 @@ def create_router() -> APIRouter:
         progress = account_service.get_relogin_progress(progress_id)
         if progress is None:
             raise HTTPException(status_code=404, detail={"error": "progress not found"})
+        results = _render_relogin_results(progress.get("results"))
+        if results is not None:
+            progress = {**progress, "results": results}
         return progress
 
     @router.post("/api/accounts/export")
@@ -311,7 +331,7 @@ def create_router() -> APIRouter:
         if not items:
             raise HTTPException(
                 status_code=400,
-                detail={"error": "没有可导出的完整账号，需要同时有 access_token、refresh_token 和 id_token"},
+                detail={"error": t("account.export_incomplete")},
             )
 
         timestamp = _download_timestamp()
@@ -338,7 +358,7 @@ def create_router() -> APIRouter:
             raise HTTPException(status_code=400, detail={"error": "access_token is required"})
         updates = {key: value for key, value in {"type": body.type, "status": body.status, "quota": body.quota, "proxy": body.proxy}.items() if value is not None}
         if not updates:
-            raise HTTPException(status_code=400, detail={"error": "还没有检测到改动，请修改后再保存"})
+            raise HTTPException(status_code=400, detail={"error": t("account.no_changes")})
         account = account_service.update_account(access_token, updates)
         if account is None:
             raise HTTPException(status_code=404, detail={"error": "account not found"})

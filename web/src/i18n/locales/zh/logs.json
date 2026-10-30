@@ -1,0 +1,58 @@
+{
+  "header": {
+    "title": "日志管理"
+  },
+  "filters": {
+    "clear": "清除筛选条件",
+    "search": "查询"
+  },
+  "table": {
+    "time": "时间",
+    "type": "类型",
+    "tokenName": "令牌名称",
+    "duration": "调用耗时",
+    "status": "状态",
+    "image": "图片",
+    "summary": "简述",
+    "actions": "操作"
+  },
+  "status": {
+    "success": "成功",
+    "failed": "失败"
+  },
+  "toolbar": {
+    "total": "共 {{total}} 条",
+    "selectPage": "本页全选",
+    "selectAll": "全选结果",
+    "selected": "已选 {{total}} 条",
+    "refresh": "刷新",
+    "clearSelection": "取消选择",
+    "deleteSelected": "删除所选"
+  },
+  "rowActions": {
+    "viewDetail": "查看详情",
+    "delete": "删除",
+    "previewImage": "预览图片"
+  },
+  "empty": {
+    "noLogs": "没有找到日志"
+  },
+  "pagination": {
+    "info": "第 {{page}} / {{pageCount}} 页，共 {{total}} 条"
+  },
+  "detail": {
+    "title": "日志详情"
+  },
+  "deleteDialog": {
+    "titleSingle": "删除日志",
+    "titleMultiple": "删除所选日志",
+    "description": "确认删除 {{count}} 条日志吗？删除后无法恢复。",
+    "cancel": "取消",
+    "confirm": "确认删除"
+  },
+  "toasts": {
+    "loadFailed": "加载日志失败",
+    "deleteFailed": "删除日志失败",
+    "deleteSuccess": "已删除 {{count}} 条日志"
+  }
+}

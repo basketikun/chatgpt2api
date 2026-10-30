@@ -1,0 +1,15 @@
+{
+  "header": {
+    "title": "Welcome back",
+    "subtitle": "Enter your key to continue using account management and image generation."
+  },
+  "form": {
+    "label": "Key",
+    "placeholder": "Enter your key",
+    "submit": "Log in"
+  },
+  "errors": {
+    "keyRequired": "Please enter a key",
+    "loginFailed": "Login failed"
+  }
+}

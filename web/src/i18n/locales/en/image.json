@@ -1,0 +1,166 @@
+{
+  "composer": {
+    "quality": {
+      "auto": "Auto",
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High"
+    },
+    "sizeSummary_one": "{{quality}} · {{ratio}} · {{count}} image",
+    "sizeSummary_other": "{{quality}} · {{ratio}} · {{count}} images",
+    "sizeMenu": {
+      "title": "Image settings",
+      "modelLabel": "Model",
+      "qualityLabel": "Quality",
+      "sizeLabel": "Size",
+      "ratioLabel": "Aspect ratio",
+      "countLabel": "Number of images",
+      "imageUnit_one": "{{count}} image",
+      "imageUnit_other": "{{count}} images"
+    },
+    "referenceImage": {
+      "previewLabel": "Preview reference image {{name}}",
+      "altFallback": "Reference image {{index}}",
+      "removeLabel": "Remove reference image {{name}}"
+    },
+    "placeholder": {
+      "editMode": "Describe how you'd like to modify the reference image",
+      "generateMode": "Describe the image you want to generate, or paste an image directly"
+    },
+    "dropOverlay": "Release to upload reference image",
+    "actions": {
+      "addReference": "Add reference image",
+      "upload": "Upload",
+      "editImage": "Edit image",
+      "generateImage": "Generate image"
+    },
+    "quota": {
+      "label": "Remaining quota"
+    },
+    "activeTasks": {
+      "suffix": "in progress"
+    }
+  },
+  "results": {
+    "empty": {
+      "subtitle": "Keeps local history and task state in the same window, and lets you start a new stateless edit from an existing result image."
+    },
+    "turn": {
+      "label": "Turn {{index}}",
+      "modeEdit": "Edit image",
+      "modeGenerate": "Text to image",
+      "reuseConfig": "Reuse settings",
+      "deletePromptLabel": "Delete prompt record",
+      "referenceImagesLabel": "Reference images for this turn",
+      "referencePreviewLabel": "Preview reference image {{name}}",
+      "referenceAltFallback": "Reference image {{index}}",
+      "countUnit_one": "{{count}} image",
+      "countUnit_other": "{{count}} images",
+      "waitingQueue": "Waiting for earlier tasks in this conversation to finish",
+      "dismissErrors": "Dismiss errors",
+      "regenerateAll": "Regenerate all",
+      "deleteResultsLabel": "Delete generated results"
+    },
+    "image": {
+      "addToEdit": "Add to edit",
+      "resultLabel": "Result {{index}}",
+      "downloadLabel": "Download",
+      "indexLabel": "Image {{index}}/{{total}}",
+      "continueWaiting": "Keep waiting",
+      "retryOne": "Regenerate this image"
+    },
+    "status": {
+      "queued": "Queued",
+      "generating": "Processing",
+      "success": "Completed",
+      "failed": "Failed"
+    },
+    "progress": {
+      "gettingAccount": "Confirming available account",
+      "uploading": "Uploading image",
+      "bootstrapping": "Warming up homepage",
+      "gettingToken": "Getting token",
+      "preparingConversation": "Preparing conversation",
+      "startingGeneration": "Starting generation",
+      "generating": "Generating",
+      "receivingImage": "Receiving image"
+    }
+  },
+  "sidebar": {
+    "actions": {
+      "newConversation": "New conversation"
+    },
+    "loading": "Loading conversation history",
+    "empty": {
+      "description": "No image records yet. They'll show up here once you enter a prompt."
+    },
+    "item": {
+      "turnsSummary_one": "{{count}} turn · {{time}}",
+      "turnsSummary_other": "{{count}} turns · {{time}}",
+      "runningBadge": "Processing {{count}}",
+      "queuedBadge": "Queued {{count}}",
+      "renameLabel": "Rename conversation",
+      "deleteLabel": "Delete conversation"
+    }
+  },
+  "page": {
+    "quota": {
+      "loading": "Loading..."
+    },
+    "deleteDialog": {
+      "titleAll": "Clear history",
+      "titlePrompt": "Delete prompt record",
+      "titleResults": "Delete generated results",
+      "titleOne": "Delete conversation",
+      "descriptionAll": "Delete all image history? This cannot be undone.",
+      "descriptionPrompt": "Delete this prompt record? The corresponding results will be kept.",
+      "descriptionResults": "Delete this generated result? The corresponding prompt record will be kept.",
+      "descriptionOne": "Delete this image conversation? This cannot be undone.",
+      "confirm": "Confirm delete"
+    },
+    "historyDialog": {
+      "title": "History"
+    },
+    "historyButton": {
+      "label": "History ({{total}})"
+    },
+    "actions": {
+      "newDraft": "New"
+    },
+    "scrollToLatest": "Scroll to latest message",
+    "toasts": {
+      "loadHistoryFailed": "Failed to load conversation history",
+      "deleteConversationFailed": "Failed to delete conversation",
+      "clearHistorySuccess": "History cleared",
+      "clearHistoryFailed": "Failed to clear history",
+      "renameFailed": "Rename failed",
+      "continueEditReady": "Added to the current reference images. Keep typing a description to edit.",
+      "reuseConfigSuccess": "Reused this prompt's settings",
+      "regenerateQueued": "Added to the regeneration queue",
+      "emptyPrompt": "Please enter a prompt",
+      "queuedInConversation": "Added to the current conversation's queue",
+      "newConversationStarted": "Created a new conversation and started processing",
+      "sentToConversation": "Sent to the current conversation",
+      "generateFailed": "Failed to generate image",
+      "missingReferenceForEdit": "No reference image available to continue editing",
+      "generationTimeoutFallback": "Image generation timed out",
+      "continuedWaiting_one": "Continued waiting for {{count}} second",
+      "continuedWaiting_other": "Continued waiting for {{count}} seconds",
+      "retryPollFailed": "Failed to resume polling"
+    },
+    "turnStatus": {
+      "someImagesFailed_one": "{{count}} image failed to generate",
+      "someImagesFailed_other": "{{count}} images failed to generate"
+    },
+    "turnError": {
+      "resultsDeleted": "Generated result deleted"
+    }
+  },
+  "errors": {
+    "readReferenceImageFailed": "Failed to read reference image",
+    "readResultImageFailed": "Failed to read result image",
+    "noImageData": "No image data returned",
+    "generationFailed": "Generation failed",
+    "taskNotRecoverable": "Page refreshed or task interrupted; no recoverable task ID found"
+  }
+}

@@ -1,0 +1,745 @@
+{
+  "proxy": {
+    "runtime": {
+      "title": "FlareSolverr clearance",
+      "description": "Disabled by default. Used to obtain clearance after an upstream request is blocked by Cloudflare, and can be combined with a WARP / Privoxy proxy chain for retries.",
+      "status": { "enabled": "Enabled", "disabled": "Disabled" },
+      "priorityNote": "Proxy priority: account proxy > FlareSolverr proxy chain > explicit proxy > global proxy. Cookie / cf_clearance values are never returned in plaintext in API responses.",
+      "dockerWarning": "Before using FlareSolverr mode, start the flaresolverr, privoxy, and warp-proxy containers via Docker first; the in-container URL is usually http://flaresolverr:8191.",
+      "fields": {
+        "enable": "Enable FlareSolverr clearance",
+        "egressMode": {
+          "label": "Egress mode",
+          "direct": "Direct",
+          "singleProxy": "Single proxy / WARP",
+          "hint": "The WARP compose setup uses single_proxy by default."
+        },
+        "proxyUrl": {
+          "label": "Clearance proxy URL",
+          "hint": "Supports http/https/socks5/socks5h; socks5 is converted to socks5h. Authenticated format: scheme://account:password@host:port, or paste host:port:account:password directly."
+        },
+        "resourceProxyUrl": {
+          "label": "Resource proxy URL",
+          "placeholder": "Leave blank to reuse the clearance proxy"
+        },
+        "resetStatusCodes": {
+          "label": "Session reset status codes",
+          "hint": "Defaults to 403; only triggers on Cloudflare / challenge-type errors."
+        },
+        "skipSslVerify": "Skip SSL verification"
+      },
+      "actions": { "testProxy": "Test the current clearance proxy", "save": "Save configuration" },
+      "testResult": {
+        "available": "Proxy available: HTTP {{status}}, {{latency}} ms, source {{source}}",
+        "unavailable": "Proxy unavailable: {{error}} ({{latency}} ms)"
+      },
+      "clearance": {
+        "modeLabel": "Clearance mode",
+        "modeOptions": { "none": "Disabled", "manual": "Manual cookie" },
+        "timeoutLabel": "Timeout (seconds)",
+        "refreshIntervalLabel": "Refresh interval (seconds)",
+        "manualCookiePlaceholder": "Optional: foo=bar; cf_clearance=...",
+        "manualCookieHint": {
+          "stored": "The server already has a saved Cookie/clearance; saving with this blank will not clear the existing value.",
+          "empty": "Leave blank to skip using a manual cookie."
+        },
+        "cfClearanceLabel": "Standalone cf_clearance",
+        "cfClearancePlaceholder": "Optional: enter only the cf_clearance value",
+        "warmUpLabel": "Warm up Clearance on startup",
+        "testUrlLabel": "Test target URL",
+        "testButton": "Test Clearance",
+        "testResult": {
+          "hasCookies": "Cookie obtained",
+          "noCookies": "No cookie",
+          "available": "Clearance available: {{cookieStatus}}, {{latency}} ms",
+          "unavailable": "Clearance unavailable: {{error}} ({{latency}} ms)"
+        }
+      },
+      "toasts": {
+        "proxyAvailable": "Clearance proxy available ({{latency}} ms, HTTP {{status}})",
+        "proxyUnavailable": "Clearance proxy unavailable: {{error}}",
+        "testProxyFailed": "Failed to test the clearance proxy",
+        "clearanceSuccess": "Clearance obtained successfully ({{latency}} ms)",
+        "clearanceFailed": "Failed to obtain clearance: {{error}}",
+        "clearanceTestFailed": "Failed to test Clearance",
+        "unknownError": "Unknown error"
+      }
+    },
+    "upstream": {
+      "header": {
+        "title": "Upstream proxy configuration",
+        "description": "Configure an egress proxy for requests to chatgpt.com; suited to servers hosted in mainland China. Sub2API / CPA requests are not affected."
+      },
+      "fields": {
+        "enableLabel": "Enable proxy",
+        "enableHint": "When disabled, requests to chatgpt.com connect directly. Changes take effect immediately after saving, no restart required.",
+        "urlLabel": "Proxy address",
+        "urlPlaceholder": "http://user:pass@host:port or socks5://host:port",
+        "urlHintPrefix": "Supports",
+        "urlHintSuffix": "."
+      },
+      "testResult": {
+        "available": "Proxy available: HTTP {{status}}, {{latency}} ms",
+        "unavailable": "Proxy unavailable: {{error}} ({{latency}} ms)"
+      },
+      "toasts": {
+        "loadFailed": "Failed to load the proxy configuration",
+        "enableRequiresUrl": "A proxy address is required when the proxy is enabled",
+        "saved": "Proxy configuration saved",
+        "saveFailed": "Save failed",
+        "fillUrlFirst": "Enter the proxy address first",
+        "testAvailable": "Proxy available ({{latency}} ms, HTTP {{status}})",
+        "testUnavailable": "Proxy unavailable: {{error}}",
+        "testFailed": "Failed to test the proxy",
+        "unknownError": "Unknown error"
+      },
+      "actions": { "save": "Save", "test": "Test connectivity" }
+    },
+    "global": {
+      "header": {
+        "title": "Global proxy",
+        "description": "Configure a unified proxy for outbound requests across the system; changes take effect immediately after saving."
+      },
+      "status": { "configured": "Configured", "notConfigured": "Not configured" },
+      "fields": {
+        "urlLabel": "Proxy address",
+        "urlHint": "Leave blank to skip using a proxy. Enter the full address, for example `http://127.0.0.1:7890`, `http://username:password@127.0.0.1:7890`, or `socks5://127.0.0.1:7890`."
+      },
+      "testResult": {
+        "available": "Proxy available: HTTP {{status}}, {{latency}} ms",
+        "unavailable": "Proxy unavailable: {{error}} ({{latency}} ms)"
+      },
+      "toasts": {
+        "fillUrlFirst": "Enter the proxy address first",
+        "testAvailable": "Proxy available ({{latency}} ms, HTTP {{status}})",
+        "testUnavailable": "Proxy unavailable: {{error}}",
+        "testFailed": "Failed to test the proxy",
+        "unknownError": "Unknown error"
+      },
+      "actions": { "test": "Test proxy", "save": "Save configuration" }
+    }
+  },
+  "backup": {
+    "header": {
+      "title": "R2 backup management",
+      "description": "Back up key data to Cloudflare R2 on a schedule, with optional encryption, rotation, manual runs, and history cleanup."
+    },
+    "status": { "running": "Backing up", "success": "Last succeeded", "failed": "Last failed", "idle": "Not run yet" },
+    "banner": "Accounts and user keys are exported as a logical snapshot from the current storage backend, regardless of whether the underlying store is `json`, `sqlite`, `postgres`, or `git`. The image directory is not backed up by default, to avoid an oversized backup.",
+    "fields": {
+      "enableScheduled": "Enable scheduled backup",
+      "enableEncryption": "Enable backup encryption",
+      "bucket": "Bucket name",
+      "prefix": { "label": "Backup prefix", "hint": "Object key prefix within R2, for example `backups/prod`." },
+      "intervalMinutes": { "label": "Scheduled backup interval", "hint": "In minutes; the service polls and runs automatically at this interval after startup." },
+      "rotationKeep": { "label": "Number of backups to keep", "hint": "Older backups are automatically deleted after a successful upload. Enter `0` to disable automatic rotation." },
+      "passphrase": {
+        "label": "Encryption passphrase",
+        "placeholderRequired": "Required once encryption is enabled",
+        "placeholderEmpty": "Leave blank",
+        "hint": "Used only when encryption is enabled. Keep it safe, or the backup contents cannot be decrypted."
+      }
+    },
+    "include": {
+      "title": "Backup contents",
+      "description": "Check the components whose data should go into the backup package.",
+      "items": {
+        "config": "System configuration",
+        "cpa": "CPA configuration",
+        "sub2api": "Sub2API configuration",
+        "logs": "Scheduling and call logs",
+        "imageTasks": "Image task records",
+        "accountsSnapshot": "Account snapshot",
+        "authKeysSnapshot": "User key snapshot",
+        "images": "Image file directory"
+      }
+    },
+    "state": { "lastStarted": "Last started", "lastFinished": "Last finished", "lastObject": "Last object", "lastError": "Last error" },
+    "actions": { "testConnection": "Test connection", "refreshList": "Refresh list", "runNow": "Back up now", "save": "Save configuration" },
+    "history": {
+      "title": "Backup history",
+      "description": "View object information and delete remote backups directly.",
+      "empty": "No remote backup records yet. They will appear here after you save the configuration and run a manual backup.",
+      "encryptedBadge": "Encrypted",
+      "size": "Size {{size}}",
+      "updatedAt": "Updated {{date}}",
+      "objectKey": "Object key {{key}}",
+      "download": "Download",
+      "viewDetail": "View details",
+      "delete": "Delete"
+    },
+    "detail": {
+      "title": "Backup details",
+      "empty": "Backup details cannot be read right now; if this is an encrypted backup, make sure the correct passphrase is entered and the configuration is saved first.",
+      "objectName": "Object name",
+      "createdAt": "Created at",
+      "trigger": "Trigger",
+      "appVersion": "App version",
+      "storageBackend": "Storage backend",
+      "filesTitle": "File contents",
+      "fileExists": "Included",
+      "fileMissing": "Missing",
+      "sha256": "SHA256 {{hash}}",
+      "snapshotsTitle": "Snapshot contents",
+      "recordCount": "Records {{total}}"
+    },
+    "toasts": {
+      "fetchDetailFailed": "Failed to read backup details",
+      "authExpired": "Your session has expired; please sign in again before downloading",
+      "downloadFailedDefault": "Failed to download the backup",
+      "reauthRequired": "Your session has expired; please sign in again and retry",
+      "downloadStarted": "Backup download started",
+      "loadFailed": "Failed to load the backup list",
+      "runSuccess": "Backup complete: {{key}}",
+      "runFailed": "Failed to run the backup",
+      "deleteSuccess": "Backup deleted",
+      "deleteFailed": "Failed to delete the backup",
+      "testAvailable": "R2 connection OK (HTTP {{status}})",
+      "testFailed": "Failed to test the backup connection"
+    }
+  },
+  "core": {
+    "tabs": {
+      "basic": "Basic settings",
+      "backup": "Backup",
+      "keys": "User keys",
+      "apiDocs": "API docs",
+      "canvas": "Canvas entry"
+    },
+    "banner": "The admin login key continues to be read from the deployment configuration and is no longer shown on this page; to share access with someone else, create a regular user key below.",
+    "fields": {
+      "refreshInterval": {
+        "label": "Account refresh interval",
+        "placeholder": "Minutes",
+        "hint": "In minutes; controls how often accounts refresh automatically."
+      },
+      "proxy": {
+        "label": "Global proxy",
+        "hint": "Leave blank to disable the proxy. Supports scheme://account:password@host:port, or paste host:port:account:password directly from a provider; example: http://user:pass@127.0.0.1:7890, 127.0.0.1:7890:user:pass. URL-encode the account or password if it contains special characters such as @ or :.",
+        "testButton": "Test proxy",
+        "testResult": {
+          "available": "Proxy available: HTTP {{status}}, {{latency}} ms",
+          "unavailable": "Proxy unavailable: {{error}} ({{latency}} ms)"
+        },
+        "toasts": {
+          "fillUrlFirst": "Enter the proxy address first",
+          "testAvailable": "Proxy available ({{latency}} ms, HTTP {{status}})",
+          "testUnavailable": "Proxy unavailable: {{error}}",
+          "testFailed": "Failed to test the proxy",
+          "unknownError": "Unknown error"
+        }
+      },
+      "imageBaseUrl": {
+        "label": "Image access URL",
+        "hint": "The access URL prefix used when generating image results."
+      },
+      "defaultUpstreamModel": {
+        "label": "Default upstream model name for requests",
+        "hint": "The upstream model name used when gpt-image-2 sends an image request; defaults to gpt-5-5."
+      },
+      "defaultThinkingEffort": {
+        "label": "Default thinking effort",
+        "options": { "auto": "Auto (not sent)" },
+        "hint": "When the model name ends with -standard, -extended or -max, the model suffix takes priority."
+      },
+      "imageRetentionDays": {
+        "label": "Automatic image cleanup",
+        "hint": "Automatically deletes local images older than this many days."
+      },
+      "imagePollTimeout": {
+        "label": "Image polling timeout",
+        "hint": "In seconds; the maximum time to wait for the upstream image result."
+      },
+      "imageAccountConcurrency": {
+        "label": "Per-account image concurrency",
+        "hint": "Limits how many image requests each account handles at the same time; defaults to 3."
+      },
+      "autoRemoveInvalidAccounts": {
+        "label": "Automatically remove invalid accounts",
+        "hint": "Detects and removes them during refresh"
+      },
+      "imageSettleEnabled": {
+        "label": "Image confirmation pass",
+        "hint": "Turning this on slightly improves the success rate of fetching images."
+      },
+      "imageRemoveConversationAfterResult": {
+        "label": "Remove local conversation after an image",
+        "hint": "After an image is retrieved successfully, asynchronously hides the matching local conversation on the ChatGPT side."
+      },
+      "imageRemoveConversationAlways": {
+        "label": "Remove local conversation even without an image",
+        "hint": "Also hides the conversation on failure, timeout, or a text-only response (this includes cases where the image succeeded once enabled)."
+      },
+      "imageTimeoutRetrySecs": {
+        "label": "Extra wait time after an image timeout",
+        "hint": "In seconds; the extra time to wait after clicking \"Keep waiting\" once the timeout is reached."
+      },
+      "imageSettleSecs": {
+        "label": "Image confirmation wait time",
+        "hint": "In seconds; how long to wait before re-confirming after an image is found. Requires the image confirmation pass to be enabled."
+      },
+      "autoReloginAfterRefresh": {
+        "label": "Automatically retry recovering an abnormal state after refresh",
+        "hint": "When enabled, automatically retries logging in with the password to recover the account during refresh."
+      },
+      "autoRemoveRateLimitedAccounts": {
+        "label": "Automatically remove rate-limited accounts"
+      },
+      "logLevel": {
+        "label": "Console log level",
+        "hint": "Defaults to info / warning / error when none are selected."
+      },
+      "globalSystemPrompt": {
+        "label": "Global extra instructions",
+        "placeholder": "Example: first check whether the user prompt is compliant; refuse requests involving illegal, sexual, violent, or hateful content.",
+        "hint": "Injected as a system message on every request; useful for reviewing user prompts, avoiding disallowed content, enforcing consistent model behavior, or fixing a persona."
+      },
+      "sensitiveWords": {
+        "label": "Sensitive words",
+        "placeholder": "One per line; any match is refused",
+        "hint": "The request is refused outright if it contains any sensitive word."
+      }
+    },
+    "imageStorage": {
+      "enableLabel": "Enable WebDAV image storage",
+      "testButton": "Test WebDAV",
+      "syncButton": "Full sync",
+      "syncHint": "Generation only processes new images; full sync uploads existing local images to WebDAV.",
+      "currentModeLabel": "Mode currently pending save:",
+      "modeSaveHint": "Click save after changing this, or it saves automatically via the test/sync buttons.",
+      "modes": { "local": "Local only", "webdav": "WebDAV only", "both": "Local + WebDAV" },
+      "fields": {
+        "saveMode": { "label": "Save mode" },
+        "username": { "label": "Username" },
+        "password": { "label": "Password" },
+        "remotePath": { "label": "Remote directory" },
+        "publicBaseUrl": {
+          "label": "Public access prefix",
+          "hint": "Leave blank to return this app's /images/... proxy address; fill it in to return the public image address directly."
+        }
+      },
+      "toasts": {
+        "testAvailable": "WebDAV connection available: HTTP {{status}}",
+        "testUnavailable": "WebDAV connection failed: {{error}}",
+        "testFailed": "Failed to test WebDAV",
+        "syncComplete": "Sync complete: uploaded {{uploaded}}, skipped {{skipped}}, failed {{failed}}",
+        "syncFailed": "Failed to sync images"
+      }
+    },
+    "aiReview": {
+      "enableLabel": "Enable AI review",
+      "hint": "When enabled, a review model is called before a request reaches an image account; requests that fail review are refused outright, reducing the risk of disallowed prompts reaching an account and triggering risk control or a ban.",
+      "fields": {
+        "prompt": {
+          "label": "Review prompt",
+          "placeholder": "Decide whether the user's request is allowed. Answer only ALLOW or REJECT."
+        }
+      }
+    },
+    "actions": { "save": "Save" },
+    "toasts": {
+      "loadFailed": "Failed to load the system configuration",
+      "saveSuccess": "Configuration saved",
+      "saveFailed": "Failed to save the system configuration"
+    },
+    "baseUrlCard": {
+      "title": "Base address",
+      "description": "Sets the local configuration value for `CHATGPT2API_BASE_URL`; it takes effect immediately after saving.",
+      "status": { "configured": "Configured", "notConfigured": "Not configured" },
+      "hint": "Leave blank to use the environment variable or the default value; leading and trailing spaces are trimmed automatically on save.",
+      "saveButton": "Save configuration"
+    }
+  },
+  "apiDocs": {
+    "header": {
+      "title": "API access guide",
+      "description": "Third-party apps connect through an OpenAI-compatible API; file task endpoints use the same authentication."
+    },
+    "info": {
+      "serviceUrl": "Service address",
+      "openaiBaseUrl": "Base URL (OpenAI)",
+      "requestHeader": "Request header",
+      "noKeyPlaceholder": "<current key>"
+    },
+    "models": {
+      "label": "Commonly used models; you can also call /v1/models to list them"
+    },
+    "table": { "param": "Parameter", "type": "Type", "description": "Description" },
+    "sections": { "input": "Input parameters", "output": "Output parameters", "example": "Example call" },
+    "docs": {
+      "models": {
+        "title": "Model list",
+        "input": { "authorization": "Bearer <auth-key>." },
+        "output": { "data": "The model list, including id, object, created, and owned_by." }
+      },
+      "chatCompletions": {
+        "title": "Chat completions",
+        "input": {
+          "model": "Model name, e.g. gpt-5-mini; can also be used for image-compatible scenarios.",
+          "messages": "An OpenAI-compatible messages array.",
+          "stream": "Optional; whether to stream the response.",
+          "n": "Optional; in image-compatible scenarios this is parsed as the number to generate."
+        },
+        "output": {
+          "id": "The response ID.",
+          "choices": "OpenAI-compatible choices.",
+          "usage": "Optional; token usage information."
+        },
+        "examplePrompt": "Hello"
+      },
+      "responses": {
+        "input": {
+          "model": "Model name.",
+          "input": "The user input; for image generation the prompt is parsed from it.",
+          "tools": "Optional; Responses tool definitions.",
+          "stream": "Optional; whether to stream the response."
+        },
+        "output": {
+          "id": "The response ID.",
+          "output": "Responses-compatible output.",
+          "status": "The response status."
+        },
+        "examplePrompt": "Generate an image of a future city"
+      },
+      "search": {
+        "title": "Search",
+        "input": { "prompt": "The search question or query." },
+        "output": {
+          "answer": "The answer content from the search; the exact fields depend on the result.",
+          "sources": "Optional; search reference sources.",
+          "accountEmail": "The email of the account used for this call."
+        },
+        "examplePrompt": "Search for the latest ways to use chatgpt2api"
+      },
+      "imageGenerations": {
+        "title": "Image generation",
+        "input": {
+          "prompt": "The image generation prompt.",
+          "model": "Optional; defaults to gpt-image-2.",
+          "n": "Optional; number to generate, currently limited to 1-4.",
+          "size": "Optional; the image size.",
+          "quality": "Optional; defaults to auto.",
+          "responseFormat": "Optional; defaults to b64_json."
+        },
+        "output": {
+          "data": "The list of image results.",
+          "dataB64Json": "The base64 image content.",
+          "dataUrl": "Some configurations return an image URL instead."
+        },
+        "examplePrompt": "A minimalist product poster"
+      },
+      "imageEdits": {
+        "title": "Image editing",
+        "input": {
+          "image": "The reference image; supports multipart upload as well as a JSON image link.",
+          "prompt": "The edit prompt.",
+          "model": "Optional; defaults to gpt-image-2.",
+          "n": "Optional; number to generate, currently limited to 1-4.",
+          "size": "Optional; the image size.",
+          "quality": "Optional; defaults to auto."
+        },
+        "output": {
+          "data": "The list of edited image results.",
+          "dataB64Json": "The base64 image content.",
+          "dataUrl": "Some configurations return an image URL instead."
+        },
+        "examplePrompt": "Change it to a cyberpunk night scene"
+      },
+      "pptTask": {
+        "title": "Create a PPT task",
+        "input": {
+          "prompt": "The PPT requirements; can be left blank, but a full topic, page count, style, and content structure is recommended.",
+          "base64Images": "Optional; image data URLs/base64 strings used as PPT reference material.",
+          "clientTaskId": "Optional; a client-side idempotency task ID; resubmitting the same ID returns the existing task."
+        },
+        "output": {
+          "idOrTaskId": "The task ID, used to poll the status.",
+          "status": "The task status.",
+          "kind": "The task type.",
+          "createdUpdatedAt": "The task creation and update time."
+        },
+        "examplePrompt": "Create a quarterly business review PPT within 8 pages"
+      },
+      "psdTask": {
+        "title": "Create a PSD task",
+        "input": {
+          "prompt": "The PSD split and composition requirements, e.g. keeping layers, position, background, and an asset zip.",
+          "base64Images": "Required; at least one image data URL/base64 string, used as the PSD source image.",
+          "clientTaskId": "Optional; a client-side idempotency task ID."
+        },
+        "output": {
+          "idOrTaskId": "The task ID, used to poll the status.",
+          "status": "The task status.",
+          "kind": "The task type.",
+          "error": "The error message returned on failure."
+        },
+        "examplePrompt": "Split the poster elements by their original positions and compose an editable PSD"
+      },
+      "taskStatus": {
+        "title": "Task status lookup",
+        "input": { "ids": "Optional; a comma-separated list of task IDs; omit it to return all editable file tasks for the current user." },
+        "output": {
+          "items": "The task list. A successful task's result includes primary_url and zip_url.",
+          "missingIds": "When querying specific ids, the task IDs that were not found.",
+          "resultPrimaryUrl": "The primary file download address.",
+          "resultZipUrl": "The asset zip download address."
+        }
+      },
+      "fileDownload": {
+        "title": "Download a result file",
+        "input": { "filePath": "Returned by a task's result.primary_url or result.zip_url; you normally do not need to build it manually." },
+        "output": { "binary": "Returns a pptx/psd/zip file stream." }
+      }
+    }
+  },
+  "userKeys": {
+    "header": {
+      "title": "User key management",
+      "description": "Create dedicated keys for regular users; a regular user can only access the image page and cannot view settings or the account pool.",
+      "createButton": "Create user key"
+    },
+    "revealedKey": {
+      "title": "The new key is shown only once, save it now:",
+      "copyButton": "Copy"
+    },
+    "empty": {
+      "description": "No regular user keys yet. Click the button in the top-right corner to create one and share it with others."
+    },
+    "item": {
+      "badge": { "enabled": "Enabled", "disabled": "Disabled" },
+      "createdAt": "Created {{date}}",
+      "lastUsedAt": "Last used {{date}}",
+      "editButton": "Edit",
+      "deleteButton": "Delete",
+      "actions": { "enable": "Enable", "disable": "Disable" }
+    },
+    "namePlaceholder": "e.g. Designer A, temporary ops account",
+    "createDialog": {
+      "title": "Create user key",
+      "description": "Optionally enter a note name to tell different holders apart; a raw key that can only be viewed once is generated after creation.",
+      "nameLabel": "Name (optional)",
+      "createButton": "Create"
+    },
+    "deleteDialog": {
+      "title": "Delete user key",
+      "description": "Delete the user key \"{{name}}\"? Once deleted, this key can no longer call the API.",
+      "confirmButton": "Delete"
+    },
+    "editDialog": {
+      "title": "Edit user key",
+      "description": "You can change the note name; to replace the dedicated key, enter the new raw key directly. Leave it blank to keep the current key unchanged.",
+      "nameLabel": "Name",
+      "newKeyLabel": "New dedicated key (optional)",
+      "newKeyPlaceholder": "e.g. sk-your-custom-user-key",
+      "newKeyHint": "The old key is invalidated immediately after saving and the new key takes effect. The system only ever stores a hash and never redisplays the current key.",
+      "saveButton": "Save"
+    },
+    "toasts": {
+      "loadFailed": "Failed to load user keys",
+      "createSuccess": "User key created",
+      "createFailed": "Failed to create the user key",
+      "enableSuccess": "User key enabled",
+      "disableSuccess": "User key disabled",
+      "updateFailed": "Failed to update the user key",
+      "deleteSuccess": "User key deleted",
+      "deleteFailed": "Failed to delete the user key",
+      "editKeySuccess": "User key updated",
+      "editNameSuccess": "User name updated",
+      "copySuccess": "Copied to clipboard",
+      "copyFailed": "Copy failed, please copy manually"
+    }
+  },
+  "sub2api": {
+    "header": {
+      "title": "Sub2API connection management",
+      "description": "After configuring a Sub2API server, you can query its OpenAI OAuth accounts and bulk-import them into the local account pool.",
+      "connectionCount_one": "{{count}} connection",
+      "connectionCount_other": "{{count}} connections"
+    },
+    "actions": {
+      "addConnection": "Add connection",
+      "edit": "Edit",
+      "delete": "Delete",
+      "sync": "Sync"
+    },
+    "empty": {
+      "title": "No Sub2API connections yet",
+      "description": "Click \"Add connection\" to save your Sub2API info."
+    },
+    "item": {
+      "group": "Group {{id}}",
+      "allGroups": "All groups",
+      "importJobLabel": "Import task",
+      "importStatus": "Status {{status}}, processed {{completed}}/{{total}}",
+      "jobMeta": "Task {{jobId}} · {{createdAt}}",
+      "added": "Added {{count}}",
+      "skipped": "Skipped {{count}}",
+      "refreshed": "Refreshed {{count}}",
+      "failed": "Failed {{count}}"
+    },
+    "help": {
+      "title": "How to use",
+      "step1": "Enter the Sub2API address and admin account (or Admin API Key), then save it as a connection.",
+      "step2": "Clicking \"Sync\" on a connection fetches its account list filtered by platform=openai and type=oauth.",
+      "step3": "After you check the accounts you need, the backend fetches their access_token concurrently, then auto-imports them into the local account pool and refreshes their status.",
+      "step4": "Only the access_token from the sub2api credentials is read; fields such as refresh_token are never written locally."
+    },
+    "dialog": {
+      "titleEdit": "Edit connection",
+      "descriptionEdit": "Update the Sub2API connection info",
+      "descriptionAdd": "Add a new Sub2API connection",
+      "nameLabel": "Name (optional)",
+      "namePlaceholder": "e.g. self-hosted sub2api",
+      "urlLabel": "Sub2API address",
+      "authModeLabel": "Auth method",
+      "authModePassword": "Admin email + password",
+      "emailLabel": "Admin email",
+      "passwordLabel": "Admin password",
+      "passwordPlaceholderKeep": "Leave blank to keep the current password",
+      "apiKeyPlaceholderKeep": "Leave blank to keep the current key",
+      "groupLabel": "Group (optional)",
+      "selectGroupPlaceholder": "Select a group",
+      "allGroupsUnrestricted": "All groups (no restriction)",
+      "ungrouped": "Ungrouped",
+      "groupPlaceholder": "Leave blank to sync all groups; or enter a group ID / ungrouped",
+      "groupSyncHint": "Sync filters by group ID; leave blank = sync all OpenAI OAuth accounts.",
+      "fetchGroups": "Fetch groups",
+      "refetchGroups": "Refetch",
+      "groupHintNew": "After adding the connection, click \"Fetch groups\" in the edit dialog to pick a specific group.",
+      "saveButton": "Save changes",
+      "addButton": "Add"
+    },
+    "browser": {
+      "title": "Select accounts to import",
+      "descriptionFrom": "From {{name}}",
+      "descriptionDefault": "OpenAI OAuth accounts on Sub2API",
+      "searchPlaceholder": "Search by email, plan, or name",
+      "pageSizeOption": "{{size}} / page",
+      "deselectAll": "Deselect all",
+      "selectAllFiltered": "Select all filtered results",
+      "filteredCount": "{{total}} filtered",
+      "selectedCount": "{{total}} selected",
+      "emptyAccounts": "No matching accounts",
+      "expiresAt": "Expires {{date}}",
+      "pageRange": "{{from}}-{{to}} of {{total}}",
+      "prevPage": "Previous page",
+      "nextPage": "Next page",
+      "importSelected": "Import selected accounts"
+    },
+    "toasts": {
+      "loadFailed": "Failed to load Sub2API connections",
+      "pollFailed": "Failed to query import progress",
+      "saveConnectionFirst": "Save the connection first, then fetch groups",
+      "noRemoteGroups": "No groups configured on the remote server",
+      "fetchedGroups_one": "Fetched {{count}} group",
+      "fetchedGroups_other": "Fetched {{count}} groups",
+      "fetchGroupsFailed": "Failed to fetch groups",
+      "baseUrlRequired": "Enter the Sub2API address",
+      "emailRequired": "Enter the admin email",
+      "passwordRequired": "Enter the admin password",
+      "apiKeyRequired": "Enter the Admin API Key",
+      "updateSuccess": "Connection updated",
+      "createSuccess": "Connection added",
+      "saveFailed": "Save failed",
+      "deleteSuccess": "Connection deleted",
+      "deleteFailed": "Delete failed",
+      "fetchAccountsSuccess_one": "Fetched successfully: {{count}} OpenAI account",
+      "fetchAccountsSuccess_other": "Fetched successfully: {{count}} OpenAI accounts",
+      "fetchAccountsFailed": "Failed to fetch Sub2API accounts",
+      "selectAccountsFirst": "Select the accounts to import first",
+      "importStarted": "Import task started",
+      "importStartFailed": "Failed to start the import"
+    }
+  },
+  "cpa": {
+    "header": {
+      "title": "CPA connection management",
+      "description": "Configure a connection first, then query remote accounts as needed and choose which ones to import into the local account pool.",
+      "connectionCount_one": "{{count}} connection",
+      "connectionCount_other": "{{count}} connections"
+    },
+    "actions": {
+      "addConnection": "Add connection",
+      "edit": "Edit",
+      "delete": "Delete",
+      "sync": "Sync"
+    },
+    "empty": {
+      "title": "No CPA connections yet",
+      "description": "Click \"Add connection\" to save your CLIProxyAPI info."
+    },
+    "item": {
+      "importJobLabel": "Import task",
+      "importStatus": "Status {{status}}, processed {{completed}}/{{total}}",
+      "jobMeta": "Task {{jobId}} · {{createdAt}}",
+      "added": "Added {{count}}",
+      "skipped": "Skipped {{count}}",
+      "refreshed": "Refreshed {{count}}",
+      "failed": "Failed {{count}}"
+    },
+    "help": {
+      "title": "How to use",
+      "step1": "When the page loads, it first reads the CPA connections already configured in the system.",
+      "step2": "Clicking \"Sync\" on a connection first reads the remote account list and shows it for you to choose from.",
+      "step3": "After you confirm the selection, the backend downloads the corresponding access_token in the background and imports it into the local account pool.",
+      "step4": "The frontend only polls the import progress and does not participate in the download directly."
+    },
+    "dialog": {
+      "titleEdit": "Edit connection",
+      "descriptionEdit": "Update the CPA connection info",
+      "descriptionAdd": "Add a new CLIProxyAPI connection",
+      "nameLabel": "Name (optional)",
+      "namePlaceholder": "e.g. main pool, backup pool",
+      "urlLabel": "CPA address",
+      "secretKeyPlaceholderKeep": "Leave blank to keep the current key",
+      "secretKeyPlaceholderNew": "CPA management secret key",
+      "saveButton": "Save changes",
+      "addButton": "Add"
+    },
+    "toasts": {
+      "loadFailed": "Failed to load CPA connections",
+      "baseUrlRequired": "Enter the CPA address",
+      "secretKeyRequired": "Enter the Secret Key",
+      "updateSuccess": "Connection updated",
+      "createSuccess": "Connection added",
+      "saveFailed": "Save failed",
+      "deleteSuccess": "Connection deleted",
+      "deleteFailed": "Delete failed"
+    }
+  },
+  "importBrowser": {
+    "title": "Select accounts to import",
+    "descriptionFrom": "From {{name}}",
+    "descriptionDefault": "Remote account list",
+    "searchPlaceholder": "Search by email or file name",
+    "pageSizeOption": "{{size}} / page",
+    "deselectAll": "Deselect all",
+    "selectAllFiltered": "Select all filtered results",
+    "filteredCount": "{{total}} filtered",
+    "selectedCount": "{{total}} selected",
+    "emptyAccounts": "No matching remote accounts",
+    "pageRange": "{{from}}-{{to}} of {{total}}",
+    "prevPage": "Previous page",
+    "nextPage": "Next page",
+    "importSelected": "Import selected accounts",
+    "toasts": {
+      "fetchFilesSuccess_one": "Fetched successfully: {{count}} remote account",
+      "fetchFilesSuccess_other": "Fetched successfully: {{count}} remote accounts",
+      "fetchFilesFailed": "Failed to fetch remote accounts",
+      "selectFilesFirst": "Select the accounts to import first",
+      "importStarted": "Import task started",
+      "importStartFailed": "Failed to start the import"
+    }
+  },
+  "thirdParty": {
+    "saveButton": "Save",
+    "enableCanvas": "Enable infinite canvas",
+    "enabledBadge": "Enabled",
+    "disabledBadge": "Disabled",
+    "entryTitle": "Infinite canvas entry",
+    "entryDescription": "When enabled, an entry appears in the top navigation; the redirect automatically includes this project's address and the current key.",
+    "urlLabel": "Infinite canvas address",
+    "urlHint": "The top-nav entry appends apiKey and baseUrl parameters on redirect; when disabled, it is hidden from the top navigation.",
+    "warningHint": "This entry is for personal testing only; for long-term use, we recommend self-hosting infinite canvas locally."
+  }
+}

@@ -18,6 +18,7 @@ from curl_cffi import requests
 from services.config import BASE_DIR, CONFIG_FILE, DATA_DIR, config, load_backup_state, save_backup_state
 from services.image_storage_service import IMAGE_INDEX_FILE
 from services.image_tags_service import TAGS_FILE
+from utils.i18n import get_locale, t
 
 
 def _utc_now() -> datetime:
@@ -68,10 +69,10 @@ def _openssl_encrypt(data: bytes, passphrase: str) -> bytes:
             env=env,
         )
     except FileNotFoundError as exc:
-        raise BackupError("当前环境缺少 openssl，无法执行加密备份") from exc
+        raise BackupError(t("backup.openssl_missing_encrypt")) from exc
     except subprocess.CalledProcessError as exc:
-        detail = (exc.stderr or b"").decode("utf-8", errors="replace").strip()
-        raise BackupError(f"加密备份失败：{detail or 'openssl 执行失败'}") from exc
+        detail = (exc.stderr or b"").decode("utf-8", errors="replace").strip() or t("backup.openssl_exec_failed_generic")
+        raise BackupError(t("backup.encrypt_failed").format(detail=detail)) from exc
     return result.stdout
 
 
@@ -98,10 +99,10 @@ def _openssl_decrypt(data: bytes, passphrase: str) -> bytes:
             env=env,
         )
     except FileNotFoundError as exc:
-        raise BackupError("当前环境缺少 openssl，无法解密备份内容") from exc
+        raise BackupError(t("backup.openssl_missing_decrypt")) from exc
     except subprocess.CalledProcessError as exc:
-        detail = (exc.stderr or b"").decode("utf-8", errors="replace").strip()
-        raise BackupError(f"解密备份失败：{detail or 'openssl 执行失败'}") from exc
+        detail = (exc.stderr or b"").decode("utf-8", errors="replace").strip() or t("backup.openssl_exec_failed_generic")
+        raise BackupError(t("backup.decrypt_failed").format(detail=detail)) from exc
     return result.stdout
 
 
@@ -153,7 +154,8 @@ class CloudflareR2Client:
         if not self.bucket:
             missing.append("Bucket")
         if missing:
-            raise BackupError(f"R2 配置不完整：缺少 {'、'.join(missing)}")
+            separator = "、" if get_locale() == "zh" else ", "
+            raise BackupError(t("backup.config_incomplete").format(missing=separator.join(missing)))
 
     @property
     def endpoint(self) -> str:
@@ -239,7 +241,7 @@ class CloudflareR2Client:
         self.validate()
         response = self._request("GET", query={"list-type": "2", "max-keys": "1"}, timeout=30.0)
         if response.status_code >= 400:
-            raise BackupError(f"连接 R2 失败：HTTP {response.status_code}")
+            raise BackupError(t("backup.connect_failed").format(status=response.status_code))
         return {"ok": True, "status": int(response.status_code)}
 
     def upload_bytes(self, key: str, payload: bytes, *, content_type: str, metadata: dict[str, str] | None = None) -> dict[str, object]:
@@ -249,18 +251,18 @@ class CloudflareR2Client:
                 headers[f"x-amz-meta-{item_key}"] = str(item_value)
         response = self._request("PUT", key, body=payload, extra_headers=headers)
         if response.status_code >= 400:
-            raise BackupError(f"上传备份失败：HTTP {response.status_code}")
+            raise BackupError(t("backup.upload_failed").format(status=response.status_code))
         return {"key": key, "etag": str(response.headers.get("etag") or "").strip('"')}
 
     def delete_object(self, key: str) -> None:
         response = self._request("DELETE", key, timeout=30.0)
         if response.status_code >= 400 and response.status_code != 404:
-            raise BackupError(f"删除备份失败：HTTP {response.status_code}")
+            raise BackupError(t("backup.delete_failed").format(status=response.status_code))
 
     def download_bytes(self, key: str) -> bytes:
         response = self._request("GET", key, timeout=60.0)
         if response.status_code >= 400:
-            raise BackupError(f"读取备份失败：HTTP {response.status_code}")
+            raise BackupError(t("backup.read_failed").format(status=response.status_code))
         return bytes(response.content or b"")
 
     def list_objects(self) -> list[dict[str, object]]:
@@ -272,7 +274,7 @@ class CloudflareR2Client:
                 query["continuation-token"] = continuation
             response = self._request("GET", query=query, timeout=30.0)
             if response.status_code >= 400:
-                raise BackupError(f"获取备份列表失败：HTTP {response.status_code}")
+                raise BackupError(t("backup.list_failed").format(status=response.status_code))
             text = response.text
             for block in text.split("<Contents>")[1:]:
                 key = _clean(block.split("<Key>", 1)[1].split("</Key>", 1)[0]) if "<Key>" in block else ""
@@ -418,7 +420,7 @@ class BackupService:
     def delete_backup(self, key: str) -> None:
         candidate = _clean(key)
         if not candidate:
-            raise BackupError("备份对象 key 不能为空")
+            raise BackupError(t("backup.key_required"))
         client = CloudflareR2Client(config.get_backup_settings())
         try:
             client.delete_object(candidate)
@@ -428,7 +430,7 @@ class BackupService:
     def download_backup(self, key: str) -> dict[str, object]:
         candidate = _clean(key)
         if not candidate:
-            raise BackupError("备份对象 key 不能为空")
+            raise BackupError(t("backup.key_required"))
         client = CloudflareR2Client(config.get_backup_settings())
         try:
             payload = client.download_bytes(candidate)
@@ -438,7 +440,7 @@ class BackupService:
         if candidate.endswith(".enc"):
             passphrase = _clean(config.get_backup_settings().get("passphrase"))
             if not passphrase:
-                raise BackupError("当前未配置加密口令，无法下载并解密已加密备份")
+                raise BackupError(t("backup.passphrase_missing_download"))
             payload = _openssl_decrypt(payload, passphrase)
             if name.endswith(".enc"):
                 name = name[:-4] or "backup.tar.gz"
@@ -453,7 +455,7 @@ class BackupService:
     def get_backup_detail(self, key: str) -> dict[str, object]:
         candidate = _clean(key)
         if not candidate:
-            raise BackupError("备份对象 key 不能为空")
+            raise BackupError(t("backup.key_required"))
         client = CloudflareR2Client(config.get_backup_settings())
         try:
             payload = client.download_bytes(candidate)
@@ -469,7 +471,7 @@ class BackupService:
         with self._lock:
             current = self.get_status()
             if self._running:
-                raise BackupError("当前已有备份任务正在执行")
+                raise BackupError(t("backup.already_running"))
             started_at = _iso_now()
             self._running = True
             save_backup_state({
@@ -510,7 +512,7 @@ class BackupService:
         if encrypted:
             passphrase = _clean(settings.get("passphrase"))
             if not passphrase:
-                raise BackupError("已启用备份加密，但未设置加密口令")
+                raise BackupError(t("backup.passphrase_missing_encrypt"))
             payload = _openssl_encrypt(payload_raw, passphrase)
             suffix = ".tar.gz.enc"
         else:
@@ -540,7 +542,7 @@ class BackupService:
         if key.endswith(".enc"):
             passphrase = _clean(config.get_backup_settings().get("passphrase"))
             if not passphrase:
-                raise BackupError("当前未配置加密口令，无法查看已加密备份")
+                raise BackupError(t("backup.passphrase_missing_view"))
             decoded = _openssl_decrypt(decoded, passphrase)
         return self._decode_archive_detail(decoded)
 
@@ -596,7 +598,7 @@ class BackupService:
                         "sha256": _sha256_hex(raw),
                     })
         except tarfile.TarError as exc:
-            raise BackupError("解析备份压缩包失败，备份可能已损坏") from exc
+            raise BackupError(t("backup.archive_corrupted")) from exc
         files.sort(key=lambda item: str(item.get("name") or ""))
         snapshots.sort(key=lambda item: str(item.get("name") or ""))
         return {

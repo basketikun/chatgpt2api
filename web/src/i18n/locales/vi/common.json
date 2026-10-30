@@ -1,0 +1,72 @@
+{
+  "app": {
+    "title": "Kho tài khoản ChatGPT"
+  },
+  "language": {
+    "label": "Ngôn ngữ",
+    "zh": "中文",
+    "en": "English",
+    "vi": "Tiếng Việt"
+  },
+  "logType": { "call": "Nhật ký gọi", "account": "Nhật ký quản lý tài khoản" },
+  "nav": {
+    "openMenu": "Mở điều hướng",
+    "infiniteCanvas": "Canvas vô hạn",
+    "image": "Tạo ảnh",
+    "imageUser": "Vẽ ảnh",
+    "accounts": "Kho tài khoản",
+    "imageManager": "Quản lý ảnh",
+    "logs": "Nhật ký",
+    "debug": "Gỡ lỗi",
+    "settings": "Cài đặt",
+    "logout": "Đăng xuất"
+  },
+  "role": {
+    "admin": "Quản trị viên",
+    "user": "Người dùng"
+  },
+  "canvasDialog": {
+    "title": "Chuyển đến ứng dụng bên thứ ba",
+    "warning": "Lối vào này chỉ dành cho mục đích thử nghiệm cá nhân, nên tự triển khai trên máy riêng nếu dùng lâu dài. Địa chỉ chuyển hướng sẽ mặc định kèm theo địa chỉ dự án này và khóa hiện tại để tự động điền thông tin kết nối; nếu không yên tâm, bạn có thể hủy rồi tự vào ứng dụng và nhập thủ công.",
+    "fullUrl": "Địa chỉ chuyển hướng đầy đủ",
+    "cancel": "Hủy",
+    "continue": "Tiếp tục chuyển hướng"
+  },
+  "imageLightbox": {
+    "title": "Xem trước hình ảnh",
+    "download": "Tải ảnh xuống",
+    "close": "Đóng",
+    "prev": "Ảnh trước",
+    "next": "Ảnh sau"
+  },
+  "themeToggle": {
+    "label": "Chuyển giao diện"
+  },
+  "dateRange": {
+    "placeholder": "Chọn khoảng ngày",
+    "rangeLabel": "{{startDate}} đến {{endDate}}"
+  },
+  "versionDialog": {
+    "viewUpdates": "Xem cập nhật phiên bản",
+    "title": "Cập nhật phiên bản",
+    "currentVersion": "Phiên bản hiện tại",
+    "latestVersion": "Phiên bản mới nhất",
+    "checking": "Đang kiểm tra...",
+    "checkUpdate": "Kiểm tra cập nhật",
+    "unreleased": "Chưa phát hành",
+    "latest": "Mới nhất",
+    "current": "Hiện tại",
+    "githubUpdate": "Đến GitHub để cập nhật",
+    "typeNew": "Mới",
+    "typeFix": "Sửa lỗi",
+    "typeUpdate": "Điều chỉnh",
+    "typeDocs": "Tài liệu"
+  },
+  "versionCheck": {
+    "fetchSuccess": "Đã lấy được thông tin phiên bản mới nhất",
+    "fetchFailed": "Lấy thông tin phiên bản mới nhất thất bại"
+  },
+  "errors": {
+    "requestFailed": "Yêu cầu thất bại ({{status}})"
+  }
+}

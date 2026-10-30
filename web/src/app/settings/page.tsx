@@ -2,6 +2,8 @@
 
 import { useEffect, useRef } from "react";
 import { LoaderCircle } from "lucide-react";
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuthGuard } from "@/lib/use-auth-guard";
@@ -19,16 +21,18 @@ import { ThirdPartyAppsCard } from "./components/third-party-apps-card";
 import { UserKeysCard } from "./components/user-keys-card";
 import { useSettingsStore } from "./store";
 
-const settingsTabs = [
-  { value: "basic", title: "基础配置" },
-  { value: "backup", title: "备份" },
-  { value: "keys", title: "用户密钥" },
-  { value: "api-docs", title: "接口接入" },
-  { value: "canvas", title: "画布入口" },
-  { value: "proxy", title: "FlareSolverr" },
-  { value: "cpa", title: "CPA" },
-  { value: "sub2api", title: "Sub2API" },
-];
+function buildSettingsTabs(t: TFunction) {
+  return [
+    { value: "basic", title: t("core.tabs.basic") },
+    { value: "backup", title: t("core.tabs.backup") },
+    { value: "keys", title: t("core.tabs.keys") },
+    { value: "api-docs", title: t("core.tabs.apiDocs") },
+    { value: "canvas", title: t("core.tabs.canvas") },
+    { value: "proxy", title: "FlareSolverr" },
+    { value: "cpa", title: "CPA" },
+    { value: "sub2api", title: "Sub2API" },
+  ];
+}
 
 function SettingsDataController() {
   const didLoadRef = useRef(false);
@@ -75,6 +79,8 @@ function SettingsDataController() {
 }
 
 function SettingsPageContent() {
+  const { t } = useTranslation("settings");
+  const settingsTabs = buildSettingsTabs(t);
   return (
     <>
       <SettingsDataController />

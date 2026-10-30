@@ -1,5 +1,6 @@
 "use client";
 
+import { LocaleToggle } from "@/components/locale-toggle";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { VersionReleaseDialog } from "@/components/version-release-dialog";
 import { cn } from "@/lib/utils";
@@ -7,6 +8,7 @@ import { cn } from "@/lib/utils";
 export function HeaderActions({ className, showGithubText = true }: { className?: string; showGithubText?: boolean }) {
   return (
     <div className={cn("flex items-center gap-2 sm:gap-3", className)}>
+      <LocaleToggle />
       <ThemeToggle />
       <a
         href="https://github.com/basketikun/chatgpt2api"

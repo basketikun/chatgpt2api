@@ -1,0 +1,72 @@
+{
+  "app": {
+    "title": "ChatGPT 号池管理"
+  },
+  "language": {
+    "label": "语言",
+    "zh": "中文",
+    "en": "English",
+    "vi": "Tiếng Việt"
+  },
+  "logType": { "call": "调用日志", "account": "账号管理日志" },
+  "nav": {
+    "openMenu": "打开导航",
+    "infiniteCanvas": "无限画布",
+    "image": "生图",
+    "imageUser": "画图",
+    "accounts": "号池管理",
+    "imageManager": "图片管理",
+    "logs": "日志管理",
+    "debug": "调试",
+    "settings": "设置",
+    "logout": "退出"
+  },
+  "role": {
+    "admin": "管理员",
+    "user": "普通用户"
+  },
+  "canvasDialog": {
+    "title": "跳转到三方应用",
+    "warning": "该入口仅供个人测试使用，建议自行本机部署后再长期使用。跳转地址会默认带上本项目地址和当前密钥，用于自动填充连接信息；如果不放心，可以取消后手动前往应用并自行输入。",
+    "fullUrl": "完整跳转地址",
+    "cancel": "取消",
+    "continue": "继续跳转"
+  },
+  "imageLightbox": {
+    "title": "图片预览",
+    "download": "下载图片",
+    "close": "关闭",
+    "prev": "上一张",
+    "next": "下一张"
+  },
+  "themeToggle": {
+    "label": "切换主题"
+  },
+  "dateRange": {
+    "placeholder": "选择日期范围",
+    "rangeLabel": "{{startDate}} 至 {{endDate}}"
+  },
+  "versionDialog": {
+    "viewUpdates": "查看版本更新",
+    "title": "版本更新",
+    "currentVersion": "当前版本",
+    "latestVersion": "最新版本",
+    "checking": "检查中...",
+    "checkUpdate": "检查更新",
+    "unreleased": "未发布",
+    "latest": "最新",
+    "current": "当前",
+    "githubUpdate": "前往 GitHub 更新",
+    "typeNew": "新增",
+    "typeFix": "修复",
+    "typeUpdate": "调整",
+    "typeDocs": "文档"
+  },
+  "versionCheck": {
+    "fetchSuccess": "已获取最新版本信息",
+    "fetchFailed": "获取最新版本信息失败"
+  },
+  "errors": {
+    "requestFailed": "请求失败 ({{status}})"
+  }
+}

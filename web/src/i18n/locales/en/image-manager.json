@@ -1,0 +1,93 @@
+{
+  "filters": {
+    "clear": "Clear filters",
+    "search": "Search",
+    "deleteMatchingDate": "Delete matching date"
+  },
+  "tagsFilter": {
+    "label": "Filter by tag:",
+    "clear": "Clear"
+  },
+  "storage": {
+    "diskTotal": "Total disk space",
+    "diskFree": "Free space",
+    "imageCount": "Image count",
+    "imageSize": "Image storage used",
+    "quickActionsLabel": "Quick actions",
+    "loading": "Loading storage info...",
+    "loadFailed": "Failed to load storage info"
+  },
+  "storageActions": {
+    "compress": "Compress",
+    "compressFailed": "Compression failed",
+    "compressSuccess": "Compressed {{savedMb}}MB",
+    "deleteByDate": "Delete by date",
+    "cleanupTo": "Clean up to",
+    "cleanupFailed": "Cleanup failed",
+    "cleanupSuccess_one": "Deleted {{count}} image, freed {{freedMb}}MB",
+    "cleanupSuccess_other": "Deleted {{count}} images, freed {{freedMb}}MB",
+    "remainingUnit": "remaining"
+  },
+  "byDateDialog": {
+    "title": "Delete images by date",
+    "beforeSuffix": "before",
+    "warning": "This cannot be undone. It will permanently delete all images matching the date, along with their thumbnails."
+  },
+  "actions": {
+    "delete": "Delete",
+    "confirmDelete": "Confirm delete",
+    "refresh": "Refresh"
+  },
+  "toolbar": {
+    "total": "{{total}} total",
+    "filteredFrom": "(filtered from {{total}})",
+    "selectPage": "Select all on this page",
+    "selectAll": "Select all results",
+    "selected": "{{total}} selected",
+    "clearSelection": "Clear selection",
+    "downloadSelected": "Download selected",
+    "deleteSelected": "Delete selected"
+  },
+  "gallery": {
+    "deleteImageTitle": "Delete image",
+    "urlCopied": "Image URL copied",
+    "addTag": "Add tag",
+    "tagNamePlaceholder": "Enter tag name"
+  },
+  "pagination": {
+    "info": "Page {{page}} / {{pageCount}}, {{total}} total"
+  },
+  "empty": {
+    "noImages": "No images found"
+  },
+  "deleteDialog": {
+    "description": "Delete this image? This cannot be undone."
+  },
+  "bulkDeleteDialog": {
+    "titleFiltered": "Delete images matching date",
+    "titleSelected": "Delete selected images",
+    "description_one": "Delete {{count}} image? This cannot be undone.",
+    "description_other": "Delete {{count}} images? This cannot be undone."
+  },
+  "tagDeleteDialog": {
+    "title": "Delete tag",
+    "descriptionBefore": "Delete the tag",
+    "descriptionAfter": "? This removes it from all images."
+  },
+  "toasts": {
+    "loadImagesFailed": "Failed to load images",
+    "imageDeleted": "Image deleted",
+    "deleteFailed": "Delete failed",
+    "deleteImagesFailed": "Failed to delete images",
+    "deleteSuccessCount_one": "Deleted {{count}} image",
+    "deleteSuccessCount_other": "Deleted {{count}} images",
+    "downloadFailed": "Download failed",
+    "downloadSuccessCount_one": "Downloaded {{count}} image",
+    "downloadSuccessCount_other": "Downloaded {{count}} images",
+    "setTagsFailed": "Failed to set tags",
+    "tagExists": "Tag already exists",
+    "deleteTagFailed": "Failed to delete tag",
+    "tagDeleted_one": "Tag \"{{tag}}\" deleted, affected {{count}} image",
+    "tagDeleted_other": "Tag \"{{tag}}\" deleted, affected {{count}} images"
+  }
+}

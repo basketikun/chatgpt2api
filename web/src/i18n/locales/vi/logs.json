@@ -1,0 +1,58 @@
+{
+  "header": {
+    "title": "Quản lý nhật ký"
+  },
+  "filters": {
+    "clear": "Xóa bộ lọc",
+    "search": "Tìm kiếm"
+  },
+  "table": {
+    "time": "Thời gian",
+    "type": "Loại",
+    "tokenName": "Tên token",
+    "duration": "Thời gian gọi",
+    "status": "Trạng thái",
+    "image": "Hình ảnh",
+    "summary": "Tóm tắt",
+    "actions": "Thao tác"
+  },
+  "status": {
+    "success": "Thành công",
+    "failed": "Thất bại"
+  },
+  "toolbar": {
+    "total": "Tổng {{total}} mục",
+    "selectPage": "Chọn tất cả trang này",
+    "selectAll": "Chọn tất cả kết quả",
+    "selected": "Đã chọn {{total}} mục",
+    "refresh": "Làm mới",
+    "clearSelection": "Bỏ chọn",
+    "deleteSelected": "Xóa mục đã chọn"
+  },
+  "rowActions": {
+    "viewDetail": "Xem chi tiết",
+    "delete": "Xóa",
+    "previewImage": "Xem trước hình ảnh"
+  },
+  "empty": {
+    "noLogs": "Không tìm thấy nhật ký"
+  },
+  "pagination": {
+    "info": "Trang {{page}} / {{pageCount}}, tổng {{total}} mục"
+  },
+  "detail": {
+    "title": "Chi tiết nhật ký"
+  },
+  "deleteDialog": {
+    "titleSingle": "Xóa nhật ký",
+    "titleMultiple": "Xóa các nhật ký đã chọn",
+    "description": "Xác nhận xóa {{count}} nhật ký? Không thể khôi phục sau khi xóa.",
+    "cancel": "Hủy",
+    "confirm": "Xác nhận xóa"
+  },
+  "toasts": {
+    "loadFailed": "Tải nhật ký thất bại",
+    "deleteFailed": "Xóa nhật ký thất bại",
+    "deleteSuccess": "Đã xóa {{count}} nhật ký"
+  }
+}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import webConfig from "@/constants/common-env";
@@ -32,6 +33,7 @@ function isNewerVersion(latestVersion: string, currentVersion: string) {
 }
 
 export function useVersionCheck() {
+  const { t } = useTranslation("common");
   const currentVersion = webConfig.appVersion;
   const localReleases = useMemo(readLocalReleases, []);
   const [latestVersion, setLatestVersion] = useState(currentVersion);
@@ -55,16 +57,16 @@ export function useVersionCheck() {
         ]);
         setLatestVersion(version.trim() || currentVersion);
         if (changelog.trim()) setReleases(parseChangelog(changelog));
-        if (showMessage) toast.success("已获取最新版本信息");
+        if (showMessage) toast.success(t("versionCheck.fetchSuccess"));
       } catch {
         setLatestVersion(currentVersion);
         setReleases(localReleases);
-        if (showMessage) toast.error("获取最新版本信息失败");
+        if (showMessage) toast.error(t("versionCheck.fetchFailed"));
       } finally {
         setChecking(false);
       }
     },
-    [currentVersion, localReleases],
+    [currentVersion, localReleases, t],
   );
 
   const openReleaseModal = () => {

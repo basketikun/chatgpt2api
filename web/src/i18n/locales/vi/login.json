@@ -1,0 +1,15 @@
+{
+  "header": {
+    "title": "Chào mừng trở lại",
+    "subtitle": "Nhập khóa để tiếp tục sử dụng chức năng quản lý tài khoản và tạo ảnh."
+  },
+  "form": {
+    "label": "Khóa",
+    "placeholder": "Nhập khóa",
+    "submit": "Đăng nhập"
+  },
+  "errors": {
+    "keyRequired": "Vui lòng nhập khóa",
+    "loginFailed": "Đăng nhập thất bại"
+  }
+}

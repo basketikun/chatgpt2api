@@ -1,0 +1,96 @@
+{
+  "page": {
+    "tabs": {
+      "skills": "Tìm Skills",
+      "search": "Tìm kiếm"
+    }
+  },
+  "pptPanel": {
+    "title": "Tạo PPT",
+    "defaultPrompt": "Cần làm một bản PPT \"Báo cáo vận hành thương mại điện tử Q2/2026\", dùng để báo cáo trong cuộc họp quý của ban lãnh đạo công ty, tổng số trang giới hạn trong 8 trang, phong cách thiên về công nghệ - doanh nghiệp. Tập trung thể hiện tăng trưởng doanh số, tăng trưởng người dùng, hiệu quả quảng cáo và kết quả chiến dịch 618, trình bày bằng biểu đồ đường, biểu đồ cột, biểu đồ tròn và biểu đồ phễu."
+  },
+  "psdPanel": {
+    "title": "Tạo PSD",
+    "defaultPrompt": "Tách các phần tử của poster theo đúng vị trí gốc và ghép lại thành file PSD có thể chỉnh sửa, giữ nguyên nền và vị trí lớp của từng phần tử, đồng thời xuất thêm file zip chứa tư liệu của từng lớp."
+  },
+  "editableFilePanel": {
+    "status": {
+      "queued": "Đang xếp hàng",
+      "running": "Đang tạo",
+      "success": "Đã hoàn tất",
+      "error": "Thất bại"
+    },
+    "history": {
+      "title": "Lịch sử",
+      "empty": "Chưa có lịch sử"
+    },
+    "renameFallback": "Tác vụ {{kind}}",
+    "generate": "Tạo",
+    "form": {
+      "promptLabel": "Yêu cầu",
+      "referenceImagesLabel": "Ảnh tham chiếu",
+      "upload": "Tải ảnh lên",
+      "clearImages": "Xóa ảnh"
+    },
+    "resultPanel": {
+      "title": "Trạng thái tạo",
+      "empty": "Chưa có tác vụ nào",
+      "statusLabel": "Trạng thái",
+      "elapsedLabel": "Đã chạy",
+      "resultTitle": "Kết quả tạo",
+      "fileLabel": "Tệp {{format}}",
+      "zipLabel": "Gói tư liệu"
+    },
+    "dialog": {
+      "deleteOneTitle": "Xóa lịch sử",
+      "deleteAllTitle": "Xóa toàn bộ lịch sử",
+      "deleteOneDescription": "Xác nhận xóa mục lịch sử này?",
+      "deleteAllDescription": "Xác nhận xóa toàn bộ lịch sử của loại hiện tại?",
+      "confirm": "Xác nhận xóa"
+    }
+  },
+  "chatPanel": {
+    "title": "Cuộc trò chuyện",
+    "defaultInput": "Chào bạn, hãy nhớ giúp mình dự án tên là chatgpt2api nhé.",
+    "requestTitle": "Yêu cầu",
+    "reasoningEffort": {
+      "label": "Mức độ suy luận",
+      "default": "Mặc định",
+      "low": "Thấp",
+      "medium": "Trung bình",
+      "high": "Cao",
+      "xhigh": "Rất cao"
+    },
+    "imagesLabel": "Hình ảnh",
+    "selectImages": "Chọn ảnh",
+    "removeImage": "Gỡ {{name}}",
+    "send": "Gửi",
+    "clear": "Xóa",
+    "emptyConversation": "Chưa có tin nhắn nào",
+    "errors": {
+      "notImage": "{{fileName}} không phải là tệp ảnh",
+      "tooLarge": "{{fileName}} vượt quá 10MB",
+      "readFailed": "Đọc {{fileName}} thất bại"
+    }
+  },
+  "searchPanel": {
+    "intro": "Tìm kiếm trên web bằng tính năng tìm kiếm web tiên tiến của ChatGPT",
+    "defaultPrompt": "Giúp mình tìm các dự án liên quan đến chatgpt2api",
+    "placeholder": "Tìm kiếm trên web",
+    "searching": "Đang tìm kiếm...",
+    "sourcesTitle": "Nguồn"
+  },
+  "skillPanel": {
+    "zhTitle": "Câu lệnh cài đặt tiếng Trung",
+    "zhDescription": "Sao chép và gửi trực tiếp cho Codex hoặc Claude để nó cài đặt vào máy.",
+    "copied": "Đã sao chép",
+    "zhTemplate": "---\nname: chatgpt2api-search\ndescription: 当用户需要联网搜索、查询最新信息、核实事实或需要来源链接时，调用本地 chatgpt2api 搜索接口。\n---\n\n# ChatGPT2API 搜索\n\n当用户要求联网搜索、查询最新信息、核实资料、查新闻、查价格、查文档更新或需要来源链接时，使用这个 skill。\n\n## 接口\n\nPOST {{apiBaseUrl}}/v1/search\n\nHeaders:\n\nAuthorization: Bearer {{authKey}}\nContent-Type: application/json\n\nBody:\n\n{\n  \"prompt\": \"<用户要搜索的问题>\"\n}\n\n## 返回处理\n\n- 使用接口返回的 `answer` 作为主要回答。\n- 如果有 `sources`，在回答里附上来源链接。\n- 如果接口报错，简要说明错误并询问是否重试。",
+    "enTemplate": "---\nname: chatgpt2api-search\ndescription: Use when current web search is needed through this chatgpt2api server. Call the configured HTTP search endpoint with a prompt and return the answer with source URLs.\n---\n\n# ChatGPT2API Search\n\nUse this skill when the user asks for current web search, online lookup, recent information, or source-backed answers. It calls the local chatgpt2api search endpoint and returns an answer with source links.\n\n## When to use\n\n- The user asks to search the web, look something up, verify current information, or find the latest status.\n- The answer needs source URLs, recent details, prices, releases, docs, laws, schedules, or news.\n- Do not use it for purely local codebase questions unless the user explicitly asks for web search.\n\n## Request\n\nPOST {{apiBaseUrl}}/v1/search\n\nHeaders:\n\nAuthorization: Bearer {{authKey}}\nContent-Type: application/json\n\nJSON body:\n\n{\n  \"prompt\": \"<search question>\"\n}\n\n## Response handling\n\n- Use `answer` as the main response.\n- Include source URLs from `sources` when available.\n- If the endpoint returns an error, summarize the error and ask the user whether to retry.\n- Keep the final answer concise unless the user asks for detail.",
+    "zhInstallPrompt": "请帮我在本机安装一个用于联网搜索的 skill。\n\n要求：\n1. 请按你当前环境的 skill 安装规范，把它安装成本地 skill。\n2. skill 名称为：chatgpt2api-search\n3. 文件名为：SKILL.md\n4. 如果你无法确定本地 skills 目录在哪里，先告诉我需要放到哪个目录，不要猜路径。\n5. 只创建或更新这个 skill 文件，不要修改其他无关文件。\n6. SKILL.md 请写入下面的完整内容。\n\nSKILL.md 内容：\n\n```markdown\n{{skillDoc}}\n```",
+    "enInstallPrompt": "Please install a local web-search skill on this machine.\n\nRequirements:\n1. Install this as a local skill according to the skill installation rules of your current environment.\n2. Skill name: chatgpt2api-search\n3. File name: SKILL.md\n4. If you cannot determine the local skills directory, tell me which directory is required before writing files.\n5. Only create or update this skill file. Do not modify unrelated files.\n6. Write the full content below into SKILL.md.\n\nSKILL.md content:\n\n```markdown\n{{skillDoc}}\n```"
+  },
+  "actions": {
+    "download": "Tải xuống",
+    "copy": "Sao chép"
+  }
+}

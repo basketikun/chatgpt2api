@@ -1,0 +1,88 @@
+{
+  "filters": {
+    "clear": "清除筛选条件",
+    "search": "查询",
+    "deleteMatchingDate": "删除匹配日期"
+  },
+  "tagsFilter": {
+    "label": "标签筛选：",
+    "clear": "清除"
+  },
+  "storage": {
+    "diskTotal": "磁盘总量",
+    "diskFree": "剩余空间",
+    "imageCount": "图片数量",
+    "imageSize": "图片占用",
+    "quickActionsLabel": "快捷操作",
+    "loading": "加载存储信息...",
+    "loadFailed": "存储信息加载失败"
+  },
+  "storageActions": {
+    "compress": "压缩优化",
+    "compressFailed": "压缩失败",
+    "compressSuccess": "已压缩{{savedMb}}MB",
+    "deleteByDate": "按日期删除",
+    "cleanupTo": "清理至",
+    "cleanupFailed": "清理失败",
+    "cleanupSuccess": "已删除 {{count}} 张图片，释放 {{freedMb}}MB",
+    "remainingUnit": "剩余"
+  },
+  "byDateDialog": {
+    "title": "按日期删除图片",
+    "beforeSuffix": "之前的图片",
+    "warning": "此操作不可撤销，将永久删除所有匹配日期的图片及其缩略图。"
+  },
+  "actions": {
+    "delete": "删除",
+    "confirmDelete": "确认删除",
+    "refresh": "刷新"
+  },
+  "toolbar": {
+    "total": "共 {{total}} 张",
+    "filteredFrom": "（筛选自 {{total}} 张）",
+    "selectPage": "本页全选",
+    "selectAll": "全选结果",
+    "selected": "已选 {{total}} 张",
+    "clearSelection": "取消选择",
+    "downloadSelected": "下载所选",
+    "deleteSelected": "删除所选"
+  },
+  "gallery": {
+    "deleteImageTitle": "删除图片",
+    "urlCopied": "图片地址已复制",
+    "addTag": "添加标签",
+    "tagNamePlaceholder": "输入标签名"
+  },
+  "pagination": {
+    "info": "第 {{page}} / {{pageCount}} 页，共 {{total}} 张"
+  },
+  "empty": {
+    "noImages": "没有找到图片"
+  },
+  "deleteDialog": {
+    "description": "确定要删除这张图片吗？此操作不可恢复。"
+  },
+  "bulkDeleteDialog": {
+    "titleFiltered": "删除匹配日期的图片",
+    "titleSelected": "删除所选图片",
+    "description": "确认删除 {{count}} 张图片吗？删除后无法恢复。"
+  },
+  "tagDeleteDialog": {
+    "title": "删除标签",
+    "descriptionBefore": "确定要删除标签",
+    "descriptionAfter": "吗？将从所有图片中移除该标签。"
+  },
+  "toasts": {
+    "loadImagesFailed": "加载图片失败",
+    "imageDeleted": "图片已删除",
+    "deleteFailed": "删除失败",
+    "deleteImagesFailed": "删除图片失败",
+    "deleteSuccessCount": "已删除 {{count}} 张图片",
+    "downloadFailed": "下载失败",
+    "downloadSuccessCount": "已下载 {{count}} 张图片",
+    "setTagsFailed": "设置标签失败",
+    "tagExists": "标签已存在",
+    "deleteTagFailed": "删除标签失败",
+    "tagDeleted": "标签\"{{tag}}\"已删除，影响 {{count}} 张图片"
+  }
+}

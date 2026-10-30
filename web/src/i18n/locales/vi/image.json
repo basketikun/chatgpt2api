@@ -1,0 +1,160 @@
+{
+  "composer": {
+    "quality": {
+      "auto": "Tự động",
+      "low": "Thấp",
+      "medium": "Trung bình",
+      "high": "Cao"
+    },
+    "sizeSummary": "{{quality}} · {{ratio}} · {{count}} ảnh",
+    "sizeMenu": {
+      "title": "Cài đặt ảnh",
+      "modelLabel": "Mô hình",
+      "qualityLabel": "Chất lượng",
+      "sizeLabel": "Kích thước",
+      "ratioLabel": "Tỷ lệ khung hình",
+      "countLabel": "Số lượng ảnh tạo",
+      "imageUnit": "{{count}} ảnh"
+    },
+    "referenceImage": {
+      "previewLabel": "Xem trước ảnh tham chiếu {{name}}",
+      "altFallback": "Ảnh tham chiếu {{index}}",
+      "removeLabel": "Xóa ảnh tham chiếu {{name}}"
+    },
+    "placeholder": {
+      "editMode": "Mô tả cách bạn muốn chỉnh sửa ảnh tham chiếu",
+      "generateMode": "Nhập mô tả hình ảnh bạn muốn tạo, hoặc dán ảnh trực tiếp"
+    },
+    "dropOverlay": "Thả để tải lên ảnh tham chiếu",
+    "actions": {
+      "addReference": "Thêm ảnh tham chiếu",
+      "upload": "Tải lên",
+      "editImage": "Chỉnh sửa ảnh",
+      "generateImage": "Tạo ảnh"
+    },
+    "quota": {
+      "label": "Hạn mức còn lại"
+    },
+    "activeTasks": {
+      "suffix": "đang xử lý"
+    }
+  },
+  "results": {
+    "empty": {
+      "subtitle": "Giữ lịch sử cục bộ và trạng thái tác vụ trong cùng một cửa sổ, đồng thời cho phép bắt đầu chỉnh sửa không trạng thái mới từ ảnh kết quả đã có."
+    },
+    "turn": {
+      "label": "Lượt {{index}}",
+      "modeEdit": "Chỉnh sửa ảnh",
+      "modeGenerate": "Tạo ảnh từ văn bản",
+      "reuseConfig": "Dùng lại cấu hình",
+      "deletePromptLabel": "Xóa bản ghi prompt",
+      "referenceImagesLabel": "Ảnh tham chiếu của lượt này",
+      "referencePreviewLabel": "Xem trước ảnh tham chiếu {{name}}",
+      "referenceAltFallback": "Ảnh tham chiếu {{index}}",
+      "countUnit": "{{count}} ảnh",
+      "waitingQueue": "Đang chờ các tác vụ trước đó trong cuộc trò chuyện này hoàn tất",
+      "dismissErrors": "Bỏ qua lỗi",
+      "regenerateAll": "Tạo lại tất cả",
+      "deleteResultsLabel": "Xóa kết quả đã tạo"
+    },
+    "image": {
+      "addToEdit": "Thêm vào chỉnh sửa",
+      "resultLabel": "Kết quả {{index}}",
+      "downloadLabel": "Tải xuống",
+      "indexLabel": "Ảnh {{index}}/{{total}}",
+      "continueWaiting": "Tiếp tục chờ",
+      "retryOne": "Tạo lại ảnh này"
+    },
+    "status": {
+      "queued": "Đang xếp hàng",
+      "generating": "Đang xử lý",
+      "success": "Đã hoàn tất",
+      "failed": "Thất bại"
+    },
+    "progress": {
+      "gettingAccount": "Đang xác nhận tài khoản khả dụng",
+      "uploading": "Đang tải ảnh lên",
+      "bootstrapping": "Đang khởi động trang chủ",
+      "gettingToken": "Đang lấy token",
+      "preparingConversation": "Đang chuẩn bị cuộc trò chuyện",
+      "startingGeneration": "Đang bắt đầu tạo ảnh",
+      "generating": "Đang tạo",
+      "receivingImage": "Đang nhận ảnh"
+    }
+  },
+  "sidebar": {
+    "actions": {
+      "newConversation": "Cuộc trò chuyện mới"
+    },
+    "loading": "Đang tải lịch sử cuộc trò chuyện",
+    "empty": {
+      "description": "Chưa có bản ghi ảnh nào. Ảnh sẽ hiện ở đây sau khi bạn nhập prompt."
+    },
+    "item": {
+      "turnsSummary": "{{count}} lượt · {{time}}",
+      "runningBadge": "Đang xử lý {{count}}",
+      "queuedBadge": "Đang xếp hàng {{count}}",
+      "renameLabel": "Đổi tên cuộc trò chuyện",
+      "deleteLabel": "Xóa cuộc trò chuyện"
+    }
+  },
+  "page": {
+    "quota": {
+      "loading": "Đang tải..."
+    },
+    "deleteDialog": {
+      "titleAll": "Xóa toàn bộ lịch sử",
+      "titlePrompt": "Xóa bản ghi prompt",
+      "titleResults": "Xóa kết quả đã tạo",
+      "titleOne": "Xóa cuộc trò chuyện",
+      "descriptionAll": "Xác nhận xóa toàn bộ lịch sử ảnh? Sau khi xóa sẽ không thể khôi phục.",
+      "descriptionPrompt": "Xác nhận xóa bản ghi prompt này? Kết quả tương ứng sẽ được giữ lại.",
+      "descriptionResults": "Xác nhận xóa kết quả đã tạo này? Bản ghi prompt tương ứng sẽ được giữ lại.",
+      "descriptionOne": "Xác nhận xóa cuộc trò chuyện ảnh này? Sau khi xóa sẽ không thể khôi phục.",
+      "confirm": "Xác nhận xóa"
+    },
+    "historyDialog": {
+      "title": "Lịch sử"
+    },
+    "historyButton": {
+      "label": "Lịch sử ({{total}})"
+    },
+    "actions": {
+      "newDraft": "Tạo mới"
+    },
+    "scrollToLatest": "Cuộn đến tin nhắn mới nhất",
+    "toasts": {
+      "loadHistoryFailed": "Tải lịch sử cuộc trò chuyện thất bại",
+      "deleteConversationFailed": "Xóa cuộc trò chuyện thất bại",
+      "clearHistorySuccess": "Đã xóa toàn bộ lịch sử",
+      "clearHistoryFailed": "Xóa toàn bộ lịch sử thất bại",
+      "renameFailed": "Đổi tên thất bại",
+      "continueEditReady": "Đã thêm vào ảnh tham chiếu hiện tại, tiếp tục nhập mô tả để chỉnh sửa",
+      "reuseConfigSuccess": "Đã dùng lại cấu hình của prompt này",
+      "regenerateQueued": "Đã thêm vào hàng đợi tạo lại",
+      "emptyPrompt": "Vui lòng nhập prompt",
+      "queuedInConversation": "Đã thêm vào hàng đợi của cuộc trò chuyện hiện tại",
+      "newConversationStarted": "Đã tạo cuộc trò chuyện mới và bắt đầu xử lý",
+      "sentToConversation": "Đã gửi đến cuộc trò chuyện hiện tại",
+      "generateFailed": "Tạo ảnh thất bại",
+      "missingReferenceForEdit": "Không tìm thấy ảnh tham chiếu để tiếp tục chỉnh sửa",
+      "generationTimeoutFallback": "Tạo ảnh quá thời gian chờ",
+      "continuedWaiting": "Đã tiếp tục chờ {{count}} giây",
+      "retryPollFailed": "Tiếp tục theo dõi tiến trình thất bại"
+    },
+    "turnStatus": {
+      "someImagesFailed": "{{count}} ảnh chưa tạo thành công"
+    },
+    "turnError": {
+      "resultsDeleted": "Đã xóa kết quả tạo ảnh"
+    }
+  },
+  "errors": {
+    "readReferenceImageFailed": "Đọc ảnh tham chiếu thất bại",
+    "readResultImageFailed": "Đọc ảnh kết quả thất bại",
+    "noImageData": "Không nhận được dữ liệu ảnh",
+    "generationFailed": "Tạo thất bại",
+    "taskNotRecoverable": "Trang đã tải lại hoặc tác vụ bị gián đoạn, không tìm thấy ID tác vụ để khôi phục"
+  }
+}

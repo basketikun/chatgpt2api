@@ -1,0 +1,160 @@
+{
+  "composer": {
+    "quality": {
+      "auto": "自动",
+      "low": "低",
+      "medium": "中",
+      "high": "高"
+    },
+    "sizeSummary": "{{quality}} · {{ratio}} · {{count}} 张",
+    "sizeMenu": {
+      "title": "图像设置",
+      "modelLabel": "模型",
+      "qualityLabel": "质量",
+      "sizeLabel": "尺寸",
+      "ratioLabel": "宽高比",
+      "countLabel": "生成数量",
+      "imageUnit": "{{count}} 张"
+    },
+    "referenceImage": {
+      "previewLabel": "预览参考图 {{name}}",
+      "altFallback": "参考图 {{index}}",
+      "removeLabel": "移除参考图 {{name}}"
+    },
+    "placeholder": {
+      "editMode": "描述你希望如何修改参考图",
+      "generateMode": "输入你想要生成的画面，也可直接粘贴图片"
+    },
+    "dropOverlay": "松开以上传参考图",
+    "actions": {
+      "addReference": "添加参考图",
+      "upload": "上传",
+      "editImage": "编辑图片",
+      "generateImage": "生成图片"
+    },
+    "quota": {
+      "label": "剩余额度"
+    },
+    "activeTasks": {
+      "suffix": "个任务处理中"
+    }
+  },
+  "results": {
+    "empty": {
+      "subtitle": "在同一窗口里保留本地历史与任务状态，并从已有结果图继续发起新的无状态编辑。"
+    },
+    "turn": {
+      "label": "第 {{index}} 轮",
+      "modeEdit": "编辑图",
+      "modeGenerate": "文生图",
+      "reuseConfig": "复用配置",
+      "deletePromptLabel": "删除提示词记录",
+      "referenceImagesLabel": "本轮参考图",
+      "referencePreviewLabel": "预览参考图 {{name}}",
+      "referenceAltFallback": "参考图 {{index}}",
+      "countUnit": "{{count}} 张",
+      "waitingQueue": "等待当前对话中的前序任务完成",
+      "dismissErrors": "忽略错误",
+      "regenerateAll": "全部重新生成",
+      "deleteResultsLabel": "删除生成结果"
+    },
+    "image": {
+      "addToEdit": "加入编辑",
+      "resultLabel": "结果 {{index}}",
+      "downloadLabel": "下载",
+      "indexLabel": "图片 {{index}}/{{total}}",
+      "continueWaiting": "继续等待",
+      "retryOne": "重新生成这一张"
+    },
+    "status": {
+      "queued": "排队中",
+      "generating": "处理中",
+      "success": "已完成",
+      "failed": "失败"
+    },
+    "progress": {
+      "gettingAccount": "确认可用账号",
+      "uploading": "上传图片",
+      "bootstrapping": "预热首页",
+      "gettingToken": "获取 token",
+      "preparingConversation": "准备会话",
+      "startingGeneration": "启动生成",
+      "generating": "生成中",
+      "receivingImage": "接收图片中"
+    }
+  },
+  "sidebar": {
+    "actions": {
+      "newConversation": "新建对话"
+    },
+    "loading": "正在读取会话记录",
+    "empty": {
+      "description": "还没有图片记录，输入提示词后会在这里显示。"
+    },
+    "item": {
+      "turnsSummary": "{{count}} 轮 · {{time}}",
+      "runningBadge": "处理中 {{count}}",
+      "queuedBadge": "排队 {{count}}",
+      "renameLabel": "重命名会话",
+      "deleteLabel": "删除会话"
+    }
+  },
+  "page": {
+    "quota": {
+      "loading": "加载中..."
+    },
+    "deleteDialog": {
+      "titleAll": "清空历史记录",
+      "titlePrompt": "删除提示词记录",
+      "titleResults": "删除生成结果",
+      "titleOne": "删除对话",
+      "descriptionAll": "确认删除全部图片历史记录吗？删除后无法恢复。",
+      "descriptionPrompt": "确认删除这条提示词记录吗？对应生成结果会保留。",
+      "descriptionResults": "确认删除这条生成结果吗？对应提示词记录会保留。",
+      "descriptionOne": "确认删除这条图片对话吗？删除后无法恢复。",
+      "confirm": "确认删除"
+    },
+    "historyDialog": {
+      "title": "历史记录"
+    },
+    "historyButton": {
+      "label": "历史记录 ({{total}})"
+    },
+    "actions": {
+      "newDraft": "新建"
+    },
+    "scrollToLatest": "滚动到最新消息",
+    "toasts": {
+      "loadHistoryFailed": "读取会话记录失败",
+      "deleteConversationFailed": "删除会话失败",
+      "clearHistorySuccess": "已清空历史记录",
+      "clearHistoryFailed": "清空历史记录失败",
+      "renameFailed": "重命名失败",
+      "continueEditReady": "已加入当前参考图，继续输入描述即可编辑",
+      "reuseConfigSuccess": "已复用这条提示词配置",
+      "regenerateQueued": "已加入重新生成队列",
+      "emptyPrompt": "请输入提示词",
+      "queuedInConversation": "已加入当前对话队列",
+      "newConversationStarted": "已创建新对话并开始处理",
+      "sentToConversation": "已发送到当前对话",
+      "generateFailed": "生成图片失败",
+      "missingReferenceForEdit": "未找到可用于继续编辑的参考图",
+      "generationTimeoutFallback": "生图超时",
+      "continuedWaiting": "已继续等待 {{count}} 秒",
+      "retryPollFailed": "续轮询失败"
+    },
+    "turnStatus": {
+      "someImagesFailed": "其中 {{count}} 张未成功生成"
+    },
+    "turnError": {
+      "resultsDeleted": "生成结果已删除"
+    }
+  },
+  "errors": {
+    "readReferenceImageFailed": "读取参考图失败",
+    "readResultImageFailed": "读取结果图失败",
+    "noImageData": "未返回图片数据",
+    "generationFailed": "生成失败",
+    "taskNotRecoverable": "页面刷新或任务中断，未找到可恢复的任务 ID"
+  }
+}

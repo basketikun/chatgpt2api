@@ -1,0 +1,96 @@
+{
+  "page": {
+    "tabs": {
+      "skills": "搜索Skills",
+      "search": "搜索"
+    }
+  },
+  "pptPanel": {
+    "title": "PPT生成",
+    "defaultPrompt": "需要制作一份《2026年Q2 电商运营工作汇报》PPT，用于公司管理层季度会议汇报，整体页数控制在 8 页以内，风格偏商务科技感。重点体现销售增长、用户增长、广告投放效果以及618活动成果，并通过折线图、柱状图、环形图、漏斗图呈现。"
+  },
+  "psdPanel": {
+    "title": "PSD生成",
+    "defaultPrompt": "按原图位置拆分海报元素并合成可编辑 PSD，保留背景和每个元素图层位置，同时输出每个图层素材 zip。"
+  },
+  "editableFilePanel": {
+    "status": {
+      "queued": "排队中",
+      "running": "生成中",
+      "success": "已完成",
+      "error": "失败"
+    },
+    "history": {
+      "title": "历史记录",
+      "empty": "暂无记录"
+    },
+    "renameFallback": "{{kind}} 任务",
+    "generate": "生成",
+    "form": {
+      "promptLabel": "需求",
+      "referenceImagesLabel": "参考图",
+      "upload": "上传图片",
+      "clearImages": "清空图片"
+    },
+    "resultPanel": {
+      "title": "生成状态",
+      "empty": "暂无任务",
+      "statusLabel": "状态",
+      "elapsedLabel": "已执行",
+      "resultTitle": "生成结果",
+      "fileLabel": "{{format}} 文件",
+      "zipLabel": "素材包"
+    },
+    "dialog": {
+      "deleteOneTitle": "删除历史记录",
+      "deleteAllTitle": "清空历史记录",
+      "deleteOneDescription": "确认删除这条历史记录吗？",
+      "deleteAllDescription": "确认清空当前类型的历史记录吗？",
+      "confirm": "确认删除"
+    }
+  },
+  "chatPanel": {
+    "title": "对话",
+    "defaultInput": "你好，先记住我的项目叫 chatgpt2api。",
+    "requestTitle": "请求",
+    "reasoningEffort": {
+      "label": "思考强度",
+      "default": "默认",
+      "low": "低",
+      "medium": "中",
+      "high": "高",
+      "xhigh": "超高"
+    },
+    "imagesLabel": "图片",
+    "selectImages": "选择图片",
+    "removeImage": "移除 {{name}}",
+    "send": "发送",
+    "clear": "清空",
+    "emptyConversation": "暂无对话消息",
+    "errors": {
+      "notImage": "{{fileName}} 不是图片文件",
+      "tooLarge": "{{fileName}} 超过 10MB",
+      "readFailed": "{{fileName}} 读取失败"
+    }
+  },
+  "searchPanel": {
+    "intro": "利用ChatGPT先进的网页搜索功能进行搜索",
+    "defaultPrompt": "帮我搜索 chatgpt2api 相关项目",
+    "placeholder": "搜索网页",
+    "searching": "搜索中...",
+    "sourcesTitle": "来源"
+  },
+  "skillPanel": {
+    "zhTitle": "中文安装指令",
+    "zhDescription": "复制后直接发给 Codex 或 Claude，让它安装到本地。",
+    "copied": "已复制",
+    "zhTemplate": "---\nname: chatgpt2api-search\ndescription: 当用户需要联网搜索、查询最新信息、核实事实或需要来源链接时，调用本地 chatgpt2api 搜索接口。\n---\n\n# ChatGPT2API 搜索\n\n当用户要求联网搜索、查询最新信息、核实资料、查新闻、查价格、查文档更新或需要来源链接时，使用这个 skill。\n\n## 接口\n\nPOST {{apiBaseUrl}}/v1/search\n\nHeaders:\n\nAuthorization: Bearer {{authKey}}\nContent-Type: application/json\n\nBody:\n\n{\n  \"prompt\": \"<用户要搜索的问题>\"\n}\n\n## 返回处理\n\n- 使用接口返回的 `answer` 作为主要回答。\n- 如果有 `sources`，在回答里附上来源链接。\n- 如果接口报错，简要说明错误并询问是否重试。",
+    "enTemplate": "---\nname: chatgpt2api-search\ndescription: Use when current web search is needed through this chatgpt2api server. Call the configured HTTP search endpoint with a prompt and return the answer with source URLs.\n---\n\n# ChatGPT2API Search\n\nUse this skill when the user asks for current web search, online lookup, recent information, or source-backed answers. It calls the local chatgpt2api search endpoint and returns an answer with source links.\n\n## When to use\n\n- The user asks to search the web, look something up, verify current information, or find the latest status.\n- The answer needs source URLs, recent details, prices, releases, docs, laws, schedules, or news.\n- Do not use it for purely local codebase questions unless the user explicitly asks for web search.\n\n## Request\n\nPOST {{apiBaseUrl}}/v1/search\n\nHeaders:\n\nAuthorization: Bearer {{authKey}}\nContent-Type: application/json\n\nJSON body:\n\n{\n  \"prompt\": \"<search question>\"\n}\n\n## Response handling\n\n- Use `answer` as the main response.\n- Include source URLs from `sources` when available.\n- If the endpoint returns an error, summarize the error and ask the user whether to retry.\n- Keep the final answer concise unless the user asks for detail.",
+    "zhInstallPrompt": "请帮我在本机安装一个用于联网搜索的 skill。\n\n要求：\n1. 请按你当前环境的 skill 安装规范，把它安装成本地 skill。\n2. skill 名称为：chatgpt2api-search\n3. 文件名为：SKILL.md\n4. 如果你无法确定本地 skills 目录在哪里，先告诉我需要放到哪个目录，不要猜路径。\n5. 只创建或更新这个 skill 文件，不要修改其他无关文件。\n6. SKILL.md 请写入下面的完整内容。\n\nSKILL.md 内容：\n\n```markdown\n{{skillDoc}}\n```",
+    "enInstallPrompt": "Please install a local web-search skill on this machine.\n\nRequirements:\n1. Install this as a local skill according to the skill installation rules of your current environment.\n2. Skill name: chatgpt2api-search\n3. File name: SKILL.md\n4. If you cannot determine the local skills directory, tell me which directory is required before writing files.\n5. Only create or update this skill file. Do not modify unrelated files.\n6. Write the full content below into SKILL.md.\n\nSKILL.md content:\n\n```markdown\n{{skillDoc}}\n```"
+  },
+  "actions": {
+    "download": "下载",
+    "copy": "复制"
+  }
+}

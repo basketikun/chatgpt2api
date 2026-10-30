@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 
 from api import accounts, ai, image_tasks, system
 from api.errors import install_exception_handlers
-from api.support import resolve_web_asset, start_limited_account_watcher
+from api.support import LocaleMiddleware, resolve_web_asset, start_limited_account_watcher
 from services.backup_service import backup_service
 from services.config import config
 from services.image_service import start_image_cleanup_scheduler
@@ -42,6 +42,9 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    app.add_middleware(LocaleMiddleware)
+
     app.include_router(ai.create_router())
     app.include_router(accounts.create_router())
     app.include_router(image_tasks.create_router())

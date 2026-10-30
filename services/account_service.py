@@ -1443,8 +1443,20 @@ class AccountService:
                 "results": [],
             }
 
-    def update_relogin_progress(self, progress_id: str, token: str, status: str, error: str | None = None) -> None:
-        """更新单个重新登录进度。当所有账号处理完毕时自动标记完成。"""
+    def update_relogin_progress(
+        self,
+        progress_id: str,
+        token: str,
+        status: str,
+        error: str | None = None,
+        error_is_key: bool = False,
+    ) -> None:
+        """更新单个重新登录进度。当所有账号处理完毕时自动标记完成。
+
+        When error_is_key is True, error is a utils.i18n message key, rendered by the
+        polling request against its own locale. When False, error is passthrough text
+        (an upstream error code or exception message) and is returned unchanged.
+        """
         with self._relogin_progress_lock:
             progress = self._relogin_progress.get(progress_id)
             if progress is None:
@@ -1454,6 +1466,7 @@ class AccountService:
                 "token": anonymize_token(token),
                 "status": status,
                 "error": error,
+                "error_is_key": error_is_key,
             })
             if progress["processed"] >= progress["total"]:
                 progress["done"] = True
@@ -1593,7 +1606,7 @@ class AccountService:
             if not account:
                 errors.append({"token": anonymize_token(token), "error": "账号不存在"})
                 if progress_id:
-                    self.update_relogin_progress(progress_id, token, "跳过", "账号不存在")
+                    self.update_relogin_progress(progress_id, token, "跳过", "account.not_found", error_is_key=True)
                 continue
 
             email = str(account.get("email") or "").strip()
@@ -1601,7 +1614,7 @@ class AccountService:
             if not email or not password:
                 skipped += 1
                 if progress_id:
-                    self.update_relogin_progress(progress_id, token, "跳过", "无邮箱密码")
+                    self.update_relogin_progress(progress_id, token, "跳过", "account.no_email_password", error_is_key=True)
                 continue
 
             # 在新线程中执行密码重新登录

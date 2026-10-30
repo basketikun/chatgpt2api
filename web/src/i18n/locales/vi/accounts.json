@@ -1,0 +1,255 @@
+{
+  "accountStatus": {
+    "normal": "Bình thường",
+    "rateLimited": "Bị giới hạn",
+    "error": "Lỗi",
+    "disabled": "Đã vô hiệu hóa"
+  },
+  "header": {
+    "refresh": "Làm mới",
+    "refreshAll": "Làm mới toàn bộ thông tin và hạn mức tài khoản",
+    "exportTokens": "Xuất toàn bộ Token"
+  },
+  "filters": {
+    "statusAll": "Tất cả trạng thái",
+    "typeAll": "Tất cả loại",
+    "searchPlaceholder": "Tìm theo email"
+  },
+  "metrics": {
+    "total": "Tổng số tài khoản",
+    "active": "Tài khoản bình thường",
+    "limited": "Tài khoản bị giới hạn",
+    "abnormal": "Tài khoản lỗi",
+    "disabled": "Tài khoản đã vô hiệu hóa",
+    "quota": "Hạn mức còn lại"
+  },
+  "models": {
+    "title": "Mô hình khả dụng",
+    "loading": "Đang tải danh sách mô hình...",
+    "empty": "Hiện chưa có mô hình khả dụng",
+    "copyTitle": "Nhấn để sao chép {{id}}",
+    "copiedToast": "Đã sao chép tên mô hình"
+  },
+  "table": {
+    "listTitle": "Danh sách tài khoản",
+    "columnToken": "token",
+    "columnType": "Loại",
+    "columnSource": "Nguồn",
+    "columnStatus": "Trạng thái",
+    "columnAccountInfo": "Thông tin tài khoản",
+    "columnCreatedAt": "Thời gian tạo",
+    "columnQuota": "Hạn mức",
+    "columnRestoreAt": "Thời gian khôi phục",
+    "columnInflight": "Đang xử lý",
+    "columnSuccess": "Thành công",
+    "columnFail": "Thất bại",
+    "columnActions": "Thao tác",
+    "tokenCopied": "Đã sao chép token",
+    "emptyTitle": "Không có tài khoản phù hợp",
+    "emptySubtitle": "Điều chỉnh bộ lọc hoặc từ khóa tìm kiếm rồi thử lại.",
+    "loadingTitle": "Đang tải tài khoản",
+    "loadingSubtitle": "Đang đồng bộ danh sách và trạng thái tài khoản từ backend."
+  },
+  "restore": {
+    "remaining": "Còn lại {{days}}d {{hours}}h",
+    "due": "Đã đến thời gian khôi phục"
+  },
+  "inflight": {
+    "activeTooltip": "Số ảnh đang được tạo. Nếu giá trị này vẫn lớn hơn 0 khi kho tài khoản đang rảnh, có thể slot đồng thời đã bị rò rỉ và tài khoản này đã bị âm thầm loại khỏi lịch điều phối.",
+    "idleTooltip": "Hiện không có tác vụ tạo ảnh nào đang xử lý"
+  },
+  "toolbar": {
+    "refreshSelected": "Làm mới thông tin và hạn mức của tài khoản đã chọn",
+    "tryRecoverAbnormal": "Thử khôi phục tài khoản lỗi",
+    "tryRecoverAbnormalTitle": "Thử đăng nhập bằng mật khẩu để khôi phục tài khoản",
+    "removeAbnormal": "Xóa tài khoản lỗi",
+    "deleteSelected": "Xóa mục đã chọn",
+    "selectedCount": "Đã chọn {{count}} mục"
+  },
+  "pagination": {
+    "info": "Hiển thị {{from}} - {{to}} trong tổng số {{total}}",
+    "pageInfo": "Trang {{page}} / {{pageCount}}",
+    "perPage": "{{size}} / trang"
+  },
+  "editDialog": {
+    "title": "Sửa tài khoản",
+    "description": "Chỉnh sửa thủ công trạng thái tài khoản và proxy riêng.",
+    "statusLabel": "Trạng thái",
+    "proxyLabel": "Proxy tài khoản",
+    "proxyPlaceholder": "Để trống để dùng proxy toàn cục, ví dụ http://127.0.0.1:7890",
+    "testButton": "Kiểm tra",
+    "saveButton": "Lưu thay đổi"
+  },
+  "progress": {
+    "refreshing": "Đang làm mới thông tin tài khoản...",
+    "refreshComplete": "Làm mới hoàn tất",
+    "recoveringAbnormal": "Đang thử gỡ trạng thái lỗi cho {{count}} tài khoản",
+    "removeAbnormalComplete": "Đã gỡ trạng thái lỗi xong",
+    "tryingRecoverAbnormal": "Đang thử khôi phục tài khoản lỗi...",
+    "recoverFlowComplete": "Quy trình khôi phục đã hoàn tất",
+    "recoverComplete": "Khôi phục hoàn tất",
+    "recoverProcessed": "Đã xử lý {{processed}}/{{total}}",
+    "recoverFailedOne": "Thất bại: {{token}} {{error}}"
+  },
+  "toasts": {
+    "loadAccountsFailed": "Tải tài khoản thất bại",
+    "loadModelsFailed": "Tải danh sách mô hình thất bại",
+    "selectAccountsToDelete": "Hãy chọn tài khoản cần xóa trước",
+    "deleteAccountsSuccess": "Đã xóa {{count}} tài khoản",
+    "deleteAccountsFailed": "Xóa tài khoản thất bại",
+    "noAccountsToRefresh": "Không có tài khoản nào cần làm mới",
+    "refreshAccountsFailed": "Làm mới tài khoản thất bại",
+    "refreshResultEmpty": "Kết quả làm mới trống",
+    "refreshSuccessWithErrors": "Làm mới thành công {{refreshed}}, thất bại {{failed}}",
+    "firstErrorSuffix": ", lỗi đầu tiên: {{error}}",
+    "refreshSuccess": "Làm mới thành công {{count}} tài khoản",
+    "reloginTriggeredSuffix": ", đã kích hoạt đăng nhập lại cho {{count}} tài khoản",
+    "selectAccountsToRecover": "Hãy chọn tài khoản cần khôi phục trước",
+    "noAbnormalAccountsSelected": "Không có tài khoản lỗi nào trong số đã chọn",
+    "filteredNonAbnormal": "Đã lọc bỏ {{count}} tài khoản không lỗi",
+    "recoverAllComplete": "Toàn bộ quy trình khôi phục đã hoàn tất",
+    "reloginFailed": "Đăng nhập lại thất bại",
+    "proxyAddressRequired": "Hãy nhập địa chỉ proxy trước",
+    "proxyAvailable": "Proxy khả dụng ({{latency}} ms, HTTP {{status}})",
+    "proxyUnavailable": "Proxy không khả dụng: {{error}}",
+    "unknownError": "Lỗi không xác định",
+    "testProxyFailed": "Kiểm tra proxy thất bại",
+    "accountUpdated": "Đã cập nhật thông tin tài khoản",
+    "updateAccountFailed": "Cập nhật tài khoản thất bại"
+  },
+  "importDialog": {
+    "triggerButton": "Nhập",
+    "back": "Quay lại cách nhập",
+    "title": {
+      "menu": "Nhập tài khoản",
+      "token": "Nhập Access Token",
+      "session": "Nhập Session JSON",
+      "codexAuth": "Nhập Codex auth JSON",
+      "oauthDialog": "Đăng nhập OAuth vào tài khoản đã có",
+      "accountJsonDialog": "Nhập tài khoản JSON"
+    },
+    "description": {
+      "menu": "Chọn một cách nhập. Sau khi nhập thành công, email, loại và hạn mức sẽ được lấy về tự động.",
+      "token": "Hỗ trợ dán thủ công hoặc nhập từ file TXT, mỗi dòng một Token.",
+      "session": "Dán đầy đủ Session JSON, hệ thống sẽ tự động trích xuất accessToken.",
+      "codexAuth": "Dán Codex auth JSON, hệ thống sẽ nhập theo nguồn codex.",
+      "oauth": "Chạy quy trình OAuth chuẩn của OpenAI trên trình duyệt, lấy được refresh_token thì hệ thống sẽ tự động gia hạn.",
+      "accountJson": "Hỗ trợ đọc đối tượng tài khoản đơn hoặc mảng toàn bộ tài khoản do dự án này xuất ra, có xác nhận số lượng trước khi gửi."
+    },
+    "menu": {
+      "oauth": {
+        "title": "Đăng nhập OAuth vào tài khoản đã có (tự động làm mới)",
+        "description": "Đăng nhập tài khoản ChatGPT của bạn trên trình duyệt, dán lại callback URL để lấy refresh_token, hệ thống backend sẽ tự động gia hạn."
+      },
+      "token": {
+        "description": "Hỗ trợ dán trực tiếp, mỗi dòng một token; cũng hỗ trợ đọc từ file TXT, mỗi dòng một token."
+      },
+      "session": {
+        "description": "Sao chép đầy đủ JSON từ endpoint session của chatgpt.com, tự động trích xuất accessToken."
+      },
+      "codexAuth": {
+        "description": "Dán Codex auth JSON, sau khi nhập nguồn tài khoản sẽ được đánh dấu là codex."
+      },
+      "accountJson": {
+        "title": "Nhập file tài khoản JSON",
+        "description": "Hỗ trợ JSON tài khoản đơn hoặc mảng toàn bộ tài khoản do dự án này xuất ra, cũng tương thích với file CPA JSON."
+      },
+      "cpaImport": {
+        "title": "Nhập từ máy chủ CPA từ xa",
+        "description": "Vào trang cài đặt để cấu hình máy chủ CPA từ xa trước khi thực hiện nhập."
+      },
+      "sub2apiImport": {
+        "title": "Nhập từ máy chủ Sub2API",
+        "description": "Vào trang cài đặt để cấu hình máy chủ Sub2API, sau đó chọn tài khoản OpenAI trong đó để nhập."
+      }
+    },
+    "token": {
+      "recognizedCount": "Hiện nhận diện {{count}} Token",
+      "listLabel": "Danh sách Access Token",
+      "placeholder": "Mỗi dòng một Access Token...",
+      "fromTxtTitle": "Nhập từ file TXT",
+      "fromTxtHint": "Hỗ trợ `.txt`, nội dung file cũng là mỗi dòng một Token.",
+      "chooseTxtButton": "Chọn TXT"
+    },
+    "session": {
+      "openPrefix": "Mở",
+      "instructionSuffix": ", sao chép đầy đủ JSON mà trang trả về, hệ thống sẽ tự động trích xuất `accessToken` bên trong để nhập.",
+      "riskTitle": "Cảnh báo rủi ro",
+      "riskBody": "Đừng dùng tài khoản chính của bạn, nên ưu tiên tài khoản phụ ít dùng để nhập nhằm tránh rủi ro bị khóa tài khoản. Dự án này không chịu trách nhiệm về bất kỳ rủi ro khóa tài khoản nào.",
+      "jsonLabel": "Session JSON",
+      "placeholder": "Dán đầy đủ JSON, ví dụ đối tượng chứa \"accessToken\"..."
+    },
+    "oauth": {
+      "stepsTitle": "Các bước thực hiện",
+      "step1": "(Tùy chọn) Điền email tài khoản ChatGPT của bạn, trang đăng nhập sẽ tự điền sẵn.",
+      "step2": "Nhấn \"Mở trang ủy quyền\" bên dưới, đăng nhập tài khoản ChatGPT của bạn trong tab mới.",
+      "step3Prefix": "Sau khi đăng nhập xong, trình duyệt sẽ chuyển tới ",
+      "step3Suffix": ". Ngay lập tức sao chép toàn bộ URL từ thanh địa chỉ (hoặc mở F12, tìm dòng callback trong Network, chuột phải Copy → Copy URL).",
+      "step4": "Dán callback URL vào ô nhập bên dưới rồi nhấn \"Hoàn tất nhập\".",
+      "emailLabel": "Email (tùy chọn, điền sẵn)",
+      "openAuthButton": "Mở trang ủy quyền",
+      "copyAuthUrlButton": "Sao chép authorize URL",
+      "reopenButton": "Mở lại",
+      "regenerateButton": "Tạo lại",
+      "pasteCallbackLabel": "Dán callback URL (hoặc chỉ code)",
+      "noteTitle": "Lưu ý",
+      "noteBody": "Mã ủy quyền (code) chỉ dùng được một lần. Nếu trang callback của trình duyệt tải xong và hiển thị trang lỗi của OpenAI, thì code gần như đã bị tiêu thụ, hãy nhấn \"Tạo lại\" rồi làm lại từ đầu. Toàn bộ quy trình chỉ cần hoàn thành trong 10 phút."
+    },
+    "accountJson": {
+      "chooseTitle": "Chọn file tài khoản JSON trên máy",
+      "hint": "Hỗ trợ đối tượng tài khoản đơn hoặc mảng toàn bộ tài khoản do dự án này xuất ra, cũng tương thích với CPA JSON có mỗi file một đối tượng tài khoản. Hệ thống sẽ tự động trích xuất `access_token` hoặc `accessToken`.",
+      "chooseButton": "Chọn file JSON",
+      "lastRead": "Lần đọc gần nhất nhận được {{count}} Token",
+      "extraFailedSuffix": ", còn {{count}} file chưa trích xuất thành công",
+      "extraFailedSuffixPeriod": ", còn {{count}} file chưa trích xuất thành công.",
+      "periodSuffix": ".",
+      "confirmTitle": "Xác nhận nhập Token tài khoản",
+      "confirmReady": "Đã nhận diện {{count}} Token, xác nhận nhập?",
+      "confirmEmpty": "Chưa đọc được Token nào để nhập.",
+      "backButton": "Quay lại",
+      "confirmButton": "Xác nhận nhập"
+    },
+    "codexAuth": {
+      "label": "Codex auth JSON",
+      "placeholder": "Dán Codex auth JSON chứa \"access_token\", \"refresh_token\", \"id_token\"..."
+    },
+    "footer": {
+      "importTokenButton": "Nhập Token",
+      "importJsonButton": "Nhập JSON",
+      "finishImportButton": "Hoàn tất nhập",
+      "viewConfirmButton": "Xem xác nhận nhập"
+    },
+    "toasts": {
+      "provideTokenRequired": "Hãy cung cấp ít nhất một Token khả dụng trước",
+      "importFailed": "Nhập tài khoản thất bại",
+      "tokenImportComplete": "Nhập Access Token hoàn tất",
+      "txtNoTokens": "Không đọc được Token hợp lệ nào từ file TXT",
+      "txtReadSuccess": "Đã đọc {{count}} Token từ {{name}}",
+      "readTxtFailed": "Đọc file TXT thất bại",
+      "sessionRequired": "Hãy dán đầy đủ Session JSON trước",
+      "sessionNoToken": "Không trích xuất được accessToken từ Session JSON",
+      "sessionImportComplete": "Nhập Session JSON hoàn tất",
+      "sessionParseFailed": "Phân tích Session JSON thất bại",
+      "codexAuthRequired": "Hãy dán Codex auth JSON trước",
+      "codexAuthNoToken": "Không trích xuất được access_token từ Codex auth JSON",
+      "codexImportComplete": "Nhập Codex auth JSON hoàn tất",
+      "codexAuthParseFailed": "Phân tích Codex auth JSON thất bại",
+      "accountJsonNoTokens": "Không đọc được access_token khả dụng nào từ các file JSON tài khoản này",
+      "accountJsonReadFailed": "Đọc file JSON tài khoản thất bại",
+      "accountJsonImportComplete": "Nhập tài khoản JSON hoàn tất",
+      "readFileFailed": "Đọc file thất bại: {{name}}",
+      "importCompleteDefault": "Nhập hoàn tất",
+      "oauthLoginComplete": "Đăng nhập OAuth hoàn tất",
+      "oauthOpened": "Đã mở trang ủy quyền OpenAI, hãy sao chép callback URL quay lại sau khi đăng nhập",
+      "oauthStartFailed": "Khởi tạo OAuth thất bại",
+      "oauthSessionMissing": "Hãy nhấn \"Mở trang ủy quyền\" trước để lấy session",
+      "pasteCallbackRequired": "Hãy dán callback URL hoặc code",
+      "oauthExchangeFailed": "Đổi token OAuth thất bại",
+      "authUrlCopied": "Đã sao chép authorize URL vào clipboard",
+      "copyUnsupported": "Môi trường hiện tại không hỗ trợ tự động sao chép, hãy chọn và sao chép thủ công",
+      "copyFailed": "Sao chép thất bại, hãy chọn và sao chép thủ công",
+      "resultWithErrors": "{{prefix}}, thêm mới {{added}}, đã làm mới {{refreshed}}, thất bại {{failed}}",
+      "resultSuccess": "{{prefix}}, thêm mới {{added}}, bỏ qua {{count}} mục trùng, đã tự động làm mới thông tin tài khoản"
+    }
+  }
+}

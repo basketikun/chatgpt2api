@@ -1,0 +1,60 @@
+{
+  "header": {
+    "title": "Log Management"
+  },
+  "filters": {
+    "clear": "Clear filters",
+    "search": "Search"
+  },
+  "table": {
+    "time": "Time",
+    "type": "Type",
+    "tokenName": "Token Name",
+    "duration": "Call Duration",
+    "status": "Status",
+    "image": "Image",
+    "summary": "Summary",
+    "actions": "Actions"
+  },
+  "status": {
+    "success": "Success",
+    "failed": "Failed"
+  },
+  "toolbar": {
+    "total": "{{total}} total",
+    "selectPage": "Select all on this page",
+    "selectAll": "Select all results",
+    "selected": "{{total}} selected",
+    "refresh": "Refresh",
+    "clearSelection": "Clear selection",
+    "deleteSelected": "Delete selected"
+  },
+  "rowActions": {
+    "viewDetail": "View details",
+    "delete": "Delete",
+    "previewImage": "Preview image"
+  },
+  "empty": {
+    "noLogs": "No logs found"
+  },
+  "pagination": {
+    "info": "Page {{page}} / {{pageCount}}, {{total}} total"
+  },
+  "detail": {
+    "title": "Log Detail"
+  },
+  "deleteDialog": {
+    "titleSingle": "Delete Log",
+    "titleMultiple": "Delete Selected Logs",
+    "description_one": "Delete {{count}} log? This cannot be undone.",
+    "description_other": "Delete {{count}} logs? This cannot be undone.",
+    "cancel": "Cancel",
+    "confirm": "Confirm delete"
+  },
+  "toasts": {
+    "loadFailed": "Failed to load logs",
+    "deleteFailed": "Failed to delete logs",
+    "deleteSuccess_one": "Deleted {{count}} log",
+    "deleteSuccess_other": "Deleted {{count}} logs"
+  }
+}
