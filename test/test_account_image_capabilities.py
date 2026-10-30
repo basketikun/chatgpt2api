@@ -17,6 +17,65 @@ from utils.helper import anonymize_token, split_image_model
 
 
 class AccountCapabilityTests(unittest.TestCase):
+    def test_conversation_binding_pins_one_account_and_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            service = AccountService(JSONStorageBackend(Path(tmp_dir) / "accounts.json"))
+            service.add_account_items(
+                [
+                    {"access_token": "token-a", "type": "Pro", "status": "正常", "quota": 3},
+                    {"access_token": "token-b", "type": "Pro", "status": "正常", "quota": 3},
+                ]
+            )
+            service.fetch_remote_info = (
+                lambda access_token, event="fetch_remote_info": service.get_account(access_token)
+            )
+
+            binding_id, account_identity, first_token = service.create_conversation_binding(
+                image_model="gpt-image-2"
+            )
+            service.release_image_slot(first_token)
+            bound_token = service.acquire_bound_image_access_token(
+                binding_id,
+                image_model="gpt-image-2",
+            )
+            service.release_image_slot(bound_token)
+
+            self.assertTrue(binding_id.startswith("cb_"))
+            self.assertEqual(bound_token, first_token)
+            self.assertEqual(service.get_bound_account_identity(binding_id), account_identity)
+            service.update_account(first_token, {"status": "异常", "quota": 0})
+            with self.assertRaisesRegex(RuntimeError, "conversation binding unavailable"):
+                service.acquire_bound_image_access_token(
+                    binding_id,
+                    image_model="gpt-image-2",
+                )
+
+    def test_separate_conversations_get_distinct_bindings_on_the_same_account(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            service = AccountService(JSONStorageBackend(Path(tmp_dir) / "accounts.json"))
+            service.add_account_items(
+                [{"access_token": "token-a", "type": "Pro", "status": "正常", "quota": 3}]
+            )
+            service.fetch_remote_info = (
+                lambda access_token, event="fetch_remote_info": service.get_account(access_token)
+            )
+
+            first_binding, _, first_token = service.create_conversation_binding(
+                image_model="gpt-image-2"
+            )
+            service.release_image_slot(first_token)
+            second_binding, _, second_token = service.create_conversation_binding(
+                image_model="gpt-image-2"
+            )
+            service.release_image_slot(second_token)
+
+            self.assertNotEqual(first_binding, second_binding)
+            self.assertEqual(first_token, second_token)
+            self.assertIsNot(
+                service.conversation_binding_lock(first_binding),
+                service.conversation_binding_lock(second_binding),
+            )
+
     def test_image_accounts_require_positive_quota(self) -> None:
         self.assertFalse(
             AccountService._is_image_account_available(
