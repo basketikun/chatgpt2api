@@ -52,10 +52,13 @@
 ```bash
 git clone git@github.com:basketikun/chatgpt2api.git
 cd chatgpt2api
+# 必须显式提供运行时认证密钥；不要把密钥提交到 Git
+export CHATGPT2API_AUTH_KEY="$(openssl rand -hex 32)"
+# 按需编辑本地 config.json 的非敏感设置；生产环境不要把密钥写入镜像
 docker compose up -d
 ```
 
-启动前请先在 `config.json` 中设置 `auth-key`，也可以在 `docker-compose.yml` 中通过 `CHATGPT2API_AUTH_KEY` 覆盖。
+启动时优先读取环境变量 `CHATGPT2API_AUTH_KEY`；未设置时回退到 `config.json` 的 `auth-key`。请勿沿用示例默认值。
 
 - Web 面板：`http://localhost:3000`
 - API 地址：`http://localhost:3000/v1`
@@ -172,6 +175,24 @@ environment:
 - 详细状态说明见：[功能清单](./docs/feature-status.en.md)
 
 ## 效果展示
+
+## 测试
+
+默认测试集合不访问本地服务或上游网络：
+
+```bash
+python3 -m unittest discover -s test -v
+```
+
+需要启动本地 API 并执行 HTTP / 上游调用测试时，显式开启：
+
+```bash
+CHATGPT2API_RUN_INTEGRATION=1 python3 -m unittest discover -s test -v
+```
+
+集成测试会产生真实请求和图片输出，请只在隔离账号、隔离环境中运行。
+
+## Screenshots
 
 <table width="100%">
   <tr>

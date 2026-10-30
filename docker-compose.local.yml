@@ -11,6 +11,7 @@ services:
       - ./data:/app/data
       - ./config.json:/app/config.json
     environment:
+      CHATGPT2API_AUTH_KEY: ${CHATGPT2API_AUTH_KEY:?Set CHATGPT2API_AUTH_KEY before starting}
       STORAGE_BACKEND: sqlite
       DATABASE_URL: sqlite:////app/data/accounts.db
     # 存储后端配置 (可选值: json, sqlite, postgres, git)

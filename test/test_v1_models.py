@@ -1,4 +1,5 @@
 from __future__ import annotations
+import os
 
 import json
 import unittest
@@ -7,9 +8,10 @@ from unittest import mock
 import requests
 
 from services.protocol import openai_v1_models
+from test.helpers import requires_integration
 
 
-AUTH_KEY = "chatgpt2api"
+AUTH_KEY = os.environ.get("CHATGPT2API_AUTH_KEY", "test-auth")
 BASE_URL = "http://localhost:8000"
 
 
@@ -62,12 +64,14 @@ class ModelListTests(unittest.TestCase):
         self.assertNotIn("codex-gpt-image-2", ids)
         self.assertNotIn("plus-codex-gpt-image-2", ids)
 
+    @requires_integration
     def test_list_models_function(self):
         """测试直接调用服务层获取模型列表。"""
         result = openai_v1_models.list_models()
         print("function result:")
         print(json.dumps(result, ensure_ascii=False, indent=2))
 
+    @requires_integration
     def test_list_models_http(self):
         """测试通过 HTTP 接口获取模型列表。"""
         response = requests.get(

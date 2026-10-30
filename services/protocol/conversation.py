@@ -17,6 +17,7 @@ from services.image_storage_service import image_storage_service
 from services.openai_backend_api import ImageContentPolicyError, ImagePollTimeoutError, OpenAIBackendAPI
 from utils.helper import (
     IMAGE_MODELS,
+    anonymize_token,
     extract_image_from_message_content,
     is_codex_image_model,
     is_supported_image_model,
@@ -1398,7 +1399,7 @@ def _generate_single_image(
                 if poll_timeout_retry_count <= MAX_POLL_TIMEOUT_RETRIES:
                     logger.warning({
                         "event": "image_poll_timeout_retry",
-                        "request_token": token,
+                        "request_token": anonymize_token(token),
                         "account_email": account_email,
                         "retry_count": poll_timeout_retry_count,
                         "index": index,
@@ -1407,7 +1408,7 @@ def _generate_single_image(
                     continue
                 logger.warning({
                     "event": "image_poll_timeout_exhausted_retries",
-                    "request_token": token,
+                    "request_token": anonymize_token(token),
                     "account_email": account_email,
                     "retry_count": poll_timeout_retry_count,
                     "index": index,
@@ -1418,7 +1419,7 @@ def _generate_single_image(
             account_service.mark_image_result(token, False)
             logger.warning({
                 "event": "image_stream_content_policy_error",
-                "request_token": token,
+                "request_token": anonymize_token(token),
                 "account_email": account_email,
                 "error": str(exc),
                 "index": index,
@@ -1442,7 +1443,7 @@ def _generate_single_image(
                 if text_reply_retry_count <= MAX_TEXT_REPLY_RETRIES:
                     logger.warning({
                         "event": "image_model_text_reply_retry",
-                        "request_token": token,
+                        "request_token": anonymize_token(token),
                         "account_email": account_email,
                         "retry_count": text_reply_retry_count,
                         "index": index,
@@ -1451,7 +1452,7 @@ def _generate_single_image(
                     continue
                 logger.warning({
                     "event": "image_model_text_reply_exhausted_retries",
-                    "request_token": token,
+                    "request_token": anonymize_token(token),
                     "account_email": account_email,
                     "retry_count": text_reply_retry_count,
                     "index": index,
@@ -1467,7 +1468,7 @@ def _generate_single_image(
                 ) from exc
             logger.warning({
                 "event": "image_stream_generation_error",
-                "request_token": token,
+                "request_token": anonymize_token(token),
                 "account_email": account_email,
                 "error": error_text,
                 "index": index,
@@ -1478,7 +1479,7 @@ def _generate_single_image(
             last_error = str(exc)
             logger.warning({
                 "event": "image_stream_fail",
-                "request_token": token,
+                "request_token": anonymize_token(token),
                 "account_email": account_email,
                 "error": last_error,
                 "index": index,
@@ -1496,7 +1497,7 @@ def _generate_single_image(
                 if tls_retry_count <= MAX_TLS_RETRIES:
                     logger.warning({
                         "event": "image_stream_tls_retry",
-                        "request_token": token,
+                        "request_token": anonymize_token(token),
                         "account_email": account_email,
                         "retry_count": tls_retry_count,
                         "index": index,
@@ -1511,7 +1512,7 @@ def _generate_single_image(
                     wait_secs = min(3.0 * conn_timeout_retry_count, 9.0)
                     logger.warning({
                         "event": "image_stream_conn_timeout_retry",
-                        "request_token": token,
+                        "request_token": anonymize_token(token),
                         "account_email": account_email,
                         "retry_count": conn_timeout_retry_count,
                         "index": index,

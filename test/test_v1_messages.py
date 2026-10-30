@@ -1,4 +1,5 @@
 from __future__ import annotations
+import os
 
 import json
 import time
@@ -6,7 +7,9 @@ import unittest
 
 import requests
 
-AUTH_KEY = "chatgpt2api"
+from test.helpers import requires_integration
+
+AUTH_KEY = os.environ.get("CHATGPT2API_AUTH_KEY", "test-auth")
 BASE_URL = "http://localhost:8000"
 MODEL = "auto"
 
@@ -19,6 +22,7 @@ class AnthropicMessagesTests(unittest.TestCase):
             "anthropic-version": "2023-06-01",
         }
 
+    @requires_integration
     def test_message_http(self):
         """测试 Anthropic Messages 的非流式 HTTP 调用。"""
         response = requests.post(
@@ -40,6 +44,7 @@ class AnthropicMessagesTests(unittest.TestCase):
         except Exception:
             print(response.text)
 
+    @requires_integration
     def test_message_stream_http(self):
         """测试 Anthropic Messages 的流式 HTTP 调用。"""
         started_at = time.time()

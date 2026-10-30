@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import base64
 import unittest
 from unittest import mock
@@ -10,7 +12,8 @@ from fastapi.testclient import TestClient
 import api.image_tasks as image_tasks_module
 
 
-AUTH_HEADERS = {"Authorization": "Bearer chatgpt2api"}
+AUTH_KEY = os.environ.get("CHATGPT2API_AUTH_KEY", "chatgpt2api")
+AUTH_HEADERS = {"Authorization": f"Bearer {AUTH_KEY}"}
 PNG_BYTES = b"\x89PNG\r\n\x1a\n"
 DATA_IMAGE_URL = f"data:image/png;base64,{base64.b64encode(PNG_BYTES).decode('ascii')}"
 

@@ -1,4 +1,5 @@
 from __future__ import annotations
+import os
 
 import json
 import time
@@ -6,13 +7,16 @@ import unittest
 
 import requests
 
+from test.helpers import requires_integration
+
 from utils.helper import save_images_from_text
 
-AUTH_KEY = "chatgpt2api"
+AUTH_KEY = os.environ.get("CHATGPT2API_AUTH_KEY", "test-auth")
 BASE_URL = "http://localhost:8000"
 
 
 class ChatCompletionsTests(unittest.TestCase):
+    @requires_integration
     def test_text_completion_http(self):
         """测试文本对话的非流式 HTTP 调用。"""
         response = requests.post(
@@ -33,6 +37,7 @@ class ChatCompletionsTests(unittest.TestCase):
         print("text non-stream result:")
         print(json.dumps(response.json(), ensure_ascii=False, indent=2))
 
+    @requires_integration
     def test_text_completion_stream_http(self):
         """测试文本对话的流式 HTTP 调用。"""
         response = requests.post(
@@ -57,6 +62,7 @@ class ChatCompletionsTests(unittest.TestCase):
             if line:
                 print(line.decode("utf-8", errors="replace"))
 
+    @requires_integration
     def test_image_completion_http(self):
         """测试图片对话的非流式 HTTP 调用。"""
         response = requests.post(
@@ -80,6 +86,7 @@ class ChatCompletionsTests(unittest.TestCase):
         for path in saved_paths:
             print(path)
 
+    @requires_integration
     def test_image_completion_stream_http(self):
         """测试图片对话的流式 HTTP 调用。"""
         response = requests.post(

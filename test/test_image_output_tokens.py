@@ -2,7 +2,7 @@ import json
 import urllib.error
 import urllib.request
 
-from test.utils import BASE_URL, load_auth_key
+from test.helpers import BASE_URL, load_auth_key
 
 
 def main() -> None:

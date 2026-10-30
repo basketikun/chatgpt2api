@@ -20,6 +20,9 @@ ImageInput = tuple[bytes, str, str]
 ImageSource = str | UploadFile | ImageInput
 
 MAX_IMAGE_REFERENCE_BYTES = 50 * 1024 * 1024
+MAX_IMAGE_UPLOAD_BYTES = 20 * 1024 * 1024
+MAX_IMAGE_REQUEST_BYTES = 40 * 1024 * 1024
+MAX_IMAGE_UPLOAD_COUNT = 4
 IMAGE_REFERENCE_FIELDS = {"image", "image[]", "images", "images[]", "image_url", "image_url[]"}
 MASK_REFERENCE_FIELDS = {"mask", "mask[]"}
 
@@ -290,17 +293,36 @@ def _download_image_url(url: str) -> ImageInput:
 async def read_image_sources(sources: list[ImageSource]) -> list[ImageInput]:
     """读取图片来源：上传文件直接读取，URL 下载后统一返回图片元组。"""
     images: list[ImageInput] = []
+    total_bytes = 0
     for source in sources:
+        if len(images) >= MAX_IMAGE_UPLOAD_COUNT:
+            raise HTTPException(
+                status_code=413,
+                detail={"error": f"at most {MAX_IMAGE_UPLOAD_COUNT} image files are allowed"},
+            )
         if isinstance(source, tuple):
+            data = source[0]
+            total_bytes += len(data)
+            if len(data) > MAX_IMAGE_UPLOAD_BYTES:
+                raise HTTPException(status_code=413, detail={"error": "image file is too large"})
+            if total_bytes > MAX_IMAGE_REQUEST_BYTES:
+                raise HTTPException(status_code=413, detail={"error": "total image upload is too large"})
             images.append(source)
             continue
         if _is_upload(source):
             try:
-                image_data = await source.read()
+                # Read only one byte beyond the limit so an oversized multipart
+                # part cannot be copied wholesale into memory by the endpoint.
+                image_data = await source.read(MAX_IMAGE_UPLOAD_BYTES + 1)
             finally:
                 await source.close()
             if not image_data:
                 raise HTTPException(status_code=400, detail={"error": "image file is empty"})
+            if len(image_data) > MAX_IMAGE_UPLOAD_BYTES:
+                raise HTTPException(status_code=413, detail={"error": "image file is too large"})
+            total_bytes += len(image_data)
+            if total_bytes > MAX_IMAGE_REQUEST_BYTES:
+                raise HTTPException(status_code=413, detail={"error": "total image upload is too large"})
             images.append((image_data, source.filename or "image.png", source.content_type or "image/png"))
             continue
         images.append(await run_in_threadpool(_download_image_url, source))

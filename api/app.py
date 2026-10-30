@@ -13,6 +13,7 @@ from api.support import resolve_web_asset, start_limited_account_watcher
 from services.backup_service import backup_service
 from services.config import config
 from services.image_service import start_image_cleanup_scheduler
+from services.request_limits import RequestBodyLimitMiddleware
 
 
 def create_app() -> FastAPI:
@@ -35,6 +36,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(title="chatgpt2api", version=app_version, lifespan=lifespan)
     install_exception_handlers(app)
+    app.add_middleware(RequestBodyLimitMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],

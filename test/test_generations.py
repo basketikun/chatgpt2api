@@ -1,4 +1,4 @@
-from test.utils import post_json, save_image
+from test.helpers import post_json, save_image
 
 
 def main() -> None:

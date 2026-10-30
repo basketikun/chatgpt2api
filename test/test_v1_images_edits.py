@@ -1,4 +1,5 @@
 from __future__ import annotations
+import os
 
 import json
 import time
@@ -7,10 +8,10 @@ from pathlib import Path
 
 import requests
 
-from test.utils import save_image
+from test.helpers import requires_integration, save_image
 from utils.log import logger
 
-AUTH_KEY = "chatgpt2api"
+AUTH_KEY = os.environ.get("CHATGPT2API_AUTH_KEY", "test-auth")
 BASE_URL = "http://localhost:8000"
 ASSETS_DIR = Path(__file__).resolve().parents[1] / "assets"
 
@@ -36,6 +37,7 @@ def summarize_chunk(chunk: dict[str, object]) -> dict[str, object]:
 
 
 class ImageEditsTests(unittest.TestCase):
+    @requires_integration
     def test_image_edit_http(self):
         """测试图片编辑的非流式 HTTP 调用。"""
         response = requests.post(
@@ -66,6 +68,7 @@ class ImageEditsTests(unittest.TestCase):
             "image_count": len(saved_paths),
         })
 
+    @requires_integration
     def test_image_edit_stream_http(self):
         """测试图片编辑的流式 HTTP 调用。"""
         response = requests.post(

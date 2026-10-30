@@ -1,4 +1,5 @@
 from __future__ import annotations
+import os
 
 import json
 import time
@@ -6,13 +7,14 @@ import unittest
 
 import requests
 
-from test.utils import save_image
+from test.helpers import requires_integration, save_image
 
-AUTH_KEY = "chatgpt2api"
+AUTH_KEY = os.environ.get("CHATGPT2API_AUTH_KEY", "test-auth")
 BASE_URL = "http://localhost:8000"
 
 
 class ImageGenerationsTests(unittest.TestCase):
+    @requires_integration
     def test_image_generation_http(self):
         """测试图片生成的非流式 HTTP 调用。"""
         response = requests.post(
@@ -40,6 +42,7 @@ class ImageGenerationsTests(unittest.TestCase):
         for path in saved_paths:
             print(path)
 
+    @requires_integration
     def test_image_generation_stream_http(self):
         """测试图片生成的流式 HTTP 调用。"""
         response = requests.post(

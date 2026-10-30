@@ -1,6 +1,8 @@
 import base64
 import json
+import os
 import sys
+import unittest
 import time
 import urllib.request
 from pathlib import Path
@@ -9,13 +11,21 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parents[1]
 OUTPUT_DIR = ROOT_DIR / "data" / "output"
 BASE_URL = "http://127.0.0.1:8000"
+RUN_INTEGRATION = os.environ.get("CHATGPT2API_RUN_INTEGRATION", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def requires_integration(test):
+    return unittest.skipUnless(
+        RUN_INTEGRATION,
+        "set CHATGPT2API_RUN_INTEGRATION=1 to run HTTP/upstream integration tests",
+    )(test)
 
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 
 def load_auth_key() -> str:
-    return json.loads((ROOT_DIR / "config.json").read_text(encoding="utf-8"))["auth-key"]
+    return os.environ.get("CHATGPT2API_AUTH_KEY", "test-auth")
 
 
 def post_json(path: str, payload: dict) -> dict:

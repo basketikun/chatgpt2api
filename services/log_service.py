@@ -3,11 +3,14 @@ from __future__ import annotations
 import hashlib
 import json
 import itertools
+import os
+from collections import deque
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
 
 from fastapi import HTTPException
@@ -27,6 +30,15 @@ class LogService:
     def __init__(self, path: Path):
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._restrict_permissions()
+
+    def _restrict_permissions(self) -> None:
+        try:
+            self.path.touch(mode=0o600, exist_ok=True)
+            os.chmod(self.path, 0o600)
+        except OSError:
+            # Some platforms/filesystems do not expose POSIX permissions.
+            pass
 
     @staticmethod
     def _legacy_id(raw_line: str, line_number: int) -> str:
@@ -70,22 +82,23 @@ class LogService:
         }
         with self.path.open("a", encoding="utf-8") as file:
             file.write(self._serialize_item(item) + "\n")
+        self._restrict_permissions()
 
     def list(self, type: str = "", start_date: str = "", end_date: str = "", limit: int = 200) -> list[dict[str, Any]]:
-        if not self.path.exists():
+        if not self.path.exists() or limit <= 0:
             return []
-        items: list[dict[str, Any]] = []
-        lines = self.path.read_text(encoding="utf-8").splitlines()
-        for line_number in range(len(lines) - 1, -1, -1):
-            item = self._parse_line(lines[line_number], line_number)
-            if item is None:
-                continue
-            if not self._matches_filters(item, type=type, start_date=start_date, end_date=end_date):
-                continue
-            items.append(item)
-            if len(items) >= limit:
-                break
-        return items
+        # Stream the file and retain only the newest matching records. This
+        # keeps a large historical log from being loaded into memory at once.
+        matches: deque[dict[str, Any]] = deque(maxlen=limit)
+        with self.path.open(encoding="utf-8") as file:
+            for line_number, line in enumerate(file):
+                item = self._parse_line(line, line_number)
+                if item is None:
+                    continue
+                if not self._matches_filters(item, type=type, start_date=start_date, end_date=end_date):
+                    continue
+                matches.append(item)
+        return list(reversed(matches))
 
     def delete(self, ids: list[str]) -> dict[str, int]:
         target_ids = {str(item or "").strip() for item in ids if str(item or "").strip()}
@@ -111,6 +124,23 @@ class LogService:
 
 
 log_service = LogService(DATA_DIR / "logs.jsonl")
+
+
+def _sanitize_log_url(value: str) -> str:
+    """Keep URL paths useful in history without persisting query credentials."""
+    try:
+        parsed = urlsplit(value)
+        if not parsed.scheme or not parsed.netloc:
+            return "[redacted-url]"
+        hostname = parsed.hostname or ""
+        if not hostname:
+            return "[redacted-url]"
+        netloc = f"[{hostname}]" if ":" in hostname else hostname
+        if parsed.port is not None:
+            netloc = f"{netloc}:{parsed.port}"
+        return urlunsplit((parsed.scheme, netloc, parsed.path, "", ""))
+    except ValueError:
+        return "[redacted-url]"
 
 
 def _collect_urls(value: object) -> list[str]:
@@ -333,5 +363,5 @@ class LoggedCall:
             detail["conversation_id"] = conv_id
         collected_urls = [*(urls or []), *_collect_urls(result)]
         if collected_urls and not self.endpoint.startswith("/v1/search"):
-            detail["urls"] = list(dict.fromkeys(collected_urls))
+            detail["urls"] = list(dict.fromkeys(_sanitize_log_url(url) for url in collected_urls))
         log_service.add(LOG_TYPE_CALL, f"{self.summary}{suffix}", detail)

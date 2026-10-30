@@ -32,8 +32,10 @@ const nextConfig: NextConfig = {
     images: {
         unoptimized: true,
     },
+    // Production builds must fail on type errors instead of shipping a
+    // statically exported bundle that has not passed TypeScript validation.
     typescript: {
-        ignoreBuildErrors: true,
+        ignoreBuildErrors: false,
     },
 }
 

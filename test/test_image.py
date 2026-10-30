@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from services.protocol import openai_v1_image_generations
-from test.utils import save_image
+from test.helpers import save_image
 
 
 def main() -> None:

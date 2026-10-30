@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import copy
 import unittest
 from unittest import mock
@@ -11,7 +13,8 @@ import api.system as system_module
 from services.config import DEFAULT_PROXY_RUNTIME
 
 
-AUTH_HEADERS = {"Authorization": "Bearer chatgpt2api"}
+AUTH_KEY = os.environ.get("CHATGPT2API_AUTH_KEY", "chatgpt2api")
+AUTH_HEADERS = {"Authorization": f"Bearer {AUTH_KEY}"}
 
 
 class FakeStorage:
