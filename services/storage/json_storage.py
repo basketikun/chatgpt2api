@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -27,12 +29,33 @@ class JSONStorageBackend(StorageBackend):
             return []
 
     @staticmethod
-    def _save_json_list(file_path: Path, items: list[dict[str, Any]]) -> None:
+    def _save_json_value(file_path: Path, value: Any) -> None:
+        payload = json.dumps(value, ensure_ascii=False, indent=2) + "\n"
         file_path.parent.mkdir(parents=True, exist_ok=True)
-        file_path.write_text(
-            json.dumps(items, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        tmp_path: Path | None = None
+        try:
+            # Keep the temporary file on the same filesystem for atomic replacement.
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=file_path.parent,
+                prefix=f".{file_path.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as stream:
+                tmp_path = Path(stream.name)
+                stream.write(payload)
+                stream.flush()
+                os.fsync(stream.fileno())
+            # Close before replacing so this also works on Windows.
+            os.replace(tmp_path, file_path)
+        finally:
+            if tmp_path is not None:
+                tmp_path.unlink(missing_ok=True)
+
+    @staticmethod
+    def _save_json_list(file_path: Path, items: list[dict[str, Any]]) -> None:
+        JSONStorageBackend._save_json_value(file_path, items)
 
     def load_accounts(self) -> list[dict[str, Any]]:
         """从 JSON 文件加载账号数据"""
@@ -56,11 +79,7 @@ class JSONStorageBackend(StorageBackend):
 
     def save_auth_keys(self, auth_keys: list[dict[str, Any]]) -> None:
         """保存鉴权密钥数据到 JSON 文件"""
-        self.auth_keys_path.parent.mkdir(parents=True, exist_ok=True)
-        self.auth_keys_path.write_text(
-            json.dumps({"items": auth_keys}, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        self._save_json_value(self.auth_keys_path, {"items": auth_keys})
 
     def health_check(self) -> dict[str, Any]:
         """健康检查"""
