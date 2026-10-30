@@ -18,6 +18,7 @@ export type ImageStorageSettings = {
 
 export type Account = {
   access_token: string;
+  account_id?: string | null;
   type: AccountType;
   source_type?: string | null;
   status: AccountStatus;
@@ -31,12 +32,48 @@ export type Account = {
   }>;
   default_model_slug?: string | null;
   restore_at?: string | null;
+  has_active_subscription?: boolean | null;
+  subscription_plan?: string | null;
+  billing_period?: string | null;
+  renews_at?: string | null;
+  cancels_at?: string | null;
   success: number;
   fail: number;
   /** 当前图片在途数(正在生成、尚未结束的图片数)。号池空闲时持续 > 0 表示并发槽位泄漏。 */
   image_inflight?: number;
   last_used_at?: string | null;
   proxy?: string | null;
+};
+
+export type InvoiceAccount = {
+  account_id: string;
+  email?: string | null;
+  plan?: string | null;
+  status?: string | null;
+  has_active_subscription?: boolean | null;
+  subscription_plan?: string | null;
+  billing_period?: string | null;
+  renews_at?: string | null;
+  cancels_at?: string | null;
+};
+
+export type InvoiceItem = {
+  id: string;
+  created_at: string;
+  amount: number;
+  currency: string;
+  status: string;
+  product: {
+    type?: string;
+    plan?: string;
+  };
+  invoice_url?: string | null;
+};
+
+export type InvoiceListResponse = {
+  account_id: string;
+  items: InvoiceItem[];
+  next_cursor?: string | null;
 };
 
 export type AccountImportPayload = {
@@ -333,6 +370,20 @@ export async function login(authKey: string) {
 
 export async function fetchAccounts() {
   return httpRequest<AccountListResponse>("/api/accounts");
+}
+
+export async function fetchInvoiceAccounts() {
+  return httpRequest<{ items: InvoiceAccount[] }>("/api/invoices/accounts");
+}
+
+export async function fetchInvoices(accountId: string, limit = 20, cursor = "") {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (cursor) {
+    params.set("cursor", cursor);
+  }
+  return httpRequest<InvoiceListResponse>(
+    `/api/invoices/${encodeURIComponent(accountId)}?${params.toString()}`,
+  );
 }
 
 export async function fetchModels() {

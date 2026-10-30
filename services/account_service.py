@@ -229,6 +229,14 @@ class AccountService:
         normalized["limits_progress"] = limits_progress if isinstance(limits_progress, list) else []
         normalized["default_model_slug"] = normalized.get("default_model_slug") or None
         normalized["restore_at"] = normalized.get("restore_at") or None
+        has_active_subscription = normalized.get("has_active_subscription")
+        normalized["has_active_subscription"] = (
+            bool(has_active_subscription) if has_active_subscription is not None else None
+        )
+        normalized["subscription_plan"] = normalized.get("subscription_plan") or None
+        normalized["billing_period"] = normalized.get("billing_period") or None
+        normalized["renews_at"] = normalized.get("renews_at") or None
+        normalized["cancels_at"] = normalized.get("cancels_at") or None
         normalized["success"] = int(normalized.get("success") or 0)
         normalized["fail"] = int(normalized.get("fail") or 0)
         normalized["invalid_count"] = int(normalized.get("invalid_count") or 0)
