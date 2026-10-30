@@ -304,6 +304,7 @@ class ImageTaskService:
                 status="failed",
                 error=error_message,
                 account_email=account_email,
+                conversation_id=conversation_id,
             )
 
     def _log_call(
@@ -319,6 +320,7 @@ class ImageTaskService:
         error: str = "",
         urls: list[str] | None = None,
         account_email: str = "",
+        conversation_id: str = "",
     ) -> None:
         endpoint = "/v1/images/edits" if mode == "edit" else "/v1/images/generations"
         summary_prefix = "图生图" if mode == "edit" else "文生图"
@@ -339,6 +341,8 @@ class ImageTaskService:
             detail["error"] = error
         if account_email:
             detail["account_email"] = account_email
+        if conversation_id:
+            detail["conversation_id"] = conversation_id
         if urls:
             detail["urls"] = list(dict.fromkeys(urls))
         try:
