@@ -2563,10 +2563,11 @@ class OpenAIBackendAPI:
             images: Optional[list[str]] = None,
             system_hints: Optional[list[str]] = None,
             thinking_effort: str = "",
+            image_timeout_secs: float | None = None,
     ) -> Iterator[str]:
         system_hints = system_hints or []
         if "picture_v2" in system_hints:
-            yield from self._stream_picture_conversation(prompt, model, images or [])
+            yield from self._stream_picture_conversation(prompt, model, images or [], image_timeout_secs)
             return
 
         normalized = messages or [{"role": "user", "content": prompt}]
@@ -2600,6 +2601,7 @@ class OpenAIBackendAPI:
             prompt: str,
             model: str,
             images: list[str],
+            timeout_secs: float | None = None,
     ) -> Iterator[str]:
         if not self.access_token:
             raise RuntimeError("access_token is required for image endpoints")
@@ -2612,9 +2614,10 @@ class OpenAIBackendAPI:
         self._report_progress("preparing_conversation")
         conduit_token = self._prepare_image_conversation(prompt, requirements, model)
         self._report_progress("starting_generation")
+        timeout_secs = timeout_secs or float(config.image_poll_timeout_secs)
         response = self._start_image_generation(prompt, requirements, conduit_token, model, references)
         self._report_progress("generating")
-        yield from self._iter_sse_payloads_capped(response, float(config.image_poll_timeout_secs))
+        yield from self._iter_sse_payloads_capped(response, timeout_secs)
 
     def _iter_sse_payloads_capped(self, response: Any, hard_cap_secs: float) -> Iterator[str]:
         """按墙钟硬上限消费图片 SSE 流，避免上游异常时长连接被无限挂起。

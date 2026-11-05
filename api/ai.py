@@ -20,6 +20,8 @@ from services.protocol import (
     openai_search,
 )
 
+GIF_GENERATION_TIMEOUT_SECS = 300
+
 
 class ImageGenerationRequest(BaseModel):
     prompt: str = Field(..., min_length=1)
@@ -101,6 +103,23 @@ def create_router() -> APIRouter:
         await filter_or_log(call, body.prompt)
         return await call.run(openai_v1_image_generations.handle, payload)
 
+    @router.post("/v1/images/generations/gif")
+    async def generate_gif(
+            body: ImageGenerationRequest,
+            request: Request,
+            authorization: str | None = Header(default=None),
+    ):
+        identity = require_identity(authorization)
+        prompt = f"请生成一段可循环播放的动画 GIF：{body.prompt}"
+        payload = body.model_dump(mode="python")
+        payload["prompt"] = prompt
+        payload["stream"] = False
+        payload["image_timeout_secs"] = GIF_GENERATION_TIMEOUT_SECS
+        payload["base_url"] = resolve_image_base_url(request)
+        call = LoggedCall(identity, "/v1/images/generations/gif", body.model, "GIF 动图生成", request_text=body.prompt)
+        await filter_or_log(call, prompt)
+        return await call.run(openai_v1_image_generations.handle, payload)
+
     @router.post("/v1/images/edits")
     async def edit_images(
             request: Request,
@@ -111,6 +130,25 @@ def create_router() -> APIRouter:
         prompt = str(payload["prompt"])
         model = str(payload["model"])
         call = LoggedCall(identity, "/v1/images/edits", model, "图生图", request_text=prompt)
+        await filter_or_log(call, prompt)
+        payload["images"] = await read_image_sources(image_sources)
+        if mask_sources:
+            payload["mask"] = await read_image_sources(mask_sources)
+        payload["base_url"] = resolve_image_base_url(request)
+        return await call.run(openai_v1_image_edit.handle, payload)
+
+    @router.post("/v1/images/edits/gif")
+    async def edit_image_as_gif(
+            request: Request,
+            authorization: str | None = Header(default=None),
+    ):
+        identity = require_identity(authorization)
+        payload, image_sources, mask_sources = await parse_image_edit_request(request)
+        prompt = f"请将参考图片制作成可循环播放的动画 GIF，人物动作自然连贯：{payload['prompt']}"
+        payload["prompt"] = prompt
+        payload["stream"] = False
+        payload["image_timeout_secs"] = GIF_GENERATION_TIMEOUT_SECS
+        call = LoggedCall(identity, "/v1/images/edits/gif", str(payload["model"]), "参考图 GIF 动图生成", request_text=prompt)
         await filter_or_log(call, prompt)
         payload["images"] = await read_image_sources(image_sources)
         if mask_sources:
