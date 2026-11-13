@@ -151,6 +151,31 @@ environment:
 - 支持 Codex 中的画图接口逆向，仅 `Plus` / `Team` / `Pro` 订阅可用，模型别名为 `codex-gpt-image-2`，如有需要可自行在其他场景映射回
   `gpt-image-2`，用于和官网画图区分；也就意味着同一账号会同时有官网和 Codex 两份生图额度
 
+### Image 2.5 网页生图
+
+图片生成和编辑支持以下模型名，`GET /v1/models` 也会在存在图片账号时返回这些名称：
+
+| 请求模型 | 上游模型 |
+| --- | --- |
+| `gpt-image-2.5-flare` | `gpt-image-2.5-flare` |
+| `gpt-image-2.5-sunburst` | `gpt-image-2.5-sunburst` |
+| `gpt-image-2.5` | `gpt-image-2.5-flare`（兼容别名） |
+
+例如向 `POST /v1/images/generations` 发送：
+
+```json
+{
+  "model": "gpt-image-2.5-flare",
+  "prompt": "A red apple on a white plate",
+  "n": 1,
+  "response_format": "b64_json"
+}
+```
+
+这两个 2.5 型号在会话准备和实际生成请求中均原样透传，不会降级为 `auto`。
+现有 `gpt-image-2` 的配置映射及 Codex 专用路由保持不变。模型名称被接口接受不代表
+账号一定具备上游权限或额度；本改动不处理上游 Sentinel、Cloudflare 或账号限制。
+
 ### 在线画图功能
 
 - 内置在线画图工作台，支持生成、图片编辑与多图组图编辑

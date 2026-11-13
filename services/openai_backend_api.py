@@ -562,7 +562,7 @@ class OpenAIBackendAPI:
         return payload
 
     def _image_model_settings(self, model: str) -> tuple[str, str]:
-        """把标准图片模型名映射为上游模型及思考强度。"""
+        """Map image models without downgrading explicit Image 2.5 slugs."""
         _, base_model = split_image_model(model)
         if not base_model:
             return "auto", ""
@@ -571,7 +571,7 @@ class OpenAIBackendAPI:
         elif base_model == CODEX_IMAGE_MODEL:
             upstream_model = base_model
         else:
-            return "auto", ""
+            upstream_model = base_model
         model_name, separator, suffix = upstream_model.rpartition("-")
         if separator and suffix.lower() in {"standard", "extended", "max"}:
             return model_name, suffix.lower()

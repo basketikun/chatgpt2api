@@ -14,15 +14,17 @@ from fastapi import HTTPException
 from services.proxy_service import proxy_settings
 from utils.log import logger
 
-BASE_IMAGE_MODELS = {"gpt-image-2", "codex-gpt-image-2"}
+WEB_IMAGE_MODELS = {"gpt-image-2", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"}
+IMAGE_MODEL_ALIASES = {"gpt-image-2.5": "gpt-image-2.5-flare"}
+BASE_IMAGE_MODELS = WEB_IMAGE_MODELS | {"codex-gpt-image-2"}
 IMAGE_MODEL_PLAN_TYPES = ("plus", "team", "pro")
 CODEX_IMAGE_MODEL = "codex-gpt-image-2"
 PREFIXED_CODEX_IMAGE_MODELS = {
     f"{plan_type}-{CODEX_IMAGE_MODEL}"
     for plan_type in IMAGE_MODEL_PLAN_TYPES
 }
-IMAGE_MODELS = BASE_IMAGE_MODELS | PREFIXED_CODEX_IMAGE_MODELS
-PUBLIC_IMAGE_MODELS = BASE_IMAGE_MODELS | PREFIXED_CODEX_IMAGE_MODELS
+IMAGE_MODELS = BASE_IMAGE_MODELS | PREFIXED_CODEX_IMAGE_MODELS | set(IMAGE_MODEL_ALIASES)
+PUBLIC_IMAGE_MODELS = IMAGE_MODELS
 OUTPUT_DIR = Path(__file__).resolve().parent / "output"
 
 SUPPORTED_JSON_IMAGE_MIME_TYPES = {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"}
@@ -108,6 +110,7 @@ def new_uuid() -> str:
 
 def split_image_model(model: object) -> tuple[str | None, str | None]:
     normalized = str(model or "").strip().lower()
+    normalized = IMAGE_MODEL_ALIASES.get(normalized, normalized)
     if not normalized:
         return None, None
     if normalized in BASE_IMAGE_MODELS:
