@@ -29,6 +29,14 @@
   </tr>
   <tr>
     <td width="190" align="center">
+      <a href="https://88api.ai/sign-up?aff=py0a"><img src="assets/88api.png" width="163" alt="88API"></a>
+    </td>
+    <td>
+      <a href="https://88api.ai/sign-up?aff=py0a">88API</a> 是一家由香港企业运营、主要面向开发者、创作者与 AI 应用用户的一站式多模型 API 平台，通过统一接口接入文本、图片、语音和视频模型，覆盖 AI 编程、智能翻译、内容创作、配音、图像生成、视频生成等常见工作流。支持在常用客户端中完成 Provider 添加并切换，支持国际主流付款方式，可提供发票，提供企业级稳定服务。通过 <a href="https://88api.ai/sign-up?aff=py0a">此链接注册</a> 可以获取专属赠送额度！
+    </td>
+  </tr>
+  <tr>
+    <td width="190" align="center">
       <a href="https://www.ipwo.net/?ref=githubbasketikunchatgpt2api"><img src="assets/ipwo.png" width="163" alt="IPWO"></a>
     </td>
     <td>
