@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import mimetypes
 import shutil
 import threading
 import time
@@ -58,7 +59,8 @@ def get_image_response(relative_path: str) -> FileResponse | Response:
     }
     if image_storage_service.has_local(relative_path):
         return FileResponse(_safe_image_path(relative_path), headers=headers)
-    return Response(content=image_storage_service.get_bytes(relative_path), media_type="image/png", headers=headers)
+    media_type = mimetypes.guess_type(relative_path)[0] or "image/png"
+    return Response(content=image_storage_service.get_bytes(relative_path), media_type=media_type, headers=headers)
 
 
 def _thumbnail_path(relative_path: str) -> Path:
@@ -130,7 +132,7 @@ def get_image_download_response(relative_path: str) -> FileResponse:
     }
     return Response(
         content=image_storage_service.get_bytes(rel),
-        media_type="image/png",
+        media_type=mimetypes.guess_type(rel)[0] or "image/png",
         headers=headers,
     )
 

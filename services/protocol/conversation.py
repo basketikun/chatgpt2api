@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import io
 import json
 import re
 import threading
@@ -10,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any, Iterable, Iterator
 
 import tiktoken
+from PIL import Image
 
 from services.account_service import account_service
 from services.config import config
@@ -276,15 +278,27 @@ def format_image_result(
         if not b64_json:
             continue
         revised_prompt = str(item.get("revised_prompt") or prompt).strip() or prompt
+        image_bytes = base64.b64decode(b64_json)
+        try:
+            with Image.open(io.BytesIO(image_bytes)) as image:
+                mime_type = Image.MIME.get(image.format, "image/png")
+                animated = bool(getattr(image, "is_animated", False))
+        except Exception:
+            mime_type = "image/png"
+            animated = False
         if response_format == "b64_json":
             data.append({
                 "b64_json": b64_json,
-                "url": save_image_bytes(base64.b64decode(b64_json), base_url),
+                "url": save_image_bytes(image_bytes, base_url),
+                "mime_type": mime_type,
+                "animated": animated,
                 "revised_prompt": revised_prompt,
             })
         else:
             data.append({
-                "url": save_image_bytes(base64.b64decode(b64_json), base_url),
+                "url": save_image_bytes(image_bytes, base_url),
+                "mime_type": mime_type,
+                "animated": animated,
                 "revised_prompt": revised_prompt,
             })
     result: dict[str, Any] = {"created": created or int(time.time()), "data": data}
@@ -307,6 +321,7 @@ class ConversationRequest:
     base_url: str | None = None
     message_as_error: bool = False
     progress_callback: Any = None  # Callable[[str], None] | None
+    image_timeout_secs: float | None = None
 
 
 @dataclass
@@ -689,6 +704,7 @@ def conversation_events(
     size: str | None = None,
     quality: str = "auto",
     thinking_effort: str = "",
+    image_timeout_secs: float | None = None,
 ) -> Iterator[dict[str, Any]]:
     normalized = normalize_messages(messages or ([{"role": "user", "content": prompt}] if prompt else []))
     image_model = is_supported_image_model(model)
@@ -702,6 +718,7 @@ def conversation_events(
         images=images if image_model else None,
         system_hints=["picture_v2"] if image_model else None,
         thinking_effort=thinking_effort if not image_model else "",
+        image_timeout_secs=image_timeout_secs if image_model else None,
     )
     yield from iter_conversation_payloads(payloads, history_text, history_messages)
 
@@ -849,6 +866,7 @@ def stream_image_outputs(
             images=request.images or [],
             size=request.size,
             quality=request.quality,
+            image_timeout_secs=request.image_timeout_secs,
     ):
         last = event
         if event.get("type") == "conversation.delta":
@@ -959,7 +977,7 @@ def stream_image_outputs(
     # 当检测到文本回复（含 referenced_image_ids）时，使用更长的超时来轮询图片结果。
     # 因为上游可能将图片生成作为异步任务执行，SSE 流在工具完成前就断开了，
     # 导致对话文档中尚未写入图片工具的响应记录。
-    poll_timeout = config.image_poll_timeout_secs
+    poll_timeout = request.image_timeout_secs or config.image_poll_timeout_secs
     if is_text_reply and conversation_id:
         # 文本回复场景下图片可能仍在异步生成，使用更长超时（默认 120s → 额外 180s = 300s）
         poll_timeout = max(poll_timeout, 300)
