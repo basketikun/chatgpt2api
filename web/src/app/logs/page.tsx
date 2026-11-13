@@ -15,17 +15,13 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { deleteSystemLogs, fetchSystemLogs, type SystemLog } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 
 const LogType = {
   Call: "call",
   Account: "account",
 } as const;
-
-const typeLabels: Record<string, string> = {
-  [LogType.Call]: "调用日志",
-  [LogType.Account]: "账号管理日志",
-};
 
 function getDetailText(item: SystemLog, key: string) {
   const value = item.detail?.[key];
@@ -42,14 +38,19 @@ function getUrls(item: SystemLog | null) {
   return Array.isArray(urls) ? urls.filter((url): url is string => typeof url === "string") : [];
 }
 
-function getStatus(item: SystemLog) {
+function getStatus(item: SystemLog, successLabel: string, failedLabel: string) {
   const status = item.detail?.status;
-  if (status === "success") return "成功";
-  if (status === "failed") return "失败";
+  if (status === "success") return successLabel;
+  if (status === "failed") return failedLabel;
   return "-";
 }
 
 function LogsContent() {
+  const { t, locale } = useI18n();
+  const typeLabels: Record<string, string> = {
+    [LogType.Call]: t.logs.callLogs,
+    [LogType.Account]: t.logs.accountLogs,
+  };
   const [items, setItems] = useState<SystemLog[]>([]);
   const [type, setType] = useState<string>(LogType.Call);
   const [startDate, setStartDate] = useState("");
@@ -82,7 +83,7 @@ function LogsContent() {
       setSelectedIds((current) => current.filter((id) => data.items.some((item) => item.id === id)));
       setPage(1);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "加载日志失败");
+      toast.error(error instanceof Error ? error.message : (locale === "fa" ? "بارگذاری لاگ‌ها ناموفق بود" : locale === "ar" ? "فشل تحميل السجلات" : locale === "zh" ? "加载日志失败" : "Failed to load logs"));
     } finally {
       setIsLoading(false);
     }
@@ -114,7 +115,7 @@ function LogsContent() {
     setIsDeleting(true);
     try {
       const data = await deleteSystemLogs(ids);
-      toast.success(`已删除 ${data.removed} 条日志`);
+      toast.success(locale === "fa" ? `تعداد ${data.removed} لاگ حذف شد` : locale === "ar" ? `تم حذف ${data.removed} سجل` : locale === "zh" ? `已删除 ${data.removed} 条日志` : `Deleted ${data.removed} logs`);
       setDeletingItems([]);
       setSelectedIds((current) => current.filter((id) => !ids.includes(id)));
       if (detailLog && ids.includes(detailLog.id)) {
@@ -123,7 +124,7 @@ function LogsContent() {
       }
       await loadLogs();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "删除日志失败");
+      toast.error(error instanceof Error ? error.message : (locale === "fa" ? "حذف لاگ‌ها ناموفق بود" : locale === "ar" ? "فشل حذف السجلات" : locale === "zh" ? "删除日志失败" : "Failed to delete logs"));
     } finally {
       setIsDeleting(false);
     }
@@ -138,23 +139,23 @@ function LogsContent() {
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="space-y-1">
           <div className="text-xs font-semibold tracking-[0.18em] text-stone-500 uppercase">Logs</div>
-          <h1 className="text-2xl font-semibold tracking-tight">日志管理</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{t.logs.title}</h1>
         </div>
         <div className="flex flex-wrap gap-2">
           <Select value={type} onValueChange={setType}>
             <SelectTrigger className="h-10 w-[150px] rounded-xl border-stone-200 bg-white"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value={LogType.Call}>调用日志</SelectItem>
-              <SelectItem value={LogType.Account}>账号管理日志</SelectItem>
+              <SelectItem value={LogType.Call}>{t.logs.callLogs}</SelectItem>
+              <SelectItem value={LogType.Account}>{t.logs.accountLogs}</SelectItem>
             </SelectContent>
           </Select>
           <DateRangeFilter startDate={startDate} endDate={endDate} onChange={(start, end) => { setStartDate(start); setEndDate(end); }} />
           <Button variant="outline" onClick={clearFilters} className="h-10 rounded-xl border-stone-200 bg-white px-4 text-stone-700">
-            清除筛选条件
+            {locale === "fa" ? "پاک کردن فیلترها" : locale === "ar" ? "مسح الفلاتر" : locale === "zh" ? "清除筛选条件" : "Clear Filters"}
           </Button>
           <Button onClick={() => void loadLogs()} disabled={isLoading} className="h-10 rounded-xl bg-stone-950 px-4 text-white hover:bg-stone-800">
             {isLoading ? <LoaderCircle className="size-4 animate-spin" /> : <Search className="size-4" />}
-            查询
+            {t.common.search}
           </Button>
         </div>
       </div>
@@ -163,28 +164,28 @@ function LogsContent() {
         <CardContent className="p-0">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-100 px-5 py-4">
             <div className="flex flex-wrap items-center gap-3 text-sm text-stone-600">
-              <span>共 {items.length} 条</span>
+              <span>{locale === "fa" ? `مجموع ${items.length} مورد` : locale === "ar" ? `الإجمالي ${items.length} سجل` : locale === "zh" ? `共 ${items.length} 条` : `Total ${items.length} items`}</span>
               <label className="flex items-center gap-2">
                 <Checkbox checked={currentPageSelected} onCheckedChange={(checked) => toggleIds(currentRows.map((item) => item.id), Boolean(checked))} />
-                本页全选
+                {t.imageManager.selectAll}
               </label>
               <label className="flex items-center gap-2">
                 <Checkbox checked={allSelected} onCheckedChange={(checked) => toggleIds(items.map((item) => item.id), Boolean(checked))} />
-                全选结果
+                {locale === "fa" ? "انتخاب همه نتایج" : locale === "ar" ? "تحديد كل النتائج" : locale === "zh" ? "全选结果" : "Select All Results"}
               </label>
-              {selectedIds.length > 0 ? <span>已选 {selectedIds.length} 条</span> : null}
+              {selectedIds.length > 0 ? <span>{locale === "fa" ? `${selectedIds.length} مورد انتخاب شد` : locale === "ar" ? `تم تحديد ${selectedIds.length}` : locale === "zh" ? `已选 ${selectedIds.length} 条` : `Selected ${selectedIds.length}`}</span> : null}
             </div>
             <div className="flex items-center gap-2">
               <Button variant="ghost" className="h-8 rounded-lg px-3 text-stone-500" onClick={() => void loadLogs()} disabled={isLoading}>
                 <RefreshCw className={`size-4 ${isLoading ? "animate-spin" : ""}`} />
-                刷新
+                {t.common.refresh}
               </Button>
               <button type="button" className="text-sm text-stone-500 hover:text-stone-900 disabled:text-stone-300" onClick={() => setSelectedIds([])} disabled={selectedIds.length === 0 || isDeleting}>
-                取消选择
+                {t.imageManager.unselectAll}
               </button>
               <Button variant="outline" className="h-8 rounded-lg border-rose-200 bg-white px-3 text-rose-600 hover:bg-rose-50" onClick={() => setDeletingItems(items.filter((item) => selectedSet.has(item.id)))} disabled={selectedIds.length === 0 || isDeleting}>
                 <Trash2 className="size-4" />
-                删除所选
+                {t.imageManager.deleteSelected}
               </Button>
             </div>
           </div>
@@ -193,14 +194,14 @@ function LogsContent() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-12"></TableHead>
-                  <TableHead>时间</TableHead>
-                  <TableHead>类型</TableHead>
-                  {isCallLog ? <TableHead>令牌名称</TableHead> : null}
-                  {isCallLog ? <TableHead>调用耗时</TableHead> : null}
-                  {isCallLog ? <TableHead>状态</TableHead> : null}
-                  {isCallLog ? <TableHead className="w-36">图片</TableHead> : null}
-                  <TableHead>简述</TableHead>
-                  <TableHead className="w-40">操作</TableHead>
+                  <TableHead>{t.logs.time}</TableHead>
+                  <TableHead>{locale === "fa" ? "نوع" : locale === "ar" ? "النوع" : locale === "zh" ? "类型" : "Type"}</TableHead>
+                  {isCallLog ? <TableHead>{t.settings.keyName}</TableHead> : null}
+                  {isCallLog ? <TableHead>{t.logs.duration}</TableHead> : null}
+                  {isCallLog ? <TableHead>{t.logs.status}</TableHead> : null}
+                  {isCallLog ? <TableHead className="w-36">{locale === "fa" ? "تصویر" : locale === "ar" ? "الصورة" : locale === "zh" ? "图片" : "Image"}</TableHead> : null}
+                  <TableHead>{locale === "fa" ? "خلاصه" : locale === "ar" ? "الملخص" : locale === "zh" ? "简述" : "Summary"}</TableHead>
+                  <TableHead className="w-40">{t.common.actions}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -218,7 +219,7 @@ function LogsContent() {
                       {isCallLog ? (
                         <TableCell>
                           <Badge variant={item.detail?.status === "failed" ? "danger" : "success"} className="rounded-md">
-                            {getStatus(item)}
+                            {getStatus(item, t.common.success, t.common.error)}
                           </Badge>
                         </TableCell>
                       ) : null}
@@ -232,7 +233,7 @@ function LogsContent() {
                                   type="button"
                                   className="relative size-9 overflow-hidden rounded-lg border border-stone-200 bg-stone-100"
                                   onClick={() => openLogImage(item, imageIndex)}
-                                  title="预览图片"
+                                  title={locale === "fa" ? "پیش‌نمایش تصویر" : locale === "ar" ? "معاينة الصورة" : locale === "zh" ? "预览图片" : "Preview image"}
                                 >
                                   <ImageThumbnail src={url} thumbnailSrc={getImageThumbnailUrl(url)} className="h-full w-full" />
                                 </button>
@@ -251,10 +252,10 @@ function LogsContent() {
                       <TableCell>
                         <div className="flex items-center gap-1">
                           <Button variant="ghost" className="h-8 rounded-lg px-3 text-stone-600" onClick={() => openDetail(item)}>
-                            查看详情
+                            {t.logs.details}
                           </Button>
                           <Button variant="ghost" className="h-8 rounded-lg px-3 text-rose-600 hover:bg-rose-50 hover:text-rose-700" onClick={() => setDeletingItems([item])}>
-                            删除
+                            {t.common.delete}
                           </Button>
                         </div>
                       </TableCell>
@@ -265,7 +266,7 @@ function LogsContent() {
             </Table>
           </div>
           <div className="flex items-center justify-end gap-2 border-t border-stone-100 px-4 py-3 text-sm text-stone-500">
-            <span>第 {safePage} / {pageCount} 页，共 {items.length} 条</span>
+            <span>{locale === "fa" ? `صفحه ${safePage} از ${pageCount} (مجموع ${items.length})` : locale === "ar" ? `صفحة ${safePage} من ${pageCount} (الإجمالي ${items.length})` : locale === "zh" ? `第 ${safePage} / ${pageCount} 页，共 ${items.length} 条` : `Page ${safePage} of ${pageCount} (${items.length} total)`}</span>
             <Button variant="outline" size="icon" className="size-9 rounded-lg border-stone-200 bg-white" disabled={safePage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
               <ChevronLeft className="size-4" />
             </Button>
@@ -273,13 +274,13 @@ function LogsContent() {
               <ChevronRight className="size-4" />
             </Button>
           </div>
-          {!isLoading && items.length === 0 ? <div className="px-6 py-14 text-center text-sm text-stone-500">没有找到日志</div> : null}
+          {!isLoading && items.length === 0 ? <div className="px-6 py-14 text-center text-sm text-stone-500">{locale === "fa" ? "هیچ لاگی یافت نشد" : locale === "ar" ? "لم يتم العثور على سجلات" : locale === "zh" ? "没有找到日志" : "No logs found"}</div> : null}
         </CardContent>
       </Card>
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent className="flex h-[min(88vh,860px)] w-[min(92vw,920px)] flex-col overflow-hidden rounded-2xl p-0">
           <DialogHeader className="shrink-0 border-b border-stone-100 px-6 py-5">
-            <DialogTitle>日志详情</DialogTitle>
+            <DialogTitle>{locale === "fa" ? "جزئیات لاگ" : locale === "ar" ? "تفاصيل السجل" : locale === "zh" ? "日志详情" : "Log Details"}</DialogTitle>
           </DialogHeader>
           <div className="flex-1 overflow-y-auto px-6 py-5">
             <div className="space-y-4">
@@ -327,18 +328,18 @@ function LogsContent() {
       <Dialog open={deletingItems.length > 0} onOpenChange={(open) => (!open ? setDeletingItems([]) : null)}>
         <DialogContent showCloseButton={false} className="rounded-2xl p-6">
           <DialogHeader className="gap-2">
-            <DialogTitle>{deletingItems.length === 1 ? "删除日志" : "删除所选日志"}</DialogTitle>
+            <DialogTitle>{deletingItems.length === 1 ? (locale === "fa" ? "حذف لاگ" : locale === "ar" ? "حذف السجل" : locale === "zh" ? "删除日志" : "Delete Log") : (locale === "fa" ? "حذف لاگ‌های انتخاب‌شده" : locale === "ar" ? "حذف السجلات المحددة" : locale === "zh" ? "删除所选日志" : "Delete Selected Logs")}</DialogTitle>
             <DialogDescription className="text-sm leading-6">
-              确认删除 {deletingItems.length} 条日志吗？删除后无法恢复。
+              {locale === "fa" ? `آیا از حذف ${deletingItems.length} لاگ اطمینان دارید؟ حذف قابل بازیابی نیست.` : locale === "ar" ? `هل أنت متأكد من حذف ${deletingItems.length} سجل؟ لا يمكن التراجع.` : locale === "zh" ? `确认删除 ${deletingItems.length} 条日志吗？删除后无法恢复。` : `Are you sure you want to delete ${deletingItems.length} log(s)? This cannot be undone.`}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" className="rounded-xl" onClick={() => setDeletingItems([])} disabled={isDeleting}>
-              取消
+              {t.common.cancel}
             </Button>
             <Button className="rounded-xl bg-rose-600 text-white hover:bg-rose-700" onClick={() => void confirmDelete()} disabled={isDeleting || deletingItems.length === 0}>
               {isDeleting ? <LoaderCircle className="size-4 animate-spin" /> : null}
-              确认删除
+              {t.common.delete}
             </Button>
           </DialogFooter>
         </DialogContent>

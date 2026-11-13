@@ -61,13 +61,21 @@ request.interceptors.response.use(
             }
         }
 
-        const payload = error.response?.data;
+        const fallbackError = () => {
+            if (typeof window !== "undefined") {
+                const locale = window.localStorage.getItem("chatgpt2api_locale");
+                if (locale === "fa") return `درخواست ناموفق بود (${status || 500})`;
+                if (locale === "ar") return `فشل الطلب (${status || 500})`;
+                if (locale === "zh") return `请求失败 (${status || 500})`;
+            }
+            return `Request failed (${status || 500})`;
+        };
         const message =
             errorMessageFromValue(payload?.detail) ||
             errorMessageFromValue(payload?.error) ||
             payload?.message ||
             error.message ||
-            `请求失败 (${status || 500})`;
+            fallbackError();
         return Promise.reject(new Error(message));
     },
 );

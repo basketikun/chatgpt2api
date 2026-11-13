@@ -7,9 +7,11 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import webConfig from "@/constants/common-env";
 import { fetchSettingsConfig } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 import { getStoredAuthSession } from "@/store/auth";
 
 export function SkillPanel() {
+  const { t, locale } = useI18n();
   const [browserBaseUrl, setBrowserBaseUrl] = useState("");
   const [configuredBaseUrl, setConfiguredBaseUrl] = useState("");
   const [authKey, setAuthKey] = useState("");
@@ -21,6 +23,7 @@ export function SkillPanel() {
   }, []);
 
   const apiBaseUrl = configuredBaseUrl || webConfig.apiUrl.replace(/\/$/, "") || browserBaseUrl;
+
   const skillZh = useMemo(() => `---
 name: chatgpt2api-search
 description: 当用户需要联网搜索、查询最新信息、核实事实或需要来源链接时，调用本地 chatgpt2api 搜索接口。
@@ -120,9 +123,41 @@ SKILL.md content:
 ${skillEn}
 \`\`\``, [skillEn]);
 
+  const faPrompt = useMemo(() => `لطفاً این اسکیل (skill) جستجوی وب را به صورت محلی بر روی سیستم نصب کنید.
+
+الزامات:
+1. بر اساس قوانین محیط جاری، آن را به عنوان یک skill محلی نصب نمایید.
+2. نام اسکیل: chatgpt2api-search
+3. نام فایل: SKILL.md
+4. در صورت عدم اطمینان از محل پوشه skills، پیش از ذخیره محل آن را سوال کنید.
+5. تنها این فایل را ایجاد یا به‌روزرسانی کنید و فایل‌های دیگر را تغییر ندهید.
+6. محتوای کامل زیر را در فایل SKILL.md قرار دهید:
+
+\`\`\`markdown
+${skillEn}
+\`\`\``, [skillEn]);
+
+  const arPrompt = useMemo(() => `يرجى تثبيت أداة البحث في الويب (skill) محلياً على هذا الجهاز.
+
+المتطلبات:
+1. تثبيت الأداة وفقاً لمعايير البيئة الحالية كـ local skill.
+2. اسم الأداة: chatgpt2api-search
+3. اسم الملف: SKILL.md
+4. إذا تعذر تحديد مسار مجلد skills، أخبرني بالمطلوب مسبقاً.
+5. قم بإنشاء أو تحديث هذا الملف فقط دون تعديل أي ملفات أخرى.
+6. اكتب المحتوى الكامل أدناه في ملف SKILL.md:
+
+\`\`\`markdown
+${skillEn}
+\`\`\``, [skillEn]);
+
   const copyText = async (text: string) => {
-    await navigator.clipboard.writeText(text);
-    toast.success("已复制");
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(t.skillPanel.copied);
+    } catch {
+      toast.error(t.skillPanel.copyFailed);
+    }
   };
 
   const downloadSkill = (text: string) => {
@@ -134,10 +169,30 @@ ${skillEn}
     URL.revokeObjectURL(url);
   };
 
-  const versions = [
-    { title: "中文安装指令", desc: "复制后直接发给 Codex 或 Claude，让它安装到本地。", prompt: zhPrompt, skill: skillZh },
-    { title: "English install prompt", desc: "Copy and send this to Codex or Claude to install locally.", prompt: enPrompt, skill: skillEn },
-  ];
+  const versions = useMemo(() => {
+    if (locale === "fa") {
+      return [
+        { title: "دستورالعمل نصب (فارسی)", desc: "این متن را کپی کرده و به دستیار هوش مصنوعی ارسال کنید تا اسکیل را نصب کند.", prompt: faPrompt, skill: skillEn },
+        { title: "English Install Prompt", desc: "Copy and send this to Codex, Claude or Agent to install locally.", prompt: enPrompt, skill: skillEn },
+      ];
+    }
+    if (locale === "ar") {
+      return [
+        { title: "أمر التثبيت (العربية)", desc: "انسخ هذا النص وأرسله إلى المساعد لتثبيت الأداة محلياً.", prompt: arPrompt, skill: skillEn },
+        { title: "English Install Prompt", desc: "Copy and send this to Codex, Claude or Agent to install locally.", prompt: enPrompt, skill: skillEn },
+      ];
+    }
+    if (locale === "zh") {
+      return [
+        { title: "中文安装指令", desc: "复制后直接发给 Codex 或 Claude，让它安装到本地。", prompt: zhPrompt, skill: skillZh },
+        { title: "English install prompt", desc: "Copy and send this to Codex or Claude to install locally.", prompt: enPrompt, skill: skillEn },
+      ];
+    }
+    return [
+      { title: "English Install Prompt", desc: "Copy and send this to Codex, Claude or Agent to install locally.", prompt: enPrompt, skill: skillEn },
+      { title: "中文安装指令", desc: "复制后直接发给 Codex 或 Claude，让它安装到本地。", prompt: zhPrompt, skill: skillZh },
+    ];
+  }, [locale, faPrompt, arPrompt, zhPrompt, enPrompt, skillEn, skillZh]);
 
   return (
     <section className="grid items-stretch gap-4 lg:grid-cols-2">
@@ -150,16 +205,16 @@ ${skillEn}
             </div>
             <div className="flex gap-2">
               <Button size="sm" variant="outline" className="cursor-pointer" onClick={() => downloadSkill(item.skill)}>
-                <Download />
-                下载
+                <Download className="size-4" />
+                {t.skillPanel.downloadBtn}
               </Button>
               <Button size="sm" className="cursor-pointer" onClick={() => void copyText(item.prompt)}>
-                <Copy />
-                复制
+                <Copy className="size-4" />
+                {t.skillPanel.copyPromptBtn}
               </Button>
             </div>
           </div>
-          <pre className="flex-1 whitespace-pre-wrap p-4 font-mono text-sm leading-6">
+          <pre className="flex-1 whitespace-pre-wrap p-4 font-mono text-sm leading-6" dir="ltr">
             {item.prompt}
           </pre>
         </div>
