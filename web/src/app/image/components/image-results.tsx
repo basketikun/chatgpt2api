@@ -5,6 +5,7 @@ import { Clock3, Download, EyeOff, LoaderCircle, RotateCcw, Sparkles, Trash2 } f
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { toLocalImageUrl } from "@/lib/image-url";
 import type { ImageConversation, ImageTurnStatus, StoredImage, StoredReferenceImage } from "@/store/image-conversations";
 
 export type ImageLightboxItem = {
@@ -44,7 +45,7 @@ function getStoredImageSrc(image: StoredImage) {
     }
     return url;
   }
-  return image.url || "";
+  return toLocalImageUrl(image.url || "");
 }
 
 async function downloadStoredImage(image: StoredImage, index: number) {
@@ -58,7 +59,7 @@ async function downloadStoredImage(image: StoredImage, index: number) {
     } else if (image.url) {
       // 确保 URL 是绝对路径
       const url = image.url.startsWith("http") ? image.url : `${window.location.origin}${image.url}`;
-      const res = await fetch(url);
+      const res = await fetch(toLocalImageUrl(url));
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }

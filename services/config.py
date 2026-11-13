@@ -560,6 +560,24 @@ class ConfigStore:
             return "0.0.0"
         return value or "0.0.0"
 
+    @property
+    def sentinel_solver_url(self) -> str:
+        """常驻 Chromium 的 sentinel 求解服务地址。"""
+        return str(
+            os.getenv("CHATGPT2API_SENTINEL_SOLVER_URL")
+            or self.data.get("sentinel_solver_url")
+            or ""
+        ).strip().rstrip("/")
+
+    @property
+    def sentinel_solver_key(self) -> str:
+        """求解服务访问密钥，不通过设置接口返回。"""
+        return str(
+            os.getenv("CHATGPT2API_SENTINEL_SOLVER_KEY")
+            or self.data.get("sentinel_solver_key")
+            or ""
+        ).strip()
+
     def get(self) -> dict[str, object]:
         data = dict(self.data)
         data["refresh_account_interval_minute"] = self.refresh_account_interval_minute
@@ -585,6 +603,7 @@ class ConfigStore:
         data["chat_completion_cache"] = self.get_chat_completion_cache_settings()
         data["proxy_runtime"] = self.get_public_proxy_runtime_settings()
         data["third_party_apps"] = self.get_third_party_apps_settings()
+        data.pop("sentinel_solver_key", None)
         data.pop("auth-key", None)
         return data
 

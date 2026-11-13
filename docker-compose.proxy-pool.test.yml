@@ -1,0 +1,62 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: pansx/chatgpt2api:sentinel-2026-10-proxy-pool-local
+    ports:
+      - "127.0.0.1:8000:80"
+    volumes:
+      - ${CHATGPT2API_TEST_DATA_DIR:-./.codex/compose-data}:/app/data
+      - ${CHATGPT2API_TEST_CONFIG:-./.codex/compose-config.json}:/app/config.json:ro
+    environment:
+      STORAGE_BACKEND: json
+      CHATGPT2API_PROXY_POOL_ENABLED: "true"
+      CHATGPT2API_SENTINEL_SOLVER_URL: http://solver:8080
+      CHATGPT2API_SENTINEL_SOLVER_KEY: ${CHATGPT2API_SENTINEL_SOLVER_KEY:-local-test-key}
+      CHATGPT2API_PROXY_CORE_ENABLED: "true"
+      CHATGPT2API_PROXY_CORE_API: http://clash-egress:9090
+      CHATGPT2API_PROXY_CORE_LISTEN_HOST: clash-egress
+      CHATGPT2API_PROXY_CORE_PORT_START: "20001"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      clash-egress:
+        condition: service_started
+
+  solver:
+    build:
+      context: ./sentinel_solver
+      dockerfile: Dockerfile
+      args:
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+    image: pansx/chatgpt2api-sentinel-solver:sentinel-2026-10-proxy-pool-local
+    environment:
+      SENTINEL_SOLVER_KEY: ${CHATGPT2API_SENTINEL_SOLVER_KEY:-local-test-key}
+      SENTINEL_SOLVER_PROXY: http://clash-egress:20001
+      HTTP_PROXY: http://host.docker.internal:7072
+      HTTPS_PROXY: http://host.docker.internal:7072
+      NO_PROXY: localhost,127.0.0.1,app,solver,host.docker.internal
+      SENTINEL_SOLVER_TIMEZONE: ${SENTINEL_SOLVER_TIMEZONE:-America/Los_Angeles}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    shm_size: 1gb
+    volumes:
+      - chromium-cache:/ms-playwright
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+
+  clash-egress:
+    image: metacubex/mihomo:v1.19.24
+    command: ["-d", "/root/.config/mihomo"]
+    volumes:
+      - ${CHATGPT2API_TEST_DATA_DIR:-./.codex/compose-data}/mihomo:/root/.config/mihomo
+    restart: unless-stopped
+
+volumes:
+  chromium-cache:
+

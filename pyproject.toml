@@ -8,6 +8,7 @@ dependencies = [
     "curl-cffi>=0.15.0",
     "fastapi>=0.136.0",
     "pillow>=12.2.0",
+    "pyyaml>=6.0.3",
     "pybase64>=1.4.3",
     "python-multipart>=0.0.26",
     "tiktoken>=0.12.0",

@@ -2,6 +2,8 @@
 .gitignore
 .idea
 .venv
+.codex
+data
 __pycache__
 *.pyc
 *.pyo

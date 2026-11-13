@@ -9,10 +9,10 @@ import time
 
 import urllib.error
 import urllib.request
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
+from types import SimpleNamespace
 from collections.abc import Callable
 from typing import Any, Dict, Iterator, Optional
 from urllib.parse import unquote, urlparse
@@ -23,14 +23,36 @@ from PIL import Image
 from services.account_service import account_service
 from services.config import config
 from services.proxy_service import proxy_settings
+from services.proxy_pool_service import account_route_key, proxy_pool
+from services.sentinel_solver_client import (
+    SentinelSolverError,
+    browser_request,
+    solve_turnstile,
+    solver_cookies,
+    solver_user_agent,
+)
 from utils.helper import UpstreamHTTPError, ensure_ok, iter_sse_payloads, new_uuid, split_image_model
+from utils.identity import IDENTITY_TIMEZONE, identity_timezone_offset_min
 from utils.log import logger
 from utils.pow import build_legacy_requirements_token, build_proof_token, parse_pow_resources
-from utils.turnstile import solve_turnstile_token
 
 
 class InvalidAccessTokenError(RuntimeError):
     pass
+
+
+class CloudflareChallengeError(RuntimeError):
+    """请求被 Cloudflare 挑战拦截，不能据此判断账号无效。"""
+
+
+class _BrowserResponse:
+    def __init__(self, status: int, headers: dict, text: str) -> None:
+        self.status_code = status
+        self.headers = requests.Headers(headers)
+        self.text = text
+
+    def json(self) -> Any:
+        return json.loads(self.text)
 
 
 class ImageTaskError(RuntimeError):
@@ -68,6 +90,31 @@ class ChatRequirements:
 DEFAULT_CLIENT_VERSION = "prod-a194cd50d4416d3c0b47c740f206b12ce60f5887"
 DEFAULT_CLIENT_BUILD_NUMBER = "6708908"
 DEFAULT_POW_SCRIPT = "https://chatgpt.com/backend-api/sentinel/sdk.js"
+DEFAULT_IMPERSONATE = "chrome146"
+LEGACY_IMPERSONATES = {"chrome110", "edge101"}
+# 请求头中的浏览器版本与 TLS 配置保持一致，避免混用 Edge 身份。
+_FINGERPRINT_BROWSER_VERSION = DEFAULT_IMPERSONATE.removeprefix("chrome") or "146"
+FINGERPRINT_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    f"(KHTML, like Gecko) Chrome/{_FINGERPRINT_BROWSER_VERSION}.0.0.0 Safari/537.36"
+)
+FINGERPRINT_SEC_CH_UA = (
+    f'"Chromium";v="{_FINGERPRINT_BROWSER_VERSION}", '
+    f'"Google Chrome";v="{_FINGERPRINT_BROWSER_VERSION}", "Not/A)Brand";v="99"'
+)
+FINGERPRINT_FULL_VERSION = f'"{_FINGERPRINT_BROWSER_VERSION}.0.0.0"'
+FINGERPRINT_FULL_VERSION_LIST = (
+    f'"Chromium";v="{_FINGERPRINT_BROWSER_VERSION}.0.0.0", "Not/A)Brand";v="99.0.0.0"'
+)
+CLIENT_CREATED_ROOT = "client-created-root"
+IMAGE_CREATION_MENTION = "@创建图像"
+# Cookies Cloudflare installs. A challenge response sets them, and carrying them into a
+# retry mostly earns another challenge, so they are cleared before backing off. Cookies
+# the solver browser handed us match this prefix too and are exempt: see
+# `_drop_cloudflare_cookies`.
+CLOUDFLARE_COOKIE_PREFIXES = ("__cf", "_cf", "cf_")
+# How many times a challenged upstream call is attempted, on both routes.
+CLOUDFLARE_RETRY_ATTEMPTS = 3
 CODEX_IMAGE_MODEL = "codex-gpt-image-2"
 CODEX_RESPONSES_MODEL = "gpt-5.5"
 SEARCH_MODEL = "gpt-5-5"
@@ -162,6 +209,27 @@ class OpenAIBackendAPI:
     - 协议兼容转换放在 `services.protocol`
     """
 
+    def _egress_profile(self) -> tuple[str, str]:
+        """Resolve this account's egress through the proxy pool.
+
+        Returns (proxy_url, proxy_id); ("", "") means the pool is not in play and the
+        caller goes direct. Bound exits win; a disabled or unhealthy bound exit borrows
+        a stable alternate (same account -> same borrowed exit for the duration of the
+        outage) and never falls back to direct.
+        """
+        if not proxy_pool.is_enabled():
+            return "", ""
+        account = account_service.get_account(self.access_token) if self.access_token else {}
+        route_key = account_route_key(account)
+        proxy_id = str((account or {}).get("proxy_id") or "").strip()
+        if proxy_id:
+            entry, _route = proxy_pool.route_bound(proxy_id, route_key)
+        else:
+            entry, _route = proxy_pool.route_unbound(route_key) if self.access_token else proxy_pool.route_anonymous()
+        if entry is None:
+            raise RuntimeError("proxy pool is enabled but has no available egress")
+        return entry["url"], entry["id"]
+
     def __init__(self, access_token: str = "") -> None:
         """初始化后端客户端。
 
@@ -174,6 +242,7 @@ class OpenAIBackendAPI:
         self.access_token = access_token
         self.account = account_service.get_account(self.access_token) if self.access_token else {}
         self.account = self.account if isinstance(self.account, dict) else {}
+        self._image_turn_trace_id = ""
         self.fp = self._build_fp()
         self.user_agent = self.fp["user-agent"]
         self.device_id = self.fp["oai-device-id"]
@@ -181,11 +250,12 @@ class OpenAIBackendAPI:
         self.pow_script_sources: list[str] = []
         self.pow_data_build = ""
         self.progress_callback: Callable[[str], None] | None = None
-        self.session = requests.Session(**proxy_settings.build_session_kwargs(
-            account=self.account,
-            impersonate=self.fp["impersonate"],
-            verify=True,
-        ))
+        self.egress_proxy_url, self.egress_proxy_id = self._egress_profile()
+        session_kwargs = {"impersonate": self.fp["impersonate"], "verify": True, "trust_env": False}
+        if self.egress_proxy_url:
+            session_kwargs["proxy"] = self.egress_proxy_url
+        self.session = requests.Session(**session_kwargs)
+        proxy_pool.track_session(self.session, SimpleNamespace(proxy_id=self.egress_proxy_id))
         self.session.headers.update({
             "User-Agent": self.user_agent,
             "Origin": self.base_url,
@@ -197,8 +267,8 @@ class OpenAIBackendAPI:
             "Sec-Ch-Ua": self.fp["sec-ch-ua"],
             "Sec-Ch-Ua-Arch": '"x86"',
             "Sec-Ch-Ua-Bitness": '"64"',
-            "Sec-Ch-Ua-Full-Version": '"143.0.3650.96"',
-            "Sec-Ch-Ua-Full-Version-List": '"Microsoft Edge";v="143.0.3650.96", "Chromium";v="143.0.7499.147", "Not A(Brand";v="24.0.0.0"',
+            "Sec-Ch-Ua-Full-Version": FINGERPRINT_FULL_VERSION,
+            "Sec-Ch-Ua-Full-Version-List": FINGERPRINT_FULL_VERSION_LIST,
             "Sec-Ch-Ua-Mobile": self.fp["sec-ch-ua-mobile"],
             "Sec-Ch-Ua-Model": '""',
             "Sec-Ch-Ua-Platform": self.fp["sec-ch-ua-platform"],
@@ -214,6 +284,10 @@ class OpenAIBackendAPI:
         })
         if self.access_token:
             self.session.headers["Authorization"] = f"Bearer {self.access_token}"
+        # Cookies the solver browser gave this exit, kept out of the challenge purge.
+        self._solver_cookie_names: set[str] = set()
+        self._solver_cookies_synced = False
+        self._install_cloudflare_retry()
 
     def close(self) -> None:
         if getattr(self, "_closed", False):
@@ -252,15 +326,13 @@ class OpenAIBackendAPI:
             value = str(account.get(key) or "").strip()
             if value:
                 fp[key] = value
-        fp.setdefault(
-            "user-agent",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0",
-        )
-        fp.setdefault("impersonate", "chrome110")
+        fp.setdefault("user-agent", FINGERPRINT_UA)
+        if fp.get("impersonate") in LEGACY_IMPERSONATES:
+            fp.pop("impersonate")
+        fp.setdefault("impersonate", DEFAULT_IMPERSONATE)
         fp.setdefault("oai-device-id", new_uuid())
         fp.setdefault("oai-session-id", new_uuid())
-        fp.setdefault("sec-ch-ua", '"Microsoft Edge";v="143", "Chromium";v="143", "Not A(Brand";v="24"')
+        fp.setdefault("sec-ch-ua", FINGERPRINT_SEC_CH_UA)
         fp.setdefault("sec-ch-ua-mobile", "?0")
         fp.setdefault("sec-ch-ua-platform", '"Windows"')
         return fp
@@ -281,39 +353,236 @@ class OpenAIBackendAPI:
                 return int(item.get("remaining") or 0), str(item.get("reset_after") or "") or None
         return 0, None
 
+    def _install_cloudflare_retry(self) -> None:
+        """Move the Cloudflare-challenge retry down to the transport layer.
+
+        chatgpt.com answers several endpoints with an intermittent managed challenge
+        (403 + `cf-mitigated: challenge` + HTML); the same call typically clears on a
+        retry. Only `_json_request` used to retry, which left every other path bare -
+        the image upload, the conversation download and the model list all failed
+        outright when they happened to land on a challenge. Wrapping the session's
+        verbs covers every call site, including the ones added later.
+        """
+        session = getattr(self, "session", None)
+        if session is None or getattr(self, "_cloudflare_retry_installed", False):
+            return
+        for verb in ("get", "post", "put", "patch", "delete"):
+            original = getattr(session, verb, None)
+            if original is None:
+                continue
+            setattr(session, verb, self._make_retrying_verb(original))
+        self._cloudflare_retry_installed = True
+
+    def _make_retrying_verb(self, original: Callable[..., Any]) -> Callable[..., Any]:
+        """Wrap one session verb so this session picks up its cookies and retries challenges.
+
+        Every upstream call goes through one of these, which makes this the one place
+        where a session can adopt its own exit's cookies *before* the call that needs
+        them goes out - including the image upload and the model list, which run before
+        the handshake. A call site added later is covered by construction.
+        """
+        retry = self._retry_cloudflare_challenge
+
+        def retrying_verb(*args: Any, **kwargs: Any) -> Any:
+            self._apply_solver_cookies_once()
+            return retry(lambda: original(*args, **kwargs))
+
+        return retrying_verb
+
+    def _apply_solver_cookies_once(self) -> None:
+        """Sync the exit's cookies the first time this session calls upstream.
+
+        Once per session: a cold session has nothing to adopt, a warm one keeps what it
+        has, and `_apply_solver_cookies` re-reads the same cached `/health` anyway.
+
+        This runs on the request path, so a solver hiccup is logged and dropped: the
+        cookies are an improvement, never a precondition.
+        """
+        if self._solver_cookies_synced:
+            return
+        self._solver_cookies_synced = True
+        try:
+            self._apply_solver_cookies()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning({"event": "sentinel_solver_cookies_failed", "error": str(exc)})
+
+    def _apply_solver_cookies(self) -> None:
+        """Adopt the cleared solver page's chatgpt.com cookies on this session.
+
+        Cloudflare scores some paths per client: the same curl_cffi fingerprint is
+        challenged persistently without the browser's cookies and is let through with
+        them (measured on the pool's US exits: 403 challenge for every attempt bare,
+        200 on the first try with them). Cookies are bound to the egress that earned
+        them, so this asks for the lane matching this session's own exit and is a no-op
+        when that lane has not been warmed yet. A pool exit must never borrow another
+        exit's cookies, and the solver's own default egress is not ours: going direct
+        therefore picks up nothing rather than the wrong set.
+        """
+        cookies = solver_cookies(self.egress_proxy_url)
+        if not cookies:
+            return
+        applied = []
+        for name, value in cookies.items():
+            try:
+                self.session.cookies.set(name, value, domain=".chatgpt.com")
+                applied.append(name)
+            except Exception:  # noqa: BLE001
+                continue
+        if applied:
+            # Remember them so a challenge retry does not clear the very cookies that
+            # get us past Cloudflare's per-path check (see _drop_cloudflare_cookies).
+            self._solver_cookie_names |= set(applied)
+            logger.debug({"event": "sentinel_solver_cookies_applied", "cookies": sorted(applied)})
+
     def _raise_on_error(self, response: Any, path: str) -> None:
+        if self._is_cloudflare_challenge(response):
+            raise CloudflareChallengeError(f"{path} failed: HTTP 403 Cloudflare challenge")
         if response.status_code == 401:
             raise InvalidAccessTokenError(f"token invalidated ({path})")
         raise RuntimeError(f"{path} failed: HTTP {response.status_code}")
 
+    @staticmethod
+    def _is_cloudflare_challenge(response: requests.Response) -> bool:
+        """仅识别 Cloudflare 挑战页，JSON 403 仍按授权拒绝处理。"""
+        if response.status_code != 403:
+            return False
+        content_type = str(response.headers.get("content-type") or "").lower()
+        if "json" in content_type:
+            return False
+        return (
+            str(response.headers.get("cf-mitigated") or "").strip().lower() == "challenge"
+            or "text/html" in content_type
+        )
+
+    def _retry_cloudflare_challenge(self, request: Callable[[], requests.Response],
+                                    attempts: int = CLOUDFLARE_RETRY_ATTEMPTS) -> requests.Response:
+        """账号刷新遇到临时挑战时最多尝试三次，避免健康账号被误判为无额度。
+
+        Installed on the session's verbs in `_install_cloudflare_retry`, so every
+        upstream call retries rather than only the ones `_json_request` used to wrap.
+        """
+        response = request()
+        for attempt in range(1, attempts):
+            if not self._is_cloudflare_challenge(response):
+                return response
+            self._back_off(attempt)
+            response = request()
+        return response
+
+    def _back_off(self, attempt: int) -> None:
+        """Drop the challenge's own cookies and wait before the next attempt.
+
+        The challenge response installs cookies that mark this session as suspicious:
+        retrying on top of them mostly returns another challenge. Clearing them lets
+        upstream re-evaluate this client as a fresh visitor instead of an
+        already-flagged one. The solver's cookies are exempt (see
+        `_drop_cloudflare_cookies`).
+        """
+        self._drop_cloudflare_cookies()
+        time.sleep(1.5 * attempt)
+
+    def _drop_cloudflare_cookies(self) -> None:
+        """Drop the Cloudflare cookies a challenge response left on this session.
+
+        Cookies the solver browser handed us match the same prefix and are kept: they
+        are the ones that pass the per-path check, so clearing them on retry would
+        throw away the fix.
+        """
+        keep = self._solver_cookie_names or set()
+        try:
+            jar = self.session.cookies.jar
+            for cookie in list(jar):
+                name = str(getattr(cookie, "name", ""))
+                if name in keep or not name.startswith(CLOUDFLARE_COOKIE_PREFIXES):
+                    continue
+                jar.clear(cookie.domain, cookie.path, cookie.name)
+        except Exception as exc:  # noqa: BLE001
+            # Cookie cleanup must never break a request.
+            logger.warning({"event": "cloudflare_cookie_clear_failed", "error": str(exc)})
+
+    def _browser_json(self, method: str, path: str, json_body: dict | None = None) -> _BrowserResponse | None:
+        """纯 JSON 请求优先使用真实浏览器；求解服务不可用时回退到 curl。
+
+        The browser leg is not a session call, so the challenge retry the session verbs
+        carry does not reach it: a challenged page would fail these preflight endpoints
+        outright, and they are the preferred route whenever a solver is configured. It
+        retries here, on the same schedule the session uses.
+        """
+        if not config.sentinel_solver_url:
+            return None
+        route = path.split("?", 1)[0]
+        headers = {
+            "Content-Type": "application/json",
+            "OAI-Device-Id": self.device_id,
+            "OAI-Session-Id": self.session_id,
+            "OAI-Language": "zh-CN",
+            "OAI-Client-Version": self.client_version,
+            "OAI-Client-Build-Number": str(self.client_build_number),
+            "X-OpenAI-Target-Path": route,
+            "X-OpenAI-Target-Route": route,
+        }
+        if self.access_token:
+            headers["Authorization"] = f"Bearer {self.access_token}"
+
+        def request() -> _BrowserResponse | None:
+            try:
+                result = browser_request(method, self.base_url + path, headers,
+                                         json.dumps(json_body, ensure_ascii=False) if json_body is not None else "",
+                                         proxy=self.egress_proxy_url)
+            except SentinelSolverError:
+                logger.warning({"event": "browser_request_unavailable", "path": route})
+                return None
+            if not result.get("status"):
+                return None
+            return _BrowserResponse(result["status"], result["headers"], result["text"])
+
+        response = request()
+        for attempt in range(1, CLOUDFLARE_RETRY_ATTEMPTS):
+            # A solver that went away mid-retry is a transport problem, not a challenge:
+            # hand it to the curl fallback rather than spending the remaining attempts.
+            if response is None or not self._is_cloudflare_challenge(response):
+                break
+            self._back_off(attempt)
+            response = request()
+        return response
+
+    def _json_request(self, method: str, path: str, json_body: dict | None = None,
+                      timeout: int = 20) -> Any:
+        """纯 JSON 请求：先走已通关浏览器，回退 curl。
+
+        Each leg retries its own challenge - the browser leg here, curl on the session
+        verbs (see `_install_cloudflare_retry`) - so neither path is wrapped twice.
+        """
+        response = self._browser_json(method, path, json_body)
+        if response is not None:
+            return response
+        headers = self._headers(path.split("?", 1)[0], {"Content-Type": "application/json"})
+        if method == "GET":
+            return self.session.get(self.base_url + path, headers=headers, timeout=timeout)
+        return self.session.post(self.base_url + path, headers=headers, json=json_body, timeout=timeout)
+
     def _get_me(self) -> Dict[str, Any]:
         path = "/backend-api/me"
-        response = self.session.get(self.base_url + path, headers=self._headers(path), timeout=20)
+        response = self._json_request("GET", path)
         if response.status_code != 200:
             self._raise_on_error(response, path)
         return response.json()
 
     def _get_conversation_init(self) -> Dict[str, Any]:
         path = "/backend-api/conversation/init"
-        response = self.session.post(
-            self.base_url + path,
-            headers=self._headers(path, {"Content-Type": "application/json"}),
-            json={
-                "gizmo_id": None,
-                "requested_default_model": None,
-                "conversation_id": None,
-                "timezone_offset_min": -480,
-            },
-            timeout=20,
-        )
+        response = self._json_request("POST", path, {
+            "gizmo_id": None,
+            "requested_default_model": None,
+            "conversation_id": None,
+            "timezone_offset_min": identity_timezone_offset_min(),
+        })
         if response.status_code != 200:
             self._raise_on_error(response, path)
         return response.json()
 
     def _get_default_account(self) -> Dict[str, Any]:
         path = "/backend-api/accounts/check/v4-2023-04-27"
-        response = self.session.get(self.base_url + path + "?timezone_offset_min=-480", headers=self._headers(path),
-                                    timeout=20)
+        response = self._json_request("GET", path + f"?timezone_offset_min={identity_timezone_offset_min()}")
         if response.status_code != 200:
             self._raise_on_error(response, path)
         payload = response.json()
@@ -333,20 +602,10 @@ class OpenAIBackendAPI:
         """获取当前 token 的账号信息。"""
         if not self.access_token:
             raise RuntimeError("access_token is required")
-        executor = ThreadPoolExecutor(max_workers=3)
-        try:
-            me_future = executor.submit(self._get_me)
-            init_future = executor.submit(self._get_conversation_init)
-            account_future = executor.submit(self._get_default_account)
-            me_payload, init_payload, default_account = me_future.result(), init_future.result(), account_future.result()
-        except (KeyboardInterrupt, SystemExit):
-            executor.shutdown(wait=False, cancel_futures=True)
-            raise
-        except BaseException:
-            executor.shutdown(wait=False, cancel_futures=True)
-            raise
-        else:
-            executor.shutdown(wait=True, cancel_futures=True)
+        # 同一账号的刷新请求串行发送，避免同时占用浏览器会话。
+        me_payload = self._get_me()
+        init_payload = self._get_conversation_init()
+        default_account = self._get_default_account()
 
         plan_type = str(default_account.get("plan_type") or "free")
 
@@ -391,6 +650,17 @@ class OpenAIBackendAPI:
             "Upgrade-Insecure-Requests": "1",
         }
 
+    def _drop_restricted_cookies(self) -> None:
+        """移除 finalize 设置的限制 Cookie，避免后续对话伪装返回 Model not found。"""
+        jar = self.session.cookies.jar
+        for cookie in list(jar):
+            if cookie.name == "oai-sc":
+                jar.clear(cookie.domain, cookie.path, cookie.name)
+
+    def _sentinel_user_agent(self) -> str:
+        """requirements/proof 中的 UA 必须与求解 Turnstile 的页面一致。"""
+        return solver_user_agent() or self.user_agent
+
     def _build_requirements(self, data: Dict[str, Any], source_p: str = "") -> ChatRequirements:
         """把 sentinel 响应整理成后续对话需要的 token 集合。"""
         if (data.get("arkose") or {}).get("required"):
@@ -409,8 +679,9 @@ class OpenAIBackendAPI:
 
         turnstile_token = ""
         turnstile_info = data.get("turnstile") or {}
-        if turnstile_info.get("required") and turnstile_info.get("dx"):
-            turnstile_token = solve_turnstile_token(turnstile_info["dx"], source_p) or ""
+        if turnstile_info.get("required"):
+            solve_args = (turnstile_info.get("dx", ""), source_p, data)
+            turnstile_token = solve_turnstile(*solve_args, **({"proxy": self.egress_proxy_url} if self.egress_proxy_url else {}))
 
         return ChatRequirements(
             token=data.get("token", ""),
@@ -543,7 +814,7 @@ class OpenAIBackendAPI:
             "supported_encodings": [],
             "system_hints": [],
             "timezone": timezone,
-            "timezone_offset_min": -480,
+            "timezone_offset_min": identity_timezone_offset_min(),
             "variant_purpose": "comparison_implicit",
             "websocket_request_id": new_uuid(),
             "client_contextual_info": {
@@ -562,20 +833,9 @@ class OpenAIBackendAPI:
         return payload
 
     def _image_model_settings(self, model: str) -> tuple[str, str]:
-        """把标准图片模型名映射为上游模型及思考强度。"""
+        """网页生图使用 auto，由服务端选择当前可用模型。"""
         _, base_model = split_image_model(model)
-        if not base_model:
-            return "auto", ""
-        if base_model == "gpt-image-2":
-            upstream_model = config.default_upstream_model_name
-        elif base_model == CODEX_IMAGE_MODEL:
-            upstream_model = base_model
-        else:
-            return "auto", ""
-        model_name, separator, suffix = upstream_model.rpartition("-")
-        if separator and suffix.lower() in {"standard", "extended", "max"}:
-            return model_name, suffix.lower()
-        return upstream_model, self._normalize_thinking_effort(config.default_thinking_effort)
+        return (CODEX_IMAGE_MODEL if base_model == CODEX_IMAGE_MODEL else "auto"), ""
 
     def _image_headers(self, path: str, requirements: ChatRequirements, conduit_token: str = "", accept: str = "*/*") -> \
             Dict[str, str]:
@@ -587,10 +847,16 @@ class OpenAIBackendAPI:
         }
         if requirements.proof_token:
             headers["OpenAI-Sentinel-Proof-Token"] = requirements.proof_token
+        if requirements.turnstile_token:
+            headers["OpenAI-Sentinel-Turnstile-Token"] = requirements.turnstile_token
+        if requirements.so_token:
+            headers["OpenAI-Sentinel-SO-Token"] = requirements.so_token
         if conduit_token:
             headers["X-Conduit-Token"] = conduit_token
-        if accept == "text/event-stream":
-            headers["X-Oai-Turn-Trace-Id"] = new_uuid()
+        # prepare 和后续对话必须共用同一个 turn trace id。
+        trace_id = str(self._image_turn_trace_id or "").strip()
+        if accept == "text/event-stream" or trace_id:
+            headers["X-Oai-Turn-Trace-Id"] = trace_id or new_uuid()
         return self._headers(path, headers)
 
     def _codex_responses_headers(self) -> Dict[str, str]:
@@ -862,30 +1128,39 @@ class OpenAIBackendAPI:
             raise UpstreamHTTPError(path, error.code, body, retry_after=retry_after) from error
 
     def _prepare_image_conversation(self, prompt: str, requirements: ChatRequirements, model: str) -> str:
-        """为图片生成准备 conduit token。"""
+        """为图片生成准备 conduit token。
+
+        结构对齐网页端 2026-10 的抓包：`model=auto`、`parent_message_id` 用
+        `client-created-root`，并且 prepare 与后面的 f/conversation 共用同一个
+        `x-oai-turn-trace-id`。
+        """
         path = "/backend-api/f/conversation/prepare"
-        upstream_model, thinking_effort = self._image_model_settings(model)
+        self._image_turn_trace_id = new_uuid()
         payload = {
             "action": "next",
-            "fork_from_shared_post": False,
-            "parent_message_id": new_uuid(),
-            "model": upstream_model,
-            "client_prepare_state": "success",
-            "timezone_offset_min": -480,
-            "timezone": "Asia/Shanghai",
-            "conversation_mode": {"kind": "primary_assistant"},
+            "is_do_not_remember": False,
+            "model": self._image_model_settings(model)[0],
+            "parent_message_id": CLIENT_CREATED_ROOT,
             "system_hints": ["picture_v2"],
+            "timezone": IDENTITY_TIMEZONE,
+            "timezone_offset_min": identity_timezone_offset_min(),
+            "client_contextual_info": {
+                "app_name": "chatgpt.com",
+                "app_surface": "codex_browser",
+                "has_web_push_capabilities": True,
+                "web_push_notification_permission": "default",
+            },
+            "local_function_names": ["local.continue_in_work"],
+            "supported_encodings": ["v1"],
+            "client_prepare_state": "sent",
             "partial_query": {
                 "id": new_uuid(),
                 "author": {"role": "user"},
                 "content": {"content_type": "text", "parts": [prompt]},
             },
-            "supports_buffering": True,
-            "supported_encodings": ["v1"],
-            "client_contextual_info": {"app_name": "chatgpt.com"},
+            "client_prepare_dispatch": "debounced",
+            "client_prepare_source": "composer_editor_state",
         }
-        if thinking_effort:
-            payload["thinking_effort"] = thinking_effort
         response = self.session.post(
             self.base_url + path,
             headers=self._image_headers(path, requirements),
@@ -971,9 +1246,15 @@ class OpenAIBackendAPI:
 
     def _start_image_generation(self, prompt: str, requirements: ChatRequirements, conduit_token: str, model: str,
                                 references: Optional[list[Dict[str, Any]]] = None) -> requests.Response:
-        """启动图片生成或编辑的 SSE 请求。"""
-        upstream_model, thinking_effort = self._image_model_settings(model)
+        """启动图片生成或编辑的 SSE 请求。
+
+        结构对齐网页端 2026-10 的抓包：提示词以 `@创建图像` 生态提及开头，
+        metadata 里带 picture_v2 的 custom_symbol_offsets，消息体补齐
+        recipient/status/weight 等字段，parent_message_id 用
+        `client-created-root`。
+        """
         references = references or []
+        mention_text = f"{IMAGE_CREATION_MENTION} {prompt}"
         parts = [{
             "content_type": "image_asset_pointer",
             "asset_pointer": f"file-service://{item['file_id']}",
@@ -981,15 +1262,23 @@ class OpenAIBackendAPI:
             "height": item["height"],
             "size_bytes": item["file_size"],
         } for item in references]
-        parts.append(prompt)
-        content = {"content_type": "multimodal_text", "parts": parts} if references else {"content_type": "text",
-                                                                                          "parts": [prompt]}
+        parts.append(mention_text)
+        content = {"content_type": "multimodal_text", "parts": parts} if references else {
+            "content_type": "text", "parts": [mention_text]}
         metadata = {
             "developer_mode_connector_ids": [],
             "selected_github_repos": [],
             "selected_all_github_repos": False,
             "system_hints": ["picture_v2"],
-            "serialization_metadata": {"custom_symbol_offsets": []},
+            "serialization_metadata": {
+                "render_format": "markdown",
+                "custom_symbol_offsets": [{
+                    "id": "picture_v2",
+                    "symbol": "ecosystemMention",
+                    "startIndex": 0,
+                    "endIndex": len(IMAGE_CREATION_MENTION),
+                }],
+            },
         }
         if references:
             metadata["attachments"] = [{
@@ -1001,39 +1290,38 @@ class OpenAIBackendAPI:
                 "height": item["height"],
             } for item in references]
         payload = {
+            "turn_attribution": {"turn_trigger": "composer"},
             "action": "next",
+            "is_do_not_remember": False,
             "messages": [{
                 "id": new_uuid(),
-                "author": {"role": "user"},
+                "author": {"metadata": {}, "name": None, "role": "user"},
+                "channel": None,
                 "create_time": time.time(),
+                "end_turn": None,
                 "content": content,
                 "metadata": metadata,
+                "recipient": "all",
+                "status": "finished_successfully",
+                "update_time": None,
+                "weight": 1,
             }],
-            "parent_message_id": new_uuid(),
-            "model": upstream_model,
-            "client_prepare_state": "sent",
-            "timezone_offset_min": -480,
-            "timezone": "Asia/Shanghai",
-            "conversation_mode": {"kind": "primary_assistant"},
-            "enable_message_followups": True,
+            "parent_message_id": CLIENT_CREATED_ROOT,
+            "model": self._image_model_settings(model)[0],
             "system_hints": ["picture_v2"],
-            "supports_buffering": True,
-            "supported_encodings": ["v1"],
+            "timezone_offset_min": identity_timezone_offset_min(),
+            "timezone": IDENTITY_TIMEZONE,
             "client_contextual_info": {
-                "is_dark_mode": False,
-                "time_since_loaded": 1200,
-                "page_height": 1072,
-                "page_width": 1724,
-                "pixel_ratio": 1.2,
-                "screen_height": 1440,
-                "screen_width": 2560,
                 "app_name": "chatgpt.com",
+                "app_surface": "codex_browser",
+                "has_web_push_capabilities": True,
+                "web_push_notification_permission": "default",
             },
-            "paragen_cot_summary_display_override": "allow",
-            "force_parallel_switch": "auto",
+            "local_function_names": ["local.continue_in_work"],
+            "supported_encodings": ["v1"],
+            "genui_state_snapshots": [],
+            "client_prepare_state": "success",
         }
-        if thinking_effort:
-            payload["thinking_effort"] = thinking_effort
         path = "/backend-api/f/conversation"
         response = self.session.post(
             self.base_url + path,
@@ -1270,7 +1558,7 @@ class OpenAIBackendAPI:
                 "file_name": file_name,
                 "file_size": len(data),
                 "use_case": "multimodal",
-                "timezone_offset_min": -480,
+                "timezone_offset_min": identity_timezone_offset_min(),
                 "reset_rate_limits": False,
                 "store_in_library": True,
                 "library_persistence_mode": "opportunistic",
@@ -1343,8 +1631,8 @@ class OpenAIBackendAPI:
             "parent_message_id": "client-created-root",
             "model": EDITABLE_FILE_MODEL,
             "client_prepare_state": "success",
-            "timezone_offset_min": -480,
-            "timezone": "Asia/Shanghai",
+            "timezone_offset_min": identity_timezone_offset_min(),
+            "timezone": IDENTITY_TIMEZONE,
             "conversation_mode": {"kind": "primary_assistant"},
             "system_hints": [],
             "partial_query": {"id": new_uuid(), "author": {"role": "user"}, "content": {"content_type": "text", "parts": [prompt]}},
@@ -1411,8 +1699,8 @@ class OpenAIBackendAPI:
                 "parent_message_id": "client-created-root",
                 "model": EDITABLE_FILE_MODEL,
                 "client_prepare_state": "sent",
-                "timezone_offset_min": -480,
-                "timezone": "Asia/Shanghai",
+                "timezone_offset_min": identity_timezone_offset_min(),
+                "timezone": IDENTITY_TIMEZONE,
                 "conversation_mode": {"kind": "primary_assistant"},
                 "enable_message_followups": True,
                 "system_hints": [],
@@ -1841,8 +2129,8 @@ class OpenAIBackendAPI:
                 "parent_message_id": "client-created-root",
                 "model": model,
                 "client_prepare_state": "success",
-                "timezone_offset_min": -480,
-                "timezone": "Asia/Shanghai",
+                "timezone_offset_min": identity_timezone_offset_min(),
+                "timezone": IDENTITY_TIMEZONE,
                 "conversation_mode": {"kind": "primary_assistant"},
                 "system_hints": ["search"],
                 "partial_query": {"id": new_uuid(), "author": {"role": "user"}, "content": {"content_type": "text", "parts": [prompt]}},
@@ -1882,8 +2170,8 @@ class OpenAIBackendAPI:
                 "parent_message_id": "client-created-root",
                 "model": model,
                 "client_prepare_state": "success",
-                "timezone_offset_min": -480,
-                "timezone": "Asia/Shanghai",
+                "timezone_offset_min": identity_timezone_offset_min(),
+                "timezone": IDENTITY_TIMEZONE,
                 "conversation_mode": {"kind": "primary_assistant"},
                 "enable_message_followups": True,
                 "system_hints": [],
@@ -2656,23 +2944,31 @@ class OpenAIBackendAPI:
             headers=self._bootstrap_headers(),
             timeout=30,
         )
+        if self._is_cloudflare_challenge(response):
+            # 首页只提供 PoW 元数据，挑战页不能阻止后续浏览器握手。
+            self.pow_script_sources = [DEFAULT_POW_SCRIPT]
+            self.pow_data_build = ""
+            return
         ensure_ok(response, "bootstrap")
         self.pow_script_sources, self.pow_data_build = parse_pow_resources(response.text)
         if not self.pow_script_sources:
             self.pow_script_sources = [DEFAULT_POW_SCRIPT]
 
     def _get_chat_requirements(self) -> ChatRequirements:
-        """获取当前模式对话所需的 sentinel token（prepare + finalize 两步流程）。"""
-        base = "/backend-api/sentinel/chat-requirements" if self.access_token else "/backend-anon/sentinel/chat-requirements"
-        p_token = build_legacy_requirements_token(self.user_agent, self.pow_script_sources, self.pow_data_build)
+        """完成 prepare/finalize 握手；质量不足时对话会伪装返回 Model not found 404。"""
+        base = "/backend-api/sentinel/chat-requirements" if self.access_token else (
+            "/backend-anon/sentinel/chat-requirements"
+        )
+        # Cloudflare 对这条路径按客户端打分：裸请求会被持续性挑战（重试无效），带上
+        # 本出口浏览器已通关的 cookie 才放行。cookie 由 session 动词在本次会话的首个
+        # 上游调用前同步进来（见 _make_retrying_verb）。
+        sentinel_user_agent = self._sentinel_user_agent()
+        p_token = build_legacy_requirements_token(
+            sentinel_user_agent, self.pow_script_sources, self.pow_data_build
+        )
 
         prepare_path = base + "/prepare"
-        response = self.session.post(
-            self.base_url + prepare_path,
-            headers=self._headers(prepare_path, {"Content-Type": "application/json"}),
-            json={"p": p_token},
-            timeout=30,
-        )
+        response = self._json_request("POST", prepare_path, {"p": p_token}, timeout=30)
         ensure_ok(response, "chat_requirements_prepare")
         prepare_data = response.json()
 
@@ -2685,35 +2981,32 @@ class OpenAIBackendAPI:
             proof_token = build_proof_token(
                 proof_info.get("seed", ""),
                 proof_info.get("difficulty", ""),
-                self.user_agent,
+                sentinel_user_agent,
                 script_sources=self.pow_script_sources,
                 data_build=self.pow_data_build,
             )
 
         turnstile_token = ""
         turnstile_info = prepare_data.get("turnstile") or {}
-        if turnstile_info.get("required") and turnstile_info.get("dx"):
-            turnstile_token = solve_turnstile_token(turnstile_info["dx"], p_token) or ""
+        if turnstile_info.get("required"):
+            # 传入完整 prepare 响应，让求解器调用页面自带的 Turnstile 模块。
+            solve_args = (turnstile_info.get("dx", ""), p_token, prepare_data)
+            turnstile_token = solve_turnstile(*solve_args, **({"proxy": self.egress_proxy_url} if self.egress_proxy_url else {}))
 
         finalize_path = base + "/finalize"
-        response = self.session.post(
-            self.base_url + finalize_path,
-            headers=self._headers(finalize_path, {"Content-Type": "application/json"}),
-            json={
-                "prepare_token": prepare_data.get("prepare_token", ""),
-                "proof_token": proof_token,
-                "turnstile_token": turnstile_token,
-            },
-            timeout=30,
-        )
+        response = self._json_request("POST", finalize_path, {
+            "prepare_token": prepare_data.get("prepare_token", ""),
+            "proofofwork": proof_token,
+            "turnstile": turnstile_token,
+        }, timeout=30)
         ensure_ok(response, "chat_requirements_finalize")
         data = response.json()
+        self._drop_restricted_cookies()
 
         token = data.get("token", "")
         if not token:
             message = "missing auth chat requirements token" if self.access_token else "missing chat requirements token"
             raise RuntimeError(f"{message}: {data}")
-
         return ChatRequirements(
             token=token,
             proof_token=proof_token,
@@ -2724,8 +3017,8 @@ class OpenAIBackendAPI:
 
     def _chat_target(self) -> tuple[str, str]:
         if self.access_token:
-            return "/backend-api/conversation", "Asia/Shanghai"
-        return "/backend-anon/conversation", "America/Los_Angeles"
+            return "/backend-api/conversation", IDENTITY_TIMEZONE
+        return "/backend-anon/conversation", IDENTITY_TIMEZONE
 
     def list_models(self) -> Dict[str, Any]:
         """返回当前模式下可用模型，格式对齐 OpenAI `/v1/models`。"""

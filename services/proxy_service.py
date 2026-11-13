@@ -39,6 +39,7 @@ def normalize_proxy_url(url: str) -> str:
 
 @dataclass(frozen=True)
 class ProxyRuntimeProfile:
+    proxy_id: str = ""
     proxy_url: str = ""
     proxy_source: str = "direct"
     resource: bool = False
@@ -175,47 +176,24 @@ class ProxySettingsStore:
         resource: bool = False,
         upstream: bool = False,
     ) -> ProxyRuntimeProfile:
-        runtime = self._get_runtime_settings()
-        clearance = dict(runtime.get("clearance") if isinstance(runtime.get("clearance"), dict) else {})
-        runtime_enabled = bool(runtime.get("enabled"))
-        egress_mode = str(runtime.get("egress_mode") or "direct").strip().lower()
+        from services.proxy_pool_service import account_route_key, proxy_pool
 
-        account_proxy = _clean((account or {}).get("proxy") if isinstance(account, dict) else "")
-        explicit_proxy = _clean(proxy)
-        legacy_proxy = _clean(self._config.get_proxy_settings())
-
-        runtime_proxy = ""
-        runtime_proxy_source = "runtime"
-        if upstream and runtime_enabled and egress_mode == "single_proxy":
-            resource_proxy = _clean(runtime.get("resource_proxy_url")) if resource else ""
-            runtime_proxy = resource_proxy or _clean(runtime.get("proxy_url"))
-            runtime_proxy_source = "runtime_resource" if resource_proxy else "runtime"
-
-        selected_proxy = ""
-        source = "direct"
-        if account_proxy:
-            selected_proxy = account_proxy
-            source = "account"
-        elif runtime_proxy:
-            selected_proxy = runtime_proxy
-            source = runtime_proxy_source
-        elif explicit_proxy:
-            selected_proxy = explicit_proxy
-            source = "explicit"
-        elif legacy_proxy:
-            selected_proxy = legacy_proxy
-            source = "global"
-
-        return ProxyRuntimeProfile(
-            proxy_url=normalize_proxy_url(selected_proxy),
-            proxy_source=source,
-            resource=bool(resource),
-            runtime_enabled=runtime_enabled,
-            egress_mode=egress_mode,
-            skip_ssl_verify=bool(runtime.get("skip_ssl_verify")) if runtime_enabled else False,
-            reset_session_status_codes=_status_codes_tuple(runtime.get("reset_session_status_codes")),
-            clearance=clearance,
-        )
+        selected = normalize_proxy_url(proxy)
+        source = "explicit" if selected else "direct"
+        proxy_id = ""
+        if not selected and proxy_pool.is_enabled():
+            bound = str((account or {}).get("proxy_id") or "")
+            if bound:
+                entry, source = proxy_pool.route_bound(bound, account_route_key(account))
+            elif account:
+                entry, source = proxy_pool.route_unbound(account_route_key(account))
+            else:
+                entry, source = proxy_pool.route_anonymous()
+            if entry is None:
+                raise RuntimeError("proxy pool is enabled but has no available egress")
+            selected, proxy_id = entry["url"], entry["id"]
+        return ProxyRuntimeProfile(proxy_url=selected, proxy_source=source,
+                                   resource=resource, proxy_id=proxy_id)
 
     def build_session_kwargs(
         self,
@@ -223,9 +201,11 @@ class ProxySettingsStore:
         proxy: str = "",
         resource: bool = False,
         upstream: bool = False,
+        target_url: str = "",
         **session_kwargs,
     ) -> dict[str, object]:
         profile = self.get_profile(account=account, proxy=proxy, resource=resource, upstream=upstream)
+        session_kwargs["trust_env"] = False
         if profile.proxy_url:
             session_kwargs["proxy"] = profile.proxy_url
         if profile.runtime_enabled and profile.skip_ssl_verify:

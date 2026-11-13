@@ -100,44 +100,9 @@ export function ConfigCard() {
             <p className="text-xs text-stone-500">单位分钟，控制账号自动刷新频率。</p>
           </div>
           <div className="space-y-2">
-            <label className="text-sm text-stone-700">全局代理</label>
-            <Input
-              value={String(config?.proxy || "")}
-              onChange={(event) => {
-                setProxy(event.target.value);
-                setProxyTestResult(null);
-              }}
-              placeholder="http://127.0.0.1:7890"
-              className="h-10 rounded-xl border-stone-200 bg-white"
-            />
-            <p className="text-xs leading-5 text-stone-500">
-              留空表示不使用代理。支持协议://账号:密码@主机:端口，也可直接粘贴代理商的 主机:端口:账号:密码；示例 http://user:pass@127.0.0.1:7890、127.0.0.1:7890:user:pass。账号密码含 @/: 等特殊字符时需 URL 编码。
-            </p>
-            {proxyTestResult ? (
-              <div
-                className={`rounded-xl border px-3 py-2 text-xs leading-6 ${
-                  proxyTestResult.ok
-                    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                    : "border-rose-200 bg-rose-50 text-rose-800"
-                }`}
-              >
-                {proxyTestResult.ok
-                  ? `代理可用：HTTP ${proxyTestResult.status}，用时 ${proxyTestResult.latency_ms} ms`
-                  : `代理不可用：${proxyTestResult.error ?? "未知错误"}（用时 ${proxyTestResult.latency_ms} ms）`}
-              </div>
-            ) : null}
-            <div className="flex justify-end">
-              <Button
-                type="button"
-                variant="outline"
-                className="h-9 rounded-xl border-stone-200 bg-white px-4 text-stone-700"
-                onClick={() => void handleTestProxy()}
-                disabled={isTestingProxy}
-              >
-                {isTestingProxy ? <LoaderCircle className="size-4 animate-spin" /> : <PlugZap className="size-4" />}
-                测试代理
-              </Button>
-            </div>
+            <label className="text-sm text-stone-700">出站代理池</label>
+            <p className="text-sm text-stone-500">多账号高并发需要多个出口，请在代理池页面管理订阅和账号绑定。</p>
+            <a href="/proxies" className="text-sm underline">管理代理池</a>
           </div>
           <div className="space-y-2">
             <label className="text-sm text-stone-700">图片访问地址</label>

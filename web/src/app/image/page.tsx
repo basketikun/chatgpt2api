@@ -30,6 +30,7 @@ import {
   type ImageTask,
 } from "@/lib/api";
 import { useAuthGuard } from "@/lib/use-auth-guard";
+import { toLocalImageUrl } from "@/lib/image-url";
 import { useSettingsStore } from "@/app/settings/store";
 import {
   clearImageConversations,
@@ -171,7 +172,7 @@ function buildReferenceImageFromResult(image: StoredImage, fileName: string): St
 }
 
 async function fetchImageAsFile(url: string, fileName: string) {
-  const response = await fetch(url);
+  const response = await fetch(toLocalImageUrl(url));
   if (!response.ok) {
     throw new Error("读取结果图失败");
   }

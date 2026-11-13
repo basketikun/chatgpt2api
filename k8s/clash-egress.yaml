@@ -1,0 +1,145 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: chatgpt2api-egress
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clash-egress
+  namespace: chatgpt2api-egress
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: clash-egress
+  template:
+    metadata:
+      labels:
+        app: clash-egress
+    spec:
+      initContainers:
+      - name: seed-config
+        image: docker.io/alpine:3.20
+        imagePullPolicy: IfNotPresent
+        command:
+        - sh
+        - -c
+        - "set -eu\nwhile ! wget -q -O /etc/mihomo/config.yaml --header \"Authorization:\
+          \ Bearer ${PROXY_CORE_CONFIG_KEY}\" \"http://chatgpt2api-web.default.svc.cluster.local/api/proxy/core/config\"\
+          ; do\n  sleep 5\ndone\n"
+        env:
+        - name: PROXY_CORE_CONFIG_KEY
+          valueFrom:
+            secretKeyRef:
+              name: chatgpt2api-auth
+              key: auth-key
+        volumeMounts:
+        - name: config
+          mountPath: /etc/mihomo
+      containers:
+      - name: mihomo
+        image: metacubex/mihomo:v1.19.24
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 9090
+          name: controller
+        - containerPort: 20001
+          name: node-1
+        - containerPort: 20002
+          name: node-2
+        - containerPort: 20003
+          name: node-3
+        - containerPort: 20004
+          name: node-4
+        - containerPort: 20005
+          name: node-5
+        - containerPort: 20006
+          name: node-6
+        - containerPort: 20007
+          name: node-7
+        - containerPort: 20008
+          name: node-8
+        - containerPort: 20009
+          name: node-9
+        - containerPort: 20010
+          name: node-10
+        - containerPort: 20011
+          name: node-11
+        - containerPort: 20012
+          name: node-12
+        volumeMounts:
+        - name: config
+          mountPath: /etc/mihomo
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: '1'
+            memory: 512Mi
+        args:
+        - -d
+        - /etc/mihomo
+      volumes:
+      - name: config
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clash-egress-controller
+  namespace: chatgpt2api-egress
+spec:
+  selector:
+    app: clash-egress
+  ports:
+  - name: controller
+    port: 9090
+    targetPort: controller
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clash-egress-nodes
+  namespace: chatgpt2api-egress
+spec:
+  selector:
+    app: clash-egress
+  ports:
+  - name: n1
+    port: 20001
+    targetPort: 20001
+  - name: n2
+    port: 20002
+    targetPort: 20002
+  - name: n3
+    port: 20003
+    targetPort: 20003
+  - name: n4
+    port: 20004
+    targetPort: 20004
+  - name: n5
+    port: 20005
+    targetPort: 20005
+  - name: n6
+    port: 20006
+    targetPort: 20006
+  - name: n7
+    port: 20007
+    targetPort: 20007
+  - name: n8
+    port: 20008
+    targetPort: 20008
+  - name: n9
+    port: 20009
+    targetPort: 20009
+  - name: n10
+    port: 20010
+    targetPort: 20010
+  - name: n11
+    port: 20011
+    targetPort: 20011
+  - name: n12
+    port: 20012
+    targetPort: 20012

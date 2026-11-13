@@ -37,6 +37,7 @@ export type Account = {
   image_inflight?: number;
   last_used_at?: string | null;
   proxy?: string | null;
+  proxy_id?: string | null;
 };
 
 export type AccountImportPayload = {
@@ -922,5 +923,314 @@ export async function testProxyClearance(targetUrl?: string) {
   return httpRequest<{ result: ClearanceTestResult }>("/api/proxy/clearance/test", {
     method: "POST",
     body: { target_url: targetUrl ?? "https://chatgpt.com" },
+  });
+}
+
+// ── Upstream proxy pool ───────────────────────────────────────────
+
+export type ProxyPoolHealthState = "unknown" | "healthy" | "unhealthy";
+export type ProxyPoolSource = "manual" | "legacy_account" | "import" | "subscription";
+
+export type ProxyPoolSettings = {
+  enabled: boolean;
+  probe_interval_secs: number;
+  failure_threshold: number;
+  recovery_successes: number;
+};
+
+export type ProxyPoolHealth = {
+  state: ProxyPoolHealthState;
+  consecutive_failures: number;
+  last_error: string | null;
+  last_error_at: string | null;
+  last_ok_at: string | null;
+  last_probe_at: string | null;
+  latency_ms: number | null;
+  exit_ip: string | null;
+};
+
+export type ProxyPoolItem = {
+  id: string;
+  name: string;
+  /** 完整地址，可能带凭据；只在编辑对话框里显示 */
+  url: string;
+  masked_url: string;
+  enabled: boolean;
+  source: ProxyPoolSource;
+  created_at: string;
+  updated_at: string;
+  health: ProxyPoolHealth;
+  bound_count: number;
+  /** 其他代理的账号当前借用本代理的数量 */
+  borrowing_count: number;
+  /** 本代理绑定的账号当前借用其他代理的数量 */
+  borrowed_out_count: number;
+  /** 以下字段只有订阅导入的条目才有；这类条目的地址由订阅维护，不能手动修改 */
+  subscription_id?: string;
+  subscription_name?: string;
+  node_key?: string;
+  /** 经 mihomo 内核转出的节点（地址是 http://<listen_host>:<端口>） */
+  via_core?: boolean;
+  /** 订阅里已没有该节点或内核未启用：条目已被自动禁用，账号临时借用其他代理 */
+  missing?: boolean;
+  auto_disabled?: boolean;
+};
+
+export type ProxyPoolSummary = {
+  total: number;
+  enabled: number;
+  healthy: number;
+  unhealthy: number;
+  bound_accounts: number;
+  unbound_accounts: number;
+};
+
+export type ProxyPoolPayload = {
+  settings: ProxyPoolSettings;
+  items: ProxyPoolItem[];
+  summary: ProxyPoolSummary;
+};
+
+export type ProxyPoolTestResult = {
+  ok: boolean;
+  status: number;
+  latency_ms: number;
+  error: string | null;
+  exit_ip: string | null;
+};
+
+export async function fetchProxyPool() {
+  return httpRequest<ProxyPoolPayload>("/api/proxy/pool");
+}
+
+export async function updateProxyPoolSettings(settings: Partial<ProxyPoolSettings>) {
+  return httpRequest<ProxyPoolPayload & { migration?: { migrated: number; created: number }; assigned?: number }>(
+    "/api/proxy/pool/settings",
+    {
+      method: "POST",
+      body: settings,
+    },
+  );
+}
+
+export async function addProxyPoolEntries(urls: string[], name?: string) {
+  return httpRequest<
+    ProxyPoolPayload & {
+      added: number;
+      skipped: number;
+      /** 分享链接的失败项：url 是节点名称（不回传原始链接），error 是原因，例如「需要启用 mihomo 内核」 */
+      errors: Array<{ url: string; error: string }>;
+      assigned: number;
+      /** 粘贴了分享链接且导入了经内核的节点时才有 */
+      core_apply?: ProxyCoreApplyResult | null;
+    }
+  >("/api/proxy/pool", {
+    method: "POST",
+    body: { urls, ...(name ? { name } : {}) },
+  });
+}
+
+export async function updateProxyPoolEntry(proxyId: string, updates: { name?: string; url?: string; enabled?: boolean }) {
+  return httpRequest<ProxyPoolPayload & { item: ProxyPoolItem }>(`/api/proxy/pool/${encodeURIComponent(proxyId)}`, {
+    method: "POST",
+    body: updates,
+  });
+}
+
+export async function deleteProxyPoolEntry(proxyId: string) {
+  return httpRequest<ProxyPoolPayload & { reassigned: number }>(`/api/proxy/pool/${encodeURIComponent(proxyId)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function testProxyPoolEntry(proxyId: string) {
+  return httpRequest<ProxyPoolPayload & { result: ProxyPoolTestResult }>(
+    `/api/proxy/pool/${encodeURIComponent(proxyId)}/test`,
+    {
+      method: "POST",
+      body: {},
+    },
+  );
+}
+
+// ── Proxy subscriptions & optional mihomo core ────────────────────
+
+export type ProxySubscriptionUserinfo = {
+  /** 字节 */
+  upload?: number;
+  download?: number;
+  total?: number;
+  /** Unix 秒 */
+  expire?: number;
+};
+
+/** url：普通订阅；manual：批量添加里粘贴的分享链接汇总成的内置订阅（id 为 sub_manual，没有地址，不能刷新） */
+export type ProxySubscriptionKind = "url" | "manual";
+
+export type ProxySubscriptionSummary = {
+  id: string;
+  kind: ProxySubscriptionKind;
+  name: string;
+  /** 完整订阅地址，可能带 token；只在编辑对话框里显示。manual 订阅为空 */
+  url: string;
+  masked_url: string;
+  user_agent: string;
+  /** 0 表示只手动刷新 */
+  refresh_interval_hours: number;
+  created_at: string;
+  last_fetched_at: string | null;
+  last_error: string | null;
+  userinfo: ProxySubscriptionUserinfo;
+  node_count: number;
+  direct_count: number;
+  core_count: number;
+  unsupported_count: number;
+  imported_count: number;
+  missing_count: number;
+};
+
+export type ProxySubscriptionNodeMode = "direct" | "core" | "unsupported";
+
+export type ProxySubscriptionNode = {
+  key: string;
+  name: string;
+  type: string;
+  server: string;
+  port: number;
+  mode: ProxySubscriptionNodeMode;
+  available: boolean;
+  /** 不可导入的原因，例如「需要启用 mihomo 内核」 */
+  reason: string;
+  masked_url: string;
+  imported: boolean;
+  proxy_id: string | null;
+};
+
+export type ProxySubscriptionDetail = ProxySubscriptionSummary & { nodes: ProxySubscriptionNode[] };
+
+export type ProxyCoreApplyResult = {
+  ok: boolean | null;
+  error: string | null;
+  nodes?: number;
+};
+
+export type ProxyCoreSettings = {
+  enabled: boolean;
+  api_url: string;
+  /** 密钥只写不读 */
+  has_secret: boolean;
+  listen_host: string;
+  port_start: number;
+};
+
+export type ProxyCoreStatus = {
+  settings: ProxyCoreSettings;
+  status: {
+    enabled: boolean;
+    ok: boolean;
+    version: string | null;
+    error: string | null;
+    last_apply: ProxyCoreApplyResult;
+  };
+};
+
+export type ProxyCoreUpdate = Partial<Omit<ProxyCoreSettings, "has_secret">> & { secret?: string };
+
+export type ProxySubscriptionsPayload = {
+  items: ProxySubscriptionSummary[];
+  core: ProxyCoreStatus;
+};
+
+export type ProxySubscriptionRefreshResult = {
+  ok: boolean;
+  error: string | null;
+  nodes?: number;
+  updated?: number;
+  missing?: number;
+  restored?: number;
+  errors?: string[];
+  core?: ProxyCoreApplyResult | null;
+};
+
+export type ProxySubscriptionInput = {
+  name: string;
+  url: string;
+  user_agent?: string;
+  refresh_interval_hours?: number;
+};
+
+export type ProxySubscriptionImportResponse = ProxySubscriptionsPayload & {
+  item: ProxySubscriptionDetail;
+  added: number;
+  skipped: Array<{ key: string; reason: string }>;
+  core_apply: ProxyCoreApplyResult | null;
+  assigned: number;
+};
+
+function subscriptionPath(subscriptionId: string, suffix = "") {
+  return `/api/proxy/subscriptions/${encodeURIComponent(subscriptionId)}${suffix}`;
+}
+
+export async function fetchProxySubscriptions() {
+  return httpRequest<ProxySubscriptionsPayload>("/api/proxy/subscriptions");
+}
+
+/** 创建后立即拉取一次；拉取失败时订阅照样创建，result.ok 为 false */
+export async function createProxySubscription(input: ProxySubscriptionInput) {
+  return httpRequest<ProxySubscriptionsPayload & { item: ProxySubscriptionDetail; result: ProxySubscriptionRefreshResult }>(
+    "/api/proxy/subscriptions",
+    {
+      method: "POST",
+      body: input,
+    },
+  );
+}
+
+export async function fetchProxySubscription(subscriptionId: string) {
+  return httpRequest<{ item: ProxySubscriptionDetail }>(subscriptionPath(subscriptionId));
+}
+
+export async function updateProxySubscription(subscriptionId: string, updates: Partial<ProxySubscriptionInput>) {
+  return httpRequest<ProxySubscriptionsPayload & { item: ProxySubscriptionDetail }>(subscriptionPath(subscriptionId), {
+    method: "POST",
+    body: updates,
+  });
+}
+
+export async function refreshProxySubscription(subscriptionId: string) {
+  return httpRequest<ProxySubscriptionsPayload & { item: ProxySubscriptionDetail; result: ProxySubscriptionRefreshResult }>(
+    subscriptionPath(subscriptionId, "/refresh"),
+    {
+      method: "POST",
+      body: {},
+    },
+  );
+}
+
+export async function importProxySubscriptionNodes(subscriptionId: string, nodeKeys: string[]) {
+  return httpRequest<ProxySubscriptionImportResponse>(subscriptionPath(subscriptionId, "/import"), {
+    method: "POST",
+    body: { node_keys: nodeKeys },
+  });
+}
+
+/** 同时删除该订阅导入的代理，名下账号改绑到其他代理 */
+export async function deleteProxySubscription(subscriptionId: string) {
+  return httpRequest<ProxySubscriptionsPayload & { removed_proxies: number; reassigned: number }>(
+    subscriptionPath(subscriptionId),
+    {
+      method: "DELETE",
+    },
+  );
+}
+
+export async function fetchProxyCore() {
+  return httpRequest<ProxyCoreStatus>("/api/proxy/core");
+}
+
+export async function updateProxyCore(updates: ProxyCoreUpdate) {
+  return httpRequest<ProxyCoreStatus>("/api/proxy/core", {
+    method: "POST",
+    body: updates,
   });
 }

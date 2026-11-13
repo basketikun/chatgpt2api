@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { DateRangeFilter } from "@/components/date-range-filter";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { ImageThumbnail, getImageThumbnailUrl } from "@/components/image-thumbnail";
+import { toLocalImageUrl } from "@/lib/image-url";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -64,7 +65,7 @@ function LogsContent() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [deletingItems, setDeletingItems] = useState<SystemLog[]>([]);
   const detailUrls = getUrls(detailLog);
-  const detailImages = detailUrls.map((url, index) => ({ id: `${index}`, src: url }));
+  const detailImages = detailUrls.map((url, index) => ({ id: `${index}`, src: toLocalImageUrl(url) }));
   const isCallLog = type === LogType.Call;
   const pageSize = 10;
   const pageCount = Math.max(1, Math.ceil(items.length / pageSize));
@@ -234,7 +235,7 @@ function LogsContent() {
                                   onClick={() => openLogImage(item, imageIndex)}
                                   title="预览图片"
                                 >
-                                  <ImageThumbnail src={url} thumbnailSrc={getImageThumbnailUrl(url)} className="h-full w-full" />
+                                  <ImageThumbnail src={url} thumbnailSrc={getImageThumbnailUrl(toLocalImageUrl(url))} className="h-full w-full" />
                                 </button>
                               ))}
                               {urls.length > 3 ? <span className="text-xs text-stone-400">+{urls.length - 3}</span> : null}
@@ -305,7 +306,14 @@ function LogsContent() {
                         setLightboxOpen(true);
                       }}
                     >
-                      <img src={url} alt="" className="h-full w-full object-cover" />
+                      <img
+                        src={toLocalImageUrl(url)}
+                        alt=""
+                        className="h-full w-full object-cover"
+                        onError={(event) => {
+                          if (event.currentTarget.src !== url) event.currentTarget.src = url;
+                        }}
+                      />
                     </button>
                   ))}
                 </div>

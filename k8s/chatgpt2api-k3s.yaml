@@ -1,0 +1,255 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chatgpt2api-config
+  namespace: default
+data:
+  config.json: "{\n  \"refresh_account_interval_minute\": 60,\n  \"image_retention_days\"\
+    : 15,\n  \"image_poll_timeout_secs\": 200,\n  \"image_account_concurrency\": 1,\n\
+    \  \"auto_remove_rate_limited_accounts\": false,\n  \"auto_remove_invalid_accounts\"\
+    : true,\n  \"log_levels\": [\n    \"debug\",\n    \"error\",\n    \"info\",\n\
+    \    \"warning\"\n  ],\n  \"base_url\": \"https://chatgpt.com\",\n  \"sentinel_solver_url\"\
+    : \"http://sentinel-solver:8080\"\n}\n"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: chatgpt2api-app
+  namespace: default
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: chatgpt2api-data
+  namespace: default
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: local-path
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chatgpt2api-web
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: chatgpt2api-web
+  template:
+    metadata:
+      labels:
+        app: chatgpt2api-web
+    spec:
+      initContainers:
+      - name: seed-config
+        image: busybox:1.36
+        imagePullPolicy: IfNotPresent
+        command:
+        - /bin/sh
+        - -c
+        - "set -eu\nif [ ! -s /app-persist/config.json ]; then\n  cp /config-seed/config.json\
+          \ /app-persist/config.json\nfi\n"
+        volumeMounts:
+        - name: config
+          mountPath: /config-seed
+          readOnly: true
+        - name: app
+          mountPath: /app-persist
+      containers:
+      - name: chatgpt2api
+        image: pansx/chatgpt2api:sentinel-2026-10-proxy-pool
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 80
+          name: http
+        env:
+        - name: STORAGE_BACKEND
+          value: sqlite
+        - name: CHATGPT2API_AUTH_KEY
+          valueFrom:
+            secretKeyRef:
+              name: chatgpt2api-auth
+              key: auth-key
+        - name: CHATGPT2API_BASE_URL
+          value: https://chatgpt.com
+        - name: CHATGPT2API_SENTINEL_SOLVER_URL
+          value: http://sentinel-solver:8080
+        - name: CHATGPT2API_SENTINEL_SOLVER_KEY
+          valueFrom:
+            secretKeyRef:
+              name: chatgpt2api-sentinel-solver
+              key: solver-key
+        - name: CHATGPT2API_PROXY_CORE_API
+          value: http://clash-egress-controller.chatgpt2api-egress.svc.cluster.local:9090
+        - name: CHATGPT2API_PROXY_CORE_LISTEN_HOST
+          value: clash-egress-nodes.chatgpt2api-egress.svc.cluster.local
+        - name: CHATGPT2API_PROXY_CORE_PORT_START
+          value: '20001'
+        - name: CHATGPT2API_PROXY_POOL_ENABLED
+          value: 'true'
+        - name: SENTINEL_SOLVER_PROXY
+          value: http://clash-egress-nodes.chatgpt2api-egress.svc.cluster.local:20001
+        volumeMounts:
+        - name: app
+          mountPath: /app/config.json
+          subPath: config.json
+        - name: data
+          mountPath: /app/data
+        readinessProbe:
+          httpGet:
+            path: /
+            port: http
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 10
+          failureThreshold: 90
+        livenessProbe:
+          httpGet:
+            path: /
+            port: http
+          initialDelaySeconds: 600
+          periodSeconds: 20
+          timeoutSeconds: 10
+          failureThreshold: 6
+        resources:
+          requests:
+            cpu: '1'
+            memory: 512Mi
+          limits:
+            cpu: '4'
+            memory: 4Gi
+      volumes:
+      - name: config
+        configMap:
+          name: chatgpt2api-config
+      - name: app
+        persistentVolumeClaim:
+          claimName: chatgpt2api-app
+      - name: data
+        persistentVolumeClaim:
+          claimName: chatgpt2api-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: chatgpt2api-web
+  namespace: default
+spec:
+  selector:
+    app: chatgpt2api-web
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: chatgpt2api-web
+  namespace: default
+spec:
+  ingressClassName: traefik
+  tls:
+  - hosts:
+    - chatgpt2api.example.com
+    secretName: chatgpt2api-example-tls
+  rules:
+  - host: chatgpt2api.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: chatgpt2api-web
+            port:
+              number: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sentinel-solver
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sentinel-solver
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: sentinel-solver
+    spec:
+      containers:
+      - name: sentinel-solver
+        image: pansx/chatgpt2api-sentinel-solver:sentinel-2026-10-proxy-pool
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: SENTINEL_SOLVER_KEY
+          valueFrom:
+            secretKeyRef:
+              name: chatgpt2api-sentinel-solver
+              key: solver-key
+        - name: SENTINEL_SOLVER_TIMEZONE
+          value: America/Los_Angeles
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 20
+          periodSeconds: 15
+          timeoutSeconds: 10
+          failureThreshold: 20
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 600
+          periodSeconds: 60
+          timeoutSeconds: 15
+          failureThreshold: 10
+        resources:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            cpu: '2'
+            memory: 2Gi
+        volumeMounts:
+        - name: shm
+          mountPath: /dev/shm
+      volumes:
+      - name: shm
+        emptyDir:
+          medium: Memory
+          sizeLimit: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sentinel-solver
+  namespace: default
+spec:
+  selector:
+    app: sentinel-solver
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http

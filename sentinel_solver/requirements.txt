@@ -1,0 +1,4 @@
+fastapi>=0.136.0
+uvicorn>=0.44.0
+playwright==1.63.0
+playwright-stealth==2.0.3
