@@ -16,6 +16,7 @@ from services.config import config
 from services.image_storage_service import image_storage_service
 from services.openai_backend_api import ImageContentPolicyError, ImagePollTimeoutError, OpenAIBackendAPI
 from utils.helper import (
+    CODEX_IMAGE_MODEL_25,
     IMAGE_MODELS,
     extract_image_from_message_content,
     is_codex_image_model,
@@ -1260,6 +1261,14 @@ def _codex_response_images(value: Any) -> list[str]:
     return []
 
 
+def codex_image_tool_model(model: object) -> str:
+    """把本地图片模型名映射为 Codex image_generation 工具模型名。"""
+    _, base_model = split_image_model(model)
+    if base_model == CODEX_IMAGE_MODEL_25:
+        return config.codex_image_model_25_name
+    return "gpt-image-2"
+
+
 def stream_codex_image_outputs(
         backend: OpenAIBackendAPI,
         request: ConversationRequest,
@@ -1271,6 +1280,7 @@ def stream_codex_image_outputs(
         images=request.images or [],
         size=request.size,
         quality=request.quality,
+        image_model=codex_image_tool_model(request.model),
     )))
     if not images:
         raise ImageGenerationError("No image result found in response")

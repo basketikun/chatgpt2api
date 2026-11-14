@@ -39,6 +39,8 @@ export function ConfigCard() {
   const setBaseUrl = useSettingsStore((state) => state.setBaseUrl);
   const setGlobalSystemPrompt = useSettingsStore((state) => state.setGlobalSystemPrompt);
   const setDefaultUpstreamModelName = useSettingsStore((state) => state.setDefaultUpstreamModelName);
+  const setDefaultUpstreamModelName25 = useSettingsStore((state) => state.setDefaultUpstreamModelName25);
+  const setCodexImageModel25Name = useSettingsStore((state) => state.setCodexImageModel25Name);
   const setDefaultThinkingEffort = useSettingsStore((state) => state.setDefaultThinkingEffort);
   const setSensitiveWordsText = useSettingsStore((state) => state.setSensitiveWordsText);
   const setAIReviewField = useSettingsStore((state) => state.setAIReviewField);
@@ -158,6 +160,34 @@ export function ConfigCard() {
               className="h-10 rounded-xl border-stone-200 bg-white"
             />
             <p className="text-xs text-stone-500">gpt-image-2 发起图片请求时使用的上游模型名称，默认 gpt-5-5。</p>
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm text-stone-700">gpt-image-2.5 上游模型名称</label>
+            <Input
+              value={String(config?.default_upstream_model_name_25 || "")}
+              onChange={(event) => setDefaultUpstreamModelName25(event.target.value)}
+              placeholder="gpt-5-5"
+              className="h-10 rounded-xl border-stone-200 bg-white"
+            />
+            <p className="text-xs text-stone-500">
+              gpt-image-2.5 发起图片请求时使用的上游模型名称，留空则跟随上方 gpt-image-2 设置。
+            </p>
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm text-stone-700">Codex 图片 2.5 工具模型</label>
+            <Select
+              value={String(config?.codex_image_model_25_name || "gpt-image-2.5-flare")}
+              onValueChange={(value) => setCodexImageModel25Name(value)}
+            >
+              <SelectTrigger className="h-10 rounded-xl border-stone-200 bg-white">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="gpt-image-2.5-flare">gpt-image-2.5-flare（默认）</SelectItem>
+                <SelectItem value="gpt-image-2.5-sunburst">gpt-image-2.5-sunburst</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-stone-500">codex-gpt-image-2.5 调用 Codex 生图工具时使用的模型，默认 gpt-image-2.5-flare。</p>
           </div>
           <div className="space-y-2">
             <label className="text-sm text-stone-700">默认思考强度</label>

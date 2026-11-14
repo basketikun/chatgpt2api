@@ -2,6 +2,8 @@
 
 ## Unreleased
 
++ [新增] 新增 `gpt-image-2.5` / `codex-gpt-image-2.5` 生图模型适配：官网链路别名 `gpt-image-2.5` 支持独立配置上游模型名（留空跟随 `gpt-image-2` 设置）；Codex 链路别名（含 `plus` / `team` / `pro` 前缀）工具模型默认 `gpt-image-2.5-flare`、可切换 `gpt-image-2.5-sunburst`，质量档新增 `xhigh` / `max` 支持。
+
 ## 1.8.0 - 2026-07-28
 
 + [新增] 新增默认请求上游模型名称和默认思考强度配置，支持在设置页面修改，并可通过模型名的 `-standard`、`-extended`、`-max` 后缀覆盖思考强度。

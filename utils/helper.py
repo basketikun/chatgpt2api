@@ -14,12 +14,15 @@ from fastapi import HTTPException
 from services.proxy_service import proxy_settings
 from utils.log import logger
 
-BASE_IMAGE_MODELS = {"gpt-image-2", "codex-gpt-image-2"}
+BASE_IMAGE_MODELS = {"gpt-image-2", "gpt-image-2.5", "codex-gpt-image-2", "codex-gpt-image-2.5"}
 IMAGE_MODEL_PLAN_TYPES = ("plus", "team", "pro")
 CODEX_IMAGE_MODEL = "codex-gpt-image-2"
+CODEX_IMAGE_MODEL_25 = "codex-gpt-image-2.5"
+CODEX_IMAGE_BASE_MODELS = {CODEX_IMAGE_MODEL, CODEX_IMAGE_MODEL_25}
 PREFIXED_CODEX_IMAGE_MODELS = {
-    f"{plan_type}-{CODEX_IMAGE_MODEL}"
+    f"{plan_type}-{codex_model}"
     for plan_type in IMAGE_MODEL_PLAN_TYPES
+    for codex_model in CODEX_IMAGE_BASE_MODELS
 }
 IMAGE_MODELS = BASE_IMAGE_MODELS | PREFIXED_CODEX_IMAGE_MODELS
 PUBLIC_IMAGE_MODELS = BASE_IMAGE_MODELS | PREFIXED_CODEX_IMAGE_MODELS
@@ -116,7 +119,7 @@ def split_image_model(model: object) -> tuple[str | None, str | None]:
         prefix = f"{plan_type}-"
         if normalized.startswith(prefix):
             base_model = normalized[len(prefix):]
-            if base_model == CODEX_IMAGE_MODEL:
+            if base_model in CODEX_IMAGE_BASE_MODELS:
                 return plan_type, base_model
     return None, None
 
@@ -128,7 +131,7 @@ def is_supported_image_model(model: object) -> bool:
 
 def is_codex_image_model(model: object) -> bool:
     _, base_model = split_image_model(model)
-    return base_model == CODEX_IMAGE_MODEL
+    return base_model in CODEX_IMAGE_BASE_MODELS
 
 
 def is_image_chat_request(body: dict[str, object]) -> bool:
