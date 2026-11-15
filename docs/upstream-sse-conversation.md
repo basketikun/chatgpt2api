@@ -2,6 +2,51 @@
 
 Conversation SSE 是上游对话链路的流式返回协议。每条 SSE `data:` 通常是一段 JSON payload，也可能是协议标记或结束标记。客户端需要按顺序消费这些 payload，维护当前会话状态、文本内容、工具调用状态和图片结果指针。
 
+## 请求载荷（2026-11-16 真实浏览器抓包）
+
+`POST /backend-api/f/conversation` 当前提交字段：
+
+| 字段 | 说明 |
+|:--|:--|
+| `turn_attribution` | `{"turn_trigger":"composer"}` |
+| `action` | 固定 `next` |
+| `messages` | 消息数组；每条消息带 `author`、`content`、`metadata`、`channel`、`recipient`、`status`、`end_turn`、`weight`、`update_time` |
+| `model` | 上游模型 slug，例如 `auto`、`gpt-6`、`gpt-6-mini` |
+| `parent_message_id` | 新会话为 `client-created-root` |
+| `supported_encodings` | `["v1"]` |
+| `genui_state_snapshots` | `[]` |
+| `client_prepare_state` | 准备成功后为 `success` |
+| `system_hints` | 仅在搜索 / 生图等场景出现，例如 `["search"]`、`["picture_v2"]`、`["reason"]` |
+| `thinking_effort` | 用户选择思考强度时出现；按账号/模型透传 `low` / `medium` / `high` / `standard` / `extended` / `xhigh` / `max` / `ultra` 等档位 |
+| `client_contextual_info` | `app_name`、`app_surface`、`has_web_push_capabilities`、`web_push_notification_permission` |
+| `is_do_not_remember` | 是否不记忆 |
+| `force_use_search` | 搜索轮次为 `true` |
+| `timezone` / `timezone_offset_min` | 时区与偏移 |
+
+普通文本对话**不发送** `conversation_mode`，也**不使用** `supports_buffering`、`force_parallel_switch`、`paragen_cot_summary_display_override`、`enable_message_followups`。
+
+准备请求 `POST /backend-api/f/conversation/prepare` 是精简载荷，不带 `messages` / `partial_query`：
+
+```json
+{"client_prepare_state":"sent","action":"next","model":"auto","parent_message_id":"client-created-root","timezone":"Asia/Shanghai","timezone_offset_min":-480,"is_do_not_remember":false,"system_hints":["picture_v2"],"local_function_names":["local.continue_in_work"],"client_prepare_dispatch":"debounced","client_prepare_source":"composer_editor_state"}
+```
+
+响应中的 `conduit_token` 需要作为 `x-conduit-token` 带回正式请求。续聊时 prepare 额外带 `conversation_id`、真实的 `parent_message_id`，`client_prepare_dispatch` 为 `immediate`、`client_prepare_source` 为 `context_change`；带图时额外带 `attachment_mime_types`（去重排序）与 `prepare_image_upload_ids`（本轮上传的 `file_id`）。
+
+相关接口与请求头：
+
+| 用途 | 方法与路径 |
+|:--|:--|
+| 提交一轮对话 | `POST /backend-api/f/conversation` |
+| 准备 / 换取 conduit token | `POST /backend-api/f/conversation/prepare` |
+| 读取会话详情 | `GET /backend-api/conversations/{conversation_id}?num_turns=10&include_has_versions=true` |
+| 读取会话 init / 额度 | `POST /backend-api/conversation/init` |
+| 删除会话 | `DELETE /backend-api/conversation/id/{conversation_id}` |
+
+正式请求需要同时带上 `Authorization: Bearer <access_token>`、`x-conduit-token`、`x-oai-turn-trace-id`、`x-oai-mcp-form-version: 2`，以及 sentinel 的 `OpenAI-Sentinel-Chat-Requirements-Token`（如触发 PoW / Turnstile 还需对应 token）。真实网页端还会带 `originator: Codex Browser`、`x-openai-web-frontend: codex_webview`、`x-openai-codex-window-type: browser`、`oai-did`、`ChatGPT-Account-Id` 等指纹头。
+
+完整抓包记录见 [upstream-capture-2026-11-16.md](upstream-capture-2026-11-16.md)。
+
 ## 基本形态
 
 常见 payload 示例：
@@ -30,7 +75,7 @@ Conversation SSE 是上游对话链路的流式返回协议。每条 SSE `data:`
 
 | 字段 | 说明 |
 |:--|:--|
-| `type` | 上游事件类型，如 `resume_conversation_token`、`input_message`、`message_marker`、`title_generation`、`server_ste_metadata` |
+| `type` | 上游事件类型，如 `resume_conversation_token`、`input_message`、`message_marker`、`title_generation`、`server_ste_metadata`、`message_stream_complete`、`user_signal_metadata`、`paragen` |
 | `conversation_id` | 当前会话 ID，可从多个事件中获得 |
 | `p` | patch 路径，例如 `/message/content/parts/0` |
 | `o` | patch 操作，例如 `add`、`append`、`replace`、`patch` |
@@ -44,7 +89,8 @@ Conversation SSE 是上游对话链路的流式返回协议。每条 SSE `data:`
 | `message.end_turn` | 是否结束当前轮次 |
 | `metadata.tool_invoked` | 本轮是否调用工具 |
 | `metadata.turn_use_case` | 本轮用途，如 `text`、`multimodal` |
-| `metadata.async_task_type` | 异步工具任务类型，图片生成通常为 `image_gen` |
+| `metadata.generation` | 图片生成结果元数据；图片 part 里非空才视为生成图 |
+| `author.name` | 图片工具名为 `image_gen` 或以 `t2uay3k` 开头 |
 
 ## 会话启动事件
 
@@ -137,15 +183,23 @@ Conversation SSE 是上游对话链路的流式返回协议。每条 SSE `data:`
 {
   "v": {
     "message": {
-      "author": {"role": "tool"},
+      "author": {"role": "tool", "name": "t2uay3k.sj1i4kz", "metadata": {}},
       "content": {
         "content_type": "multimodal_text",
         "parts": [
-          {"asset_pointer": "file-service://file_result"},
-          {"asset_pointer": "sediment://file_result"}
+          {
+            "content_type": "image_asset_pointer",
+            "asset_pointer": "sediment://file_result",
+            "mime_type": "image/png",
+            "size_bytes": 1041922,
+            "width": 1254,
+            "height": 1254,
+            "metadata": {"generation": {"gen_id": "...", "width": 1254, "height": 1254}}
+          }
         ]
       },
-      "metadata": {"async_task_type": "image_gen"}
+      "metadata": {"image_gen_title": "...", "model_slug": "gpt-6", "default_model_slug": "auto"},
+      "channel": "commentary"
     }
   },
   "conversation_id": "..."
@@ -157,8 +211,11 @@ Conversation SSE 是上游对话链路的流式返回协议。每条 SSE `data:`
 | 条件 | 说明 |
 |:--|:--|
 | `message.author.role == "tool"` | 来源是工具消息 |
-| `metadata.async_task_type == "image_gen"` | 工具任务是图片生成 |
+| `message.author.name` 为 `image_gen` 或以 `t2uay3k` 开头 | 当前图片工具名 |
+| 图片 `metadata.generation` 非空 | 表示是生成结果而不是输入附件 |
 | `asset_pointer` 为 `file-service://...` 或 `sediment://...` | 指向可解析图片资源 |
+
+图片消息也可能出现在 `metadata.image_gen_async == true` 的异步轮次中，此时需要继续轮询会话直到图片出现。
 
 ## 图片指针类型
 
@@ -202,7 +259,7 @@ I can't assist with that request. If you have another type of modification...
 |:--|:--|
 | 有 assistant 拒绝文本 | 应返回文本消息 |
 | `tool_invoked == false` | 说明没有实际工具结果 |
-| 没有 `role=tool` 且 `async_task_type=image_gen` 的消息 | 不应收集输出图片 |
+| 没有 `role=tool` 且图片 `metadata.generation` 非空的消息 | 不应收集输出图片 |
 | 用户输入消息里有图片指针 | 仍然只视为输入附件 |
 
 ## moderation 场景
@@ -265,7 +322,7 @@ SSE 结束后可按以下顺序判断结果：
 
 1. 如果已经收集到图片工具输出指针，解析并下载输出图片。
 2. 如果没有输出图片指针，但有 assistant 文本，并且本轮被拦截或未调用工具，返回文本消息。
-3. 如果没有输出图片指针，但有 `conversation_id`，可查询完整会话明细，继续寻找图片工具输出。
-4. 查询完整会话时，仍然只读取 `role=tool` 且 `async_task_type=image_gen` 的消息。
+3. 如果没有输出图片指针，但有 `conversation_id`，可查询完整会话明细，继续寻找图片工具输出。新会话的详情可能只返回 `mapping` 节点树而 `messages` 为空，需要遍历 `mapping[*].message`。
+4. 查询完整会话时，仍然只读取 `author.role == "tool"` 且图片 `metadata.generation` 非空的消息。
 5. 如果没有图片结果也没有文本，返回上游异常或空结果错误。
 

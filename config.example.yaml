@@ -1,0 +1,117 @@
+# 认证密钥，调用 API 必须在请求头中携带 Bearer {api-key}
+api-key: chatgpt2api
+
+# 全局代理地址，留空表示不启用（支持 HTTP/HTTPS/SOCKS5 等）
+proxy: ""
+
+# OpenAI 兼容前缀接口地址，留空则使用默认
+base_url: ""
+
+# 全局默认 system prompt（模型公共上下文）
+global_system_prompt: ""
+
+# 网页对话请求上游时使用的模型，auto 由上游自动选择
+default_upstream_model_name: auto
+
+# 对外提供的生图模型名称，留空使用 gpt-image-2.6
+image_model_name: gpt-image-2.6
+
+# 模型默认思维强度（auto/low/medium/high/standard/extended/xhigh/max/ultra，取决于账号与模型）
+default_thinking_effort: auto
+
+# 单次请求体大小上限（MB），超出直接拒绝
+max_upload_mb: 50
+
+# 账号与 Token 配置
+account:
+  # 账号刷新间隔（分钟）
+  refresh_interval_minute: 5
+  # 是否自动移除无效账号
+  auto_remove_invalid: true
+  # 对话结束后是否移除对应会话
+  remove_conversation_after_result: false
+
+
+# 代理运行时设置
+proxy_runtime:
+  # 是否启用代理运行时能力
+  enabled: false
+  # 代理调度模式，当前支持 single_proxy
+  egress_mode: single_proxy
+  # 默认透传代理地址
+  proxy_url: http://privoxy:8118
+  # 用于图片/脚本等资源请求的专用代理地址
+  resource_proxy_url: ""
+  # 稳定代理配置
+  clearance:
+    # 解锁模式：flaresolverr
+    mode: flaresolverr
+    # Cloudflare Cookies（JSON 字符串）
+    cf_cookies: ""
+    # Cloudflare Clearance Cookie
+    cf_clearance: ""
+    # 访问 Cloudflare 时使用的 UA
+    user_agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36
+    # FlareSolverr 服务地址
+    flaresolverr_url: http://flaresolverr:8191
+    # Cloudflare 预检超时（秒）
+    timeout_sec: 60
+    # Clearance 刷新周期（秒）
+    refresh_interval: 3600
+
+# 图片配置
+image:
+  # 图片文件本地保留天数
+  retention_days: 30
+  # 图片任务轮询超时（秒）
+  poll_timeout_secs: 300
+  # 图片任务初始轮询间隔（秒）
+  poll_interval_secs: 5
+  # 图片任务首轮等待时间（秒）
+  poll_initial_wait_secs: 10
+  # 单次图片生成并发账号数
+  account_concurrency: 3
+  # 生图失败（非内容违规）时更换账号重试的次数
+  account_retries: 2
+  # Codex 线路生图使用的模型
+  codex_model: gpt-6-luna
+  # Codex 线路画图工具使用的模型
+  codex_image_model: gpt-image-2.6
+  # 图片本地剩余容量不足下的阈值（MB）
+  min_free_mb: 500
+  # 图片存储配置
+  storage:
+    # 是否启用图片二次落地
+    enabled: false
+    # 保存模式：local 或 webdav
+    mode: local
+    # WebDAV 服务地址
+    webdav_url: ""
+    # WebDAV 用户名
+    webdav_username: ""
+    # WebDAV 密码
+    webdav_password: ""
+    # WebDAV 根路径
+    webdav_root_path: chatgpt2api/images
+    # 图片公开访问基础 URL
+    public_base_url: ""
+
+# 对话补全缓存配置
+chat_completion_cache:
+  # 是否启用缓存
+  enabled: true
+  # 缓存 TTL（秒）
+  ttl_seconds: 60
+  # 最大缓存条目数
+  max_entries: 256
+  # 是否缓存 stream 响应片段
+  stream_cache: true
+  # 是否消息归一化用于命中率提升
+  normalize_messages: true
+  # 是否去掉相邻重复历史消息
+  drop_adjacent_duplicates: true
+  # 是否移除历史助手消息（按策略）
+  drop_assistant_history: false
+
+
+

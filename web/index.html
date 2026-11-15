@@ -1,0 +1,1669 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <title>ChatGPT2API</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg%20fill%3D%22currentColor%22%20fill-rule%3D%22evenodd%22%20height%3D%221em%22%20style%3D%22flex%3Anone%3Bline-height%3A1%22%20viewBox%3D%220%200%2024%2024%22%20width%3D%221em%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Ctitle%3EOpenAI%3C%2Ftitle%3E%3Cpath%20d%3D%22M9.205%208.658v-2.26c0-.19.072-.333.238-.428l4.543-2.616c.619-.357%201.356-.523%202.117-.523%202.854%200%204.662%202.212%204.662%204.566%200%20.167%200%20.357-.024.547l-4.71-2.759a.797.797%200%2000-.856%200l-5.97%203.473zm10.609%208.8V12.06c0-.333-.143-.57-.429-.737l-5.97-3.473%201.95-1.118a.433.433%200%2001.476%200l4.543%202.617c1.309.76%202.189%202.378%202.189%203.948%200%201.808-1.07%203.473-2.76%204.163zM7.802%2012.703l-1.95-1.142c-.167-.095-.239-.238-.239-.428V5.899c0-2.545%201.95-4.472%204.591-4.472%201%200%201.927.333%202.712.928L8.23%205.067c-.285.166-.428.404-.428.737v6.898zM12%2015.128l-2.795-1.57v-3.33L12%208.658l2.795%201.57v3.33L12%2015.128zm1.796%207.23c-1%200-1.927-.332-2.712-.927l4.686-2.712c.285-.166.428-.404.428-.737v-6.898l1.974%201.142c.167.095.238.238.238.428v5.233c0%202.545-1.974%204.472-4.614%204.472zm-5.637-5.303l-4.544-2.617c-1.308-.761-2.188-2.378-2.188-3.948A4.482%204.482%200%20014.21%206.327v5.423c0%20.333.143.571.428.738l5.947%203.449-1.95%201.118a.432.432%200%2001-.476%200zm-.262%203.9c-2.688%200-4.662-2.021-4.662-4.519%200-.19.024-.38.047-.57l4.686%202.71c.286.167.571.167.856%200l5.97-3.448v2.26c0%20.19-.07.333-.237.428l-4.543%202.616c-.619.357-1.356.523-2.117.523zm5.899%202.83a5.947%205.947%200%20005.827-4.756C22.287%2018.339%2024%2015.84%2024%2013.296c0-1.665-.713-3.282-1.998-4.448.119-.5.19-.999.19-1.498%200-3.401-2.759-5.947-5.946-5.947-.642%200-1.26.095-1.88.31A5.962%205.962%200%200010.205%200a5.947%205.947%200%2000-5.827%204.757C1.713%205.447%200%207.945%200%2010.49c0%201.666.713%203.283%201.998%204.448-.119.5-.19%201-.19%201.499%200%203.401%202.759%205.946%205.946%205.946.642%200%201.26-.095%201.88-.309a5.96%205.96%200%20004.162%201.713z%22%3E%3C%2Fpath%3E%3C%2Fsvg%3E">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.8.0/daisyui.css">
+  <link rel="stylesheet" href="/index.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "alpinejs": "https://cdn.jsdelivr.net/npm/alpinejs@3.17.5/dist/module.esm.js",
+        "dayjs": "https://cdn.jsdelivr.net/npm/dayjs@1.11.23/+esm",
+        "chart.js/auto": "https://cdn.jsdelivr.net/npm/chart.js@4.6.1/auto/+esm",
+        "marked": "https://cdn.jsdelivr.net/npm/marked@18.2.0/+esm",
+        "dompurify": "https://cdn.jsdelivr.net/npm/dompurify@3.4.18/+esm",
+        "eventsource-parser/stream": "https://cdn.jsdelivr.net/npm/eventsource-parser@4.1.3/stream/+esm"
+      }
+    }
+  </script>
+  <script type="module" src="/index.js"></script>
+</head>
+<body>
+  <svg xmlns="http://www.w3.org/2000/svg" style="display: none"><symbol id="layout-dashboard" viewBox="0 0 24 24"><rect width="7" height="9" x="3" y="3" rx="1" /> <rect width="7" height="5" x="14" y="3" rx="1" /> <rect width="7" height="9" x="14" y="12" rx="1" /> <rect width="7" height="5" x="3" y="16" rx="1" /></symbol><symbol id="message-circle" viewBox="0 0 24 24"><path d="M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719" /></symbol><symbol id="audio-lines" viewBox="0 0 24 24"><path d="M2 10v3" /> <path d="M6 6v11" /> <path d="M10 3v18" /> <path d="M14 8v7" /> <path d="M18 5v13" /> <path d="M22 10v3" /></symbol><symbol id="users-round" viewBox="0 0 24 24"><path d="M18 21a8 8 0 0 0-16 0" /> <circle cx="10" cy="8" r="5" /> <path d="M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-.45-8.3" /></symbol><symbol id="key-round" viewBox="0 0 24 24"><path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z" /> <circle cx="16.5" cy="7.5" r=".5" fill="currentColor" /></symbol><symbol id="images" viewBox="0 0 24 24"><path d="m22 11-1.296-1.296a2.4 2.4 0 0 0-3.408 0L11 16" /> <path d="M4 8a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2" /> <circle cx="13" cy="7" r="1" fill="currentColor" /> <rect x="8" y="2" width="14" height="14" rx="2" /></symbol><symbol id="scroll-text" viewBox="0 0 24 24"><path d="M15 12h-5" /> <path d="M15 8h-5" /> <path d="M19 17V5a2 2 0 0 0-2-2H4" /> <path d="M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3" /></symbol><symbol id="settings-2" viewBox="0 0 24 24"><path d="M14 17H5" /> <path d="M19 7h-9" /> <circle cx="17" cy="17" r="3" /> <circle cx="7" cy="7" r="3" /></symbol><symbol id="file-text" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /> <path d="M14 2v4a2 2 0 0 0 2 2h4" /> <path d="M10 9H8" /> <path d="M16 13H8" /> <path d="M16 17H8" /></symbol><symbol id="log-out" viewBox="0 0 24 24"><path d="m16 17 5-5-5-5" /> <path d="M21 12H9" /> <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /></symbol><symbol id="menu" viewBox="0 0 24 24"><path d="M4 5h16" /> <path d="M4 12h16" /> <path d="M4 19h16" /></symbol><symbol id="refresh-cw" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /> <path d="M21 3v5h-5" /> <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /> <path d="M8 16H3v5" /></symbol><symbol id="info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /> <path d="M12 16v-4" /> <path d="M12 8h.01" /></symbol><symbol id="cpu" viewBox="0 0 24 24"><path d="M12 20v2" /> <path d="M12 2v2" /> <path d="M17 20v2" /> <path d="M17 2v2" /> <path d="M2 12h2" /> <path d="M2 17h2" /> <path d="M2 7h2" /> <path d="M20 12h2" /> <path d="M20 17h2" /> <path d="M20 7h2" /> <path d="M7 20v2" /> <path d="M7 2v2" /> <rect x="4" y="4" width="16" height="16" rx="2" /> <rect x="8" y="8" width="8" height="8" rx="1" /></symbol><symbol id="hard-drive" viewBox="0 0 24 24"><line x1="22" x2="2" y1="12" y2="12" /> <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /> <line x1="6" x2="6.01" y1="16" y2="16" /> <line x1="10" x2="10.01" y1="16" y2="16" /></symbol><symbol id="memory-stick" viewBox="0 0 24 24"><path d="M6 19v-3" /> <path d="M10 19v-3" /> <path d="M14 19v-3" /> <path d="M18 19v-3" /> <path d="M8 11V9" /> <path d="M16 11V9" /> <path d="M12 11V9" /> <path d="M2 15h20" /> <path d="M2 7a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v1.1a2 2 0 0 0 0 3.837V17a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-5.1a2 2 0 0 0 0-3.837Z" /></symbol><symbol id="eye" viewBox="0 0 24 24"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" /> <circle cx="12" cy="12" r="3" /></symbol><symbol id="eye-off" viewBox="0 0 24 24"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49" /> <path d="M14.084 14.158a3 3 0 0 1-4.242-4.242" /> <path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143" /> <path d="m2 2 20 20" /></symbol><symbol id="pencil" viewBox="0 0 24 24"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" /> <path d="m15 5 4 4" /></symbol><symbol id="trash-2" viewBox="0 0 24 24"><path d="M10 11v6" /> <path d="M14 11v6" /> <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /> <path d="M3 6h18" /> <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></symbol><symbol id="plus" viewBox="0 0 24 24"><path d="M5 12h14" /> <path d="M12 5v14" /></symbol><symbol id="upload" viewBox="0 0 24 24"><path d="M12 3v12" /> <path d="m17 8-5-5-5 5" /> <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /></symbol><symbol id="download" viewBox="0 0 24 24"><path d="M12 15V3" /> <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /> <path d="m7 10 5 5 5-5" /></symbol><symbol id="copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2" ry="2" /> <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" /></symbol><symbol id="check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" /></symbol><symbol id="x" viewBox="0 0 24 24"><path d="M18 6 6 18" /> <path d="m6 6 12 12" /></symbol><symbol id="chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" /></symbol><symbol id="chevron-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6" /></symbol><symbol id="chevron-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6" /></symbol><symbol id="arrow-up" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7" /> <path d="M12 19V5" /></symbol><symbol id="arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7" /> <path d="M19 12H5" /></symbol><symbol id="external-link" viewBox="0 0 24 24"><path d="M15 3h6v6" /> <path d="M10 14 21 3" /> <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></symbol><symbol id="image" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" ry="2" /> <circle cx="9" cy="9" r="2" /> <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" /></symbol><symbol id="image-plus" viewBox="0 0 24 24"><path d="M16 5h6" /> <path d="M19 2v6" /> <path d="M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5" /> <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" /> <circle cx="9" cy="9" r="2" /></symbol><symbol id="loader-circle" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></symbol><symbol id="circle-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /> <path d="m9 12 2 2 4-4" /></symbol><symbol id="circle-x" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /> <path d="m15 9-6 6" /> <path d="m9 9 6 6" /></symbol><symbol id="triangle-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" /> <path d="M12 9v4" /> <path d="M12 17h.01" /></symbol><symbol id="clock-3" viewBox="0 0 24 24"><path d="M12 6v6h4" /> <circle cx="12" cy="12" r="10" /></symbol><symbol id="globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /> <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" /> <path d="M2 12h20" /></symbol><symbol id="square-pen" viewBox="0 0 24 24"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /> <path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z" /></symbol><symbol id="sliders-horizontal" viewBox="0 0 24 24"><path d="M10 5H3" /> <path d="M12 19H3" /> <path d="M14 3v4" /> <path d="M16 17v4" /> <path d="M21 12h-9" /> <path d="M21 19h-5" /> <path d="M21 5h-7" /> <path d="M8 10v4" /> <path d="M8 12H3" /></symbol><symbol id="rotate-ccw" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /> <path d="M3 3v5h5" /></symbol><symbol id="layers" viewBox="0 0 24 24"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z" /> <path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12" /> <path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17" /></symbol><symbol id="mic" viewBox="0 0 24 24"><path d="M12 19v3" /> <path d="M19 10v2a7 7 0 0 1-14 0v-2" /> <rect x="9" y="2" width="6" height="13" rx="3" /></symbol><symbol id="circle-stop" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /> <rect x="9" y="9" width="6" height="6" rx="1" /></symbol><symbol id="play" viewBox="0 0 24 24"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z" /></symbol><symbol id="search" viewBox="0 0 24 24"><path d="m21 21-4.34-4.34" /> <circle cx="11" cy="11" r="8" /></symbol><symbol id="plug-zap" viewBox="0 0 24 24"><path d="M6.3 20.3a2.4 2.4 0 0 0 3.4 0L12 18l-6-6-2.3 2.3a2.4 2.4 0 0 0 0 3.4Z" /> <path d="m2 22 3-3" /> <path d="M7.5 13.5 10 11" /> <path d="M10.5 16.5 13 14" /> <path d="m18 3-4 4h6l-4 4" /></symbol><symbol id="cloud" viewBox="0 0 24 24"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" /></symbol><symbol id="server-cog" viewBox="0 0 24 24"><path d="m10.852 14.772-.383.923" /> <path d="M13.148 14.772a3 3 0 1 0-2.296-5.544l-.383-.923" /> <path d="m13.148 9.228.383-.923" /> <path d="m13.53 15.696-.382-.924a3 3 0 1 1-2.296-5.544" /> <path d="m14.772 10.852.923-.383" /> <path d="m14.772 13.148.923.383" /> <path d="M4.5 10H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-.5" /> <path d="M4.5 14H4a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2h-.5" /> <path d="M6 18h.01" /> <path d="M6 6h.01" /> <path d="m9.228 10.852-.923-.383" /> <path d="m9.228 13.148-.923.383" /></symbol><symbol id="log-in" viewBox="0 0 24 24"><path d="m10 17 5-5-5-5" /> <path d="M15 12H3" /> <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" /></symbol><symbol id="file-json" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /> <path d="M14 2v4a2 2 0 0 0 2 2h4" /> <path d="M10 12a1 1 0 0 0-1 1v1a1 1 0 0 1-1 1 1 1 0 0 1 1 1v1a1 1 0 0 0 1 1" /> <path d="M14 18a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1 1 1 0 0 1-1-1v-1a1 1 0 0 0-1-1" /></symbol><symbol id="files" viewBox="0 0 24 24"><path d="M15 2a2 2 0 0 1 1.414.586l4 4A2 2 0 0 1 21 8v7a2 2 0 0 1-2 2h-8a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" /> <path d="M15 2v4a2 2 0 0 0 2 2h4" /> <path d="M5 7a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h8a2 2 0 0 0 1.732-1" /></symbol><symbol id="list-tree" viewBox="0 0 24 24"><path d="M8 5h13" /> <path d="M13 12h8" /> <path d="M13 19h8" /> <path d="M3 10a2 2 0 0 0 2 2h3" /> <path d="M3 5v12a2 2 0 0 0 2 2h3" /></symbol><symbol id="coins" viewBox="0 0 24 24"><circle cx="8" cy="8" r="6" /> <path d="M18.09 10.37A6 6 0 1 1 10.34 18" /> <path d="M7 6h1v4" /> <path d="m16.71 13.88.7.71-2.82 2.82" /></symbol><symbol id="activity" viewBox="0 0 24 24"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2" /></symbol><symbol id="maximize-2" viewBox="0 0 24 24"><path d="M15 3h6v6" /> <path d="m21 3-7 7" /> <path d="m3 21 7-7" /> <path d="M9 21H3v-6" /></symbol><symbol id="archive" viewBox="0 0 24 24"><rect width="20" height="5" x="2" y="3" rx="1" /> <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" /> <path d="M10 12h4" /></symbol><symbol id="eraser" viewBox="0 0 24 24"><path d="M21 21H8a2 2 0 0 1-1.42-.587l-3.994-3.999a2 2 0 0 1 0-2.828l10-10a2 2 0 0 1 2.829 0l5.999 6a2 2 0 0 1 0 2.828L12.834 21" /> <path d="m5.082 11.09 8.828 8.828" /></symbol><symbol id="calendar-days" viewBox="0 0 24 24"><path d="M8 2v4" /> <path d="M16 2v4" /> <rect width="18" height="18" x="3" y="4" rx="2" /> <path d="M3 10h18" /> <path d="M8 14h.01" /> <path d="M12 14h.01" /> <path d="M16 14h.01" /> <path d="M8 18h.01" /> <path d="M12 18h.01" /> <path d="M16 18h.01" /></symbol><symbol id="sparkles" viewBox="0 0 24 24"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" /> <path d="M20 2v4" /> <path d="M22 4h-4" /> <circle cx="4" cy="20" r="2" /></symbol><symbol id="history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /> <path d="M3 3v5h5" /> <path d="M12 7v5l4 2" /></symbol><symbol id="square" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" /></symbol><symbol id="rectangle-horizontal" viewBox="0 0 24 24"><rect width="20" height="12" x="2" y="6" rx="2" /></symbol><symbol id="rectangle-vertical" viewBox="0 0 24 24"><rect width="12" height="20" x="6" y="2" rx="2" /></symbol><symbol id="link-2" viewBox="0 0 24 24"><path d="M9 17H7A5 5 0 0 1 7 7h2" /> <path d="M15 7h2a5 5 0 1 1 0 10h-2" /> <line x1="8" x2="16" y1="12" y2="12" /></symbol><symbol id="save" viewBox="0 0 24 24"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" /> <path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7" /> <path d="M7 3v4a1 1 0 0 0 1 1h7" /></symbol><symbol id="gauge" viewBox="0 0 24 24"><path d="m12 14 4-4" /> <path d="M3.34 19a10 10 0 1 1 17.32 0" /></symbol><symbol id="book-open" viewBox="0 0 24 24"><path d="M12 7v14" /> <path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z" /></symbol><symbol id="panel-left" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" /> <path d="M9 3v18" /></symbol><symbol id="github" viewBox="0 0 24 24"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4" /> <path d="M9 18c-4.51 2-5-2-7-2" /></symbol><symbol id="openai" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M9.205 8.658v-2.26c0-.19.072-.333.238-.428l4.543-2.616c.619-.357 1.356-.523 2.117-.523 2.854 0 4.662 2.212 4.662 4.566 0 .167 0 .357-.024.547l-4.71-2.759a.797.797 0 00-.856 0l-5.97 3.473zm10.609 8.8V12.06c0-.333-.143-.57-.429-.737l-5.97-3.473 1.95-1.118a.433.433 0 01.476 0l4.543 2.617c1.309.76 2.189 2.378 2.189 3.948 0 1.808-1.07 3.473-2.76 4.163zM7.802 12.703l-1.95-1.142c-.167-.095-.239-.238-.239-.428V5.899c0-2.545 1.95-4.472 4.591-4.472 1 0 1.927.333 2.712.928L8.23 5.067c-.285.166-.428.404-.428.737v6.898zM12 15.128l-2.795-1.57v-3.33L12 8.658l2.795 1.57v3.33L12 15.128zm1.796 7.23c-1 0-1.927-.332-2.712-.927l4.686-2.712c.285-.166.428-.404.428-.737v-6.898l1.974 1.142c.167.095.238.238.238.428v5.233c0 2.545-1.974 4.472-4.614 4.472zm-5.637-5.303l-4.544-2.617c-1.308-.761-2.188-2.378-2.188-3.948A4.482 4.482 0 014.21 6.327v5.423c0 .333.143.571.428.738l5.947 3.449-1.95 1.118a.432.432 0 01-.476 0zm-.262 3.9c-2.688 0-4.662-2.021-4.662-4.519 0-.19.024-.38.047-.57l4.686 2.71c.286.167.571.167.856 0l5.97-3.448v2.26c0 .19-.07.333-.237.428l-4.543 2.616c-.619.357-1.356.523-2.117.523zm5.899 2.83a5.947 5.947 0 005.827-4.756C22.287 18.339 24 15.84 24 13.296c0-1.665-.713-3.282-1.998-4.448.119-.5.19-.999.19-1.498 0-3.401-2.759-5.947-5.946-5.947-.642 0-1.26.095-1.88.31A5.962 5.962 0 0010.205 0a5.947 5.947 0 00-5.827 4.757C1.713 5.447 0 7.945 0 10.49c0 1.666.713 3.283 1.998 4.448-.119.5-.19 1-.19 1.499 0 3.401 2.759 5.946 5.946 5.946.642 0 1.26-.095 1.88-.309a5.96 5.96 0 004.162 1.713z" /></symbol></svg>
+
+  <div class="drawer app" x-data :class="{ 'lg:drawer-open': $store.app.nav }">
+    <input id="nav-drawer" type="checkbox" class="drawer-toggle" x-model="$store.app.navOpen">
+
+    <div class="drawer-content shell-content">
+      <div class="mobile-bar" x-show="$store.app.nav" x-cloak>
+        <label for="nav-drawer" class="btn btn-ghost btn-sm btn-square" aria-label="打开导航"><ui-icon name="menu"></ui-icon></label>
+        <span class="brand-name">ChatGPT2API</span>
+      </div>
+      <main class="main" id="view"></main>
+    </div>
+
+    <div class="drawer-side" x-show="$store.app.nav" x-cloak>
+      <label for="nav-drawer" class="drawer-overlay" aria-label="关闭导航"></label>
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-name">ChatGPT2API</span>
+          <button type="button" class="brand-version" x-text="'v' + $store.app.version" :data-new="$store.app.hasUpdate" @click="$store.app.openReleases()"></button>
+          <span class="spacer"></span>
+          <a class="btn btn-ghost btn-xs btn-square tooltip tooltip-bottom" data-tip="GitHub" href="https://github.com/basketikun/chatgpt2api" target="_blank" rel="noreferrer" aria-label="GitHub"><ui-icon name="github" class="icon-sm"></ui-icon></a>
+        </div>
+
+        <nav class="nav">
+          <template x-for="item in $store.app.navItems" :key="item.path ?? item.group">
+            <div>
+              <template x-if="item.group"><div class="nav-group" x-text="item.group"></div></template>
+              <template x-if="item.path">
+                <a class="nav-item" :href="item.path" :aria-current="$store.app.path === item.path ? 'page' : null" @click="$store.app.navOpen = false">
+                  <ui-icon :name="item.icon"></ui-icon>
+                  <span x-text="item.label"></span>
+                </a>
+              </template>
+            </div>
+          </template>
+        </nav>
+
+        <div class="sidebar-foot">
+          <span class="grow truncate text-muted" x-text="$store.app.session?.name || ($store.app.session?.role === 'admin' ? '管理员' : '用户')"></span>
+          <button type="button" class="btn btn-ghost btn-sm btn-square tooltip tooltip-top" data-tip="退出登录" aria-label="退出登录" @click="$store.app.logout()"><ui-icon name="log-out"></ui-icon></button>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- 全局提示：只承载失败、等待与需要处理的消息 -->
+  <div class="toast toast-top toast-center" x-data>
+    <template x-for="item in $store.toast.items" :key="item.id">
+      <div class="alert alert-soft" :class="{ 'alert-error': item.type === 'error', 'alert-warning': item.type === 'warning', 'alert-info': item.type === 'info', 'alert-success': item.type === 'success' }" role="status">
+        <ui-icon :name="item.icon || { error: 'circle-x', warning: 'triangle-alert', success: 'circle-check', info: 'info' }[item.type]"></ui-icon>
+        <span x-text="item.text"></span>
+      </div>
+    </template>
+  </div>
+
+  <!-- 全局确认弹窗 -->
+  <dialog class="modal" x-data x-effect="$store.confirm.open ? $el.showModal() : $el.close()" @close="$store.confirm.open && $store.confirm.done(false)">
+    <div class="modal-box">
+      <h3 class="modal-title" x-text="$store.confirm.title"></h3>
+      <p class="text-muted" x-show="$store.confirm.text" x-text="$store.confirm.text"></p>
+      <div class="modal-action">
+        <button type="button" class="btn btn-sm" @click="$store.confirm.done(false)">取消</button>
+        <button type="button" class="btn btn-sm" :class="$store.confirm.danger ? 'btn-error' : 'btn-primary'" x-text="$store.confirm.ok" @click="$store.confirm.done(true)"></button>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>关闭</button></form>
+  </dialog>
+
+  <!-- 版本更新 -->
+  <dialog class="modal" x-data x-effect="$store.app.releasesOpen ? $el.showModal() : $el.close()" @close="$store.app.releasesOpen = false">
+    <div class="modal-box modal-md">
+      <div class="row row-between modal-title">
+        <span>版本更新</span>
+        <span class="text-xs text-muted num">当前 v<span x-text="$store.app.version"></span> · 最新 v<span x-text="$store.app.latest || '—'"></span></span>
+      </div>
+      <div x-show="$store.app.checking" class="center-fill"><span class="loading loading-spinner loading-sm"></span></div>
+      <div class="vstack vstack-lg" x-show="!$store.app.checking">
+        <template x-for="release in $store.app.releases" :key="release.version">
+          <section class="vstack vstack-sm">
+            <div class="row">
+              <span class="title-section num" x-text="release.version === 'Unreleased' ? '未发布' : 'v' + release.version"></span>
+              <span class="badge badge-sm badge-soft" x-show="release.version === $store.app.version">当前</span>
+              <span class="spacer"></span>
+              <span class="text-xs text-subtle num" x-text="release.date"></span>
+            </div>
+            <template x-for="item in release.items">
+              <div class="row row-start">
+                <span class="badge badge-sm badge-soft shrink-0" :class="{ 'badge-success': item.type === '新增', 'badge-info': item.type === '修复' }" x-text="item.type"></span>
+                <div class="markdown text-muted" x-html="$md(item.content)"></div>
+              </div>
+            </template>
+          </section>
+        </template>
+      </div>
+      <div class="modal-action">
+        <a class="btn btn-sm" :class="$store.app.hasUpdate ? 'btn-primary' : ''" href="https://github.com/basketikun/chatgpt2api" target="_blank" rel="noreferrer">前往 GitHub<ui-icon name="external-link" class="icon-sm"></ui-icon></a>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>关闭</button></form>
+  </dialog>
+
+  <!-- 图片查看器 -->
+  <div class="lightbox" x-data x-show="$store.lightbox.open" x-cloak
+       @keydown.escape.window="$store.lightbox.open = false"
+       @keydown.left.window="$store.lightbox.open && $store.lightbox.index > 0 && ($store.lightbox.index--, $store.lightbox.zoom = false)"
+       @keydown.right.window="$store.lightbox.open && $store.lightbox.index < $store.lightbox.images.length - 1 && ($store.lightbox.index++, $store.lightbox.zoom = false)"
+       @click.self="$store.lightbox.open = false">
+    <template x-if="$store.lightbox.open">
+      <img :src="$store.lightbox.images[$store.lightbox.index].src" alt="" :class="{ zoomed: $store.lightbox.zoom }" @click="$store.lightbox.zoom = !$store.lightbox.zoom">
+    </template>
+    <div class="lightbox-bar row">
+      <span class="chip num" x-show="$store.lightbox.images[$store.lightbox.index]?.meta" x-text="$store.lightbox.images[$store.lightbox.index]?.meta"></span>
+      <span class="chip num" x-show="$store.lightbox.images.length > 1" x-text="($store.lightbox.index + 1) + ' / ' + $store.lightbox.images.length"></span>
+      <a class="btn btn-sm btn-circle" :href="$store.lightbox.images[$store.lightbox.index]?.src" download aria-label="下载图片"><ui-icon name="download"></ui-icon></a>
+      <button type="button" class="btn btn-sm btn-circle" aria-label="关闭" @click="$store.lightbox.open = false"><ui-icon name="x"></ui-icon></button>
+    </div>
+    <button type="button" class="lightbox-nav lightbox-prev btn btn-circle" aria-label="上一张" x-show="$store.lightbox.index > 0" @click="$store.lightbox.index--; $store.lightbox.zoom = false"><ui-icon name="chevron-left"></ui-icon></button>
+    <button type="button" class="lightbox-nav lightbox-next btn btn-circle" aria-label="下一张" x-show="$store.lightbox.index < $store.lightbox.images.length - 1" @click="$store.lightbox.index++; $store.lightbox.zoom = false"><ui-icon name="chevron-right"></ui-icon></button>
+  </div>
+
+  <!-- 页面模板：路由按 id 克隆到主内容区 -->
+  <template id="page-login">
+    <div class="login" x-data="login">
+      <form class="login-card vstack vstack-lg" @submit.prevent="submit">
+        <div class="vstack login-hero">
+          <ui-icon name="openai" class="login-logo"></ui-icon>
+          <h1 class="login-title">ChatGPT2API</h1>
+          <p class="login-sub">对话、生图、文件与语音，一个密钥全部搞定</p>
+        </div>
+        <div class="field">
+          <label class="field-label" for="login-key">访问密钥</label>
+          <label class="input" :class="{ 'input-error': error }">
+            <ui-icon name="key-round" class="text-subtle"></ui-icon>
+            <input id="login-key" :type="visible ? 'text' : 'password'" x-model="key" autocomplete="current-password" autofocus @input="error = ''">
+            <button type="button" class="btn btn-ghost btn-xs btn-square" :aria-label="visible ? '隐藏密钥' : '显示密钥'" @click="visible = !visible"><ui-icon :name="visible ? 'eye-off' : 'eye'" class="icon-sm"></ui-icon></button>
+          </label>
+          <span class="field-error" x-show="error" x-text="error"></span>
+        </div>
+        <button type="submit" class="btn btn-primary" :disabled="!key || loading">
+          <span class="loading loading-spinner loading-xs" x-show="loading"></span>登录
+        </button>
+      </form>
+      <a class="row login-github" href="https://github.com/basketikun/chatgpt2api" target="_blank" rel="noreferrer"><ui-icon name="github" class="icon-sm"></ui-icon>basketikun/chatgpt2api</a>
+    </div>
+  </template>
+
+  <template id="page-overview">
+    <div class="page" x-data="overview">
+      <div class="page-head">
+        <h1 class="title-page">概览</h1>
+        <div class="row">
+          <div class="tabs tabs-box tabs-sm" role="tablist">
+            <button type="button" role="tab" class="tab" :class="{ 'tab-active': period === '24h' }" @click="period = '24h'">24 小时</button>
+            <button type="button" role="tab" class="tab" :class="{ 'tab-active': period === '7d' }" @click="period = '7d'">7 天</button>
+          </div>
+          <button type="button" class="btn btn-sm tooltip tooltip-left" :data-tip="calls ? '更新于 ' + $time(calls.sampled_at) : null" :disabled="loading" @click="refresh()">
+            <ui-icon name="refresh-cw" class="icon-sm" :class="{ spin: loading }"></ui-icon>刷新
+          </button>
+        </div>
+      </div>
+
+      <div class="vstack vstack-lg">
+        <div role="alert" class="alert alert-error alert-soft" x-show="callsError" x-cloak>
+          <ui-icon name="circle-x"></ui-icon><span>调用统计暂时无法更新：<span x-text="callsError"></span></span>
+        </div>
+
+        <template x-if="!calls && !callsError">
+          <div class="grid grid-4"><template x-for="i in 4"><div class="skeleton metric-skeleton"></div></template></div>
+        </template>
+
+        <template x-if="calls">
+          <div class="vstack vstack-lg">
+            <div class="grid grid-4">
+              <template x-for="metric in metrics" :key="metric.label">
+                <div class="metric-tile">
+                  <div class="metric-label"><span x-text="metric.label"></span><ui-icon :name="metric.icon" class="icon-sm"></ui-icon></div>
+                  <div class="metric-value" x-text="metric.value"></div>
+                  <div class="metric-meta" x-text="metric.meta"></div>
+                </div>
+              </template>
+            </div>
+
+            <div class="grid grid-main-side">
+              <section class="panel">
+                <div class="panel-head"><h2 class="title-section">调用趋势</h2></div>
+                <div class="chart-box" x-show="calls.summary.total"><canvas x-ref="trend" aria-label="各时段成功、失败和进行中的调用数量"></canvas></div>
+                <div class="empty chart-box" x-show="!calls.summary.total"><ui-icon name="activity"></ui-icon>这个时段暂无调用</div>
+              </section>
+
+              <section class="panel">
+                <div class="panel-head"><h2 class="title-section">模型调用</h2></div>
+                <div class="table-wrap">
+                  <table class="table table-sm">
+                    <thead><tr><th>模型</th><th class="text-right">调用</th><th class="text-right">成功率</th></tr></thead>
+                    <tbody>
+                      <template x-for="model in pagedModels" :key="model.model">
+                        <tr>
+                          <td><ui-model :name="model.model" x-show="model.model"></ui-model><span class="text-subtle" x-show="!model.model">未指定模型</span></td>
+                          <td class="text-right num" x-text="$num(model.total)"></td>
+                          <td class="text-right num" x-text="rate(model.success_rate)"></td>
+                        </tr>
+                      </template>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="empty" x-show="!calls.models.length"><ui-icon name="list-tree"></ui-icon>暂无模型调用</div>
+                <ui-pager x-show="calls.models.length > modelSize" :page="modelPage" :size="modelSize" :total="calls.models.length" sizes="8,20,50" @change="modelPage = $event.detail.page; modelSize = $event.detail.size"></ui-pager>
+              </section>
+            </div>
+          </div>
+        </template>
+
+        <section class="vstack vstack-md">
+          <div class="row">
+            <h2 class="title-section">系统资源</h2>
+            <span class="tooltip tooltip-right field-help" data-tip="内存为本服务进程自身的占用，系统整体用量显示在下方说明里；磁盘为运行目录所在磁盘。"><ui-icon name="info" class="icon-sm"></ui-icon></span>
+          </div>
+          <div role="alert" class="alert alert-error alert-soft" x-show="systemError" x-cloak>
+            <ui-icon name="circle-x"></ui-icon><span>系统资源暂时无法更新：<span x-text="systemError"></span></span>
+          </div>
+          <div role="alert" class="alert alert-warning alert-soft" x-show="system && Object.keys(system.errors).length" x-cloak>
+            <ui-icon name="triangle-alert"></ui-icon><span>部分资源暂时无法读取：<span x-text="system && Object.values(system.errors).join('；')"></span></span>
+          </div>
+          <div class="grid grid-2">
+            <template x-for="item in resources" :key="item.label">
+              <div class="metric-tile">
+                <div class="metric-label"><span x-text="item.label"></span><span class="tooltip tooltip-left" :data-tip="item.tip"><ui-icon :name="item.icon" class="icon-sm"></ui-icon></span></div>
+                <div class="metric-value" x-text="item.percent == null ? '—' : item.percent.toFixed(1) + '%'"></div>
+                <progress class="progress" :class="item.percent >= 90 ? 'progress-error' : 'progress-neutral'" :value="item.percent ?? 0" max="100"></progress>
+                <div class="metric-meta num" x-text="item.meta"></div>
+              </div>
+            </template>
+          </div>
+        </section>
+      </div>
+    </div>
+  </template>
+
+  <template id="page-chat">
+    <div class="workspace chat-page" x-data="chat">
+      <div class="chat-scrim" x-show="sideOpen" x-cloak @click="sideOpen = false"></div>
+
+      <aside class="chat-side" :class="{ open: sideOpen }">
+        <div class="brand" x-show="!$store.app.admin" x-cloak>
+          <span class="brand-name">ChatGPT2API</span>
+          <button type="button" class="brand-version" x-text="'v' + $store.app.version" :data-new="$store.app.hasUpdate" @click="$store.app.openReleases()"></button>
+          <span class="spacer"></span>
+          <a class="btn btn-ghost btn-xs btn-square tooltip tooltip-bottom" data-tip="GitHub" href="https://github.com/basketikun/chatgpt2api" target="_blank" rel="noreferrer" aria-label="GitHub"><ui-icon name="github" class="icon-sm"></ui-icon></a>
+          <button type="button" class="btn btn-ghost btn-xs btn-square tooltip tooltip-bottom" data-tip="退出登录" aria-label="退出登录" @click="$store.app.logout()"><ui-icon name="log-out" class="icon-sm"></ui-icon></button>
+        </div>
+        <button type="button" class="btn btn-sm chat-new" @click="newRecord()"><ui-icon name="square-pen" class="icon-sm"></ui-icon>新建</button>
+        <div class="row row-between chat-side-head">
+          <span>记录 <span class="num" x-text="list.length"></span></span>
+          <button type="button" class="btn btn-ghost btn-xs btn-square btn-plain text-danger" aria-label="清空" x-show="list.length" :disabled="loading" @click="clearAll()"><ui-icon name="trash-2" class="icon-sm"></ui-icon></button>
+        </div>
+        <nav class="chat-list" aria-label="创作记录">
+          <template x-for="item in list" :key="item.id">
+            <div class="chat-item" :aria-current="activeId === item.id ? 'true' : null">
+              <button type="button" class="chat-item-title" :title="item.title" @click="select(item.id)">
+                <ui-icon :name="recordIcons[item.type]" class="icon-sm text-subtle"></ui-icon>
+                <span class="truncate" x-text="item.title"></span>
+              </button>
+              <button type="button" class="btn btn-ghost btn-xs btn-square chat-item-delete tooltip tooltip-left" data-tip="删除" aria-label="删除" :disabled="loading" @click="remove(item)"><ui-icon name="trash-2" class="icon-sm"></ui-icon></button>
+            </div>
+          </template>
+          <div class="empty" x-show="!list.length"><ui-icon name="history"></ui-icon>暂无记录</div>
+        </nav>
+      </aside>
+
+      <section class="chat-main">
+        <button type="button" class="btn btn-ghost btn-sm btn-square chat-menu" aria-label="创作记录" @click="sideOpen = true"><ui-icon name="panel-left"></ui-icon></button>
+
+        <div class="chat-stream" x-show="messages.length" x-effect="follow($el)">
+          <div class="chat-thread">
+            <template x-for="(message, index) in messages" :key="activeId + '-' + index">
+              <div class="chat-msg" :class="message.role">
+                <template x-if="message.role === 'user'">
+                  <div class="vstack vstack-sm chat-user">
+                    <div class="chat-user-images" x-show="parts(message, 'image_url').length">
+                      <template x-for="(part, imageIndex) in parts(message, 'image_url')" :key="imageIndex">
+                        <figure class="chat-user-image">
+                          <button type="button" class="chat-zoom" @click="lightbox(parts(message, 'image_url').map((item) => ({ src: item.image_url.url })), imageIndex)"><img :src="part.image_url.url" alt="" loading="lazy"></button>
+                          <button type="button" class="btn btn-ghost btn-xs" @click="addToEdit(part.image_url.url, 'image-' + (imageIndex + 1) + '.png')"><ui-icon name="image-plus" class="icon-sm"></ui-icon>加入编辑</button>
+                        </figure>
+                      </template>
+                    </div>
+                    <template x-for="part in parts(message, 'audio_file')" :key="part.name">
+                      <div class="tile row chat-audio-file">
+                        <ui-icon name="mic" class="icon-sm"></ui-icon>
+                        <span class="truncate" x-text="part.name"></span>
+                        <span class="text-xs text-subtle num" x-text="$bytes(part.size)"></span>
+                      </div>
+                    </template>
+                    <div class="bubble" x-show="text(message)" x-text="text(message)"></div>
+                    <template x-if="messages[index + 1]?.image_turn">
+                      <div class="row row-xs chat-user-meta">
+                        <span class="text-xs text-muted num" x-text="turnMeta(messages[index + 1].image_turn)"></span>
+                        <button type="button" class="btn btn-ghost btn-xs" :disabled="loading" @click="reuseTurn(messages[index + 1].image_turn)"><ui-icon name="sliders-horizontal" class="icon-sm"></ui-icon>复用配置</button>
+                      </div>
+                    </template>
+                  </div>
+                </template>
+
+                <template x-if="message.role === 'assistant'">
+                  <div class="vstack vstack-md">
+                    <template x-for="part in parts(message, 'audio')" :key="part.url.length">
+                      <audio controls class="chat-audio" :src="part.url"></audio>
+                    </template>
+
+                    <div class="chat-tasks" :class="{ single: parts(message, 'image_task').length === 1 }" x-show="parts(message, 'image_task').length">
+                      <template x-for="part in parts(message, 'image_task')" :key="part.task_id">
+                        <div class="chat-task">
+                          <div class="chat-task-media" :class="{ 'chat-task-loading': part.status === 'running' || part.status === 'queued' }" :style="{ aspectRatio: part.ratio === 'auto' ? '1' : part.ratio.replace(':', ' / ') }">
+                            <template x-if="part.status === 'success'">
+                              <button type="button" class="chat-zoom chat-task-image" x-data="{ dim: '', bytes: 0 }" @click="openImage(message, part)"><img :src="part.url" :alt="'结果 ' + part.index" loading="lazy" @load="dim = $el.naturalWidth + '×' + $el.naturalHeight; fetch(part.url).then((response) => response.blob()).then((blob) => bytes = blob.size)"><span class="chat-task-badge num" x-show="dim" x-text="dim + (bytes ? ' · ' + $bytes(bytes) : '')"></span></button>
+                            </template>
+                            <template x-if="part.status !== 'success'">
+                              <div class="chat-task-state">
+                                <ui-icon name="triangle-alert" class="icon-lg text-danger" x-show="part.status === 'error'"></ui-icon>
+                                <span class="text-strong" x-text="'图片 ' + part.index + '/' + part.total"></span>
+                                <span class="text-xs" :class="{ 'text-danger': part.status === 'error' }" x-text="part.status === 'error' ? part.error : part.status === 'queued' ? '排队中' : progressLabels[part.progress] || '生成中'"></span>
+                              </div>
+                            </template>
+                          </div>
+                          <div class="chat-task-foot row row-between">
+                            <span class="text-xs text-muted num" x-text="taskMeta(part)"></span>
+                            <div class="row row-xs">
+                              <template x-if="part.status === 'success'">
+                                <div class="row row-xs">
+                                  <button type="button" class="btn btn-ghost btn-xs btn-square btn-plain tooltip" data-tip="加入编辑" aria-label="加入编辑" @click="addToEdit(part.url, 'image-' + part.index + '.png', message.image_turn)"><ui-icon name="image-plus" class="icon-sm"></ui-icon></button>
+                                  <a class="btn btn-ghost btn-xs btn-square btn-plain tooltip" data-tip="下载" aria-label="下载" :href="part.url" :download="'image-' + part.index + '.png'"><ui-icon name="download" class="icon-sm"></ui-icon></a>
+                                </div>
+                              </template>
+                              <button type="button" class="btn btn-ghost btn-xs btn-square btn-plain tooltip text-danger" data-tip="重新生成这一张" aria-label="重新生成这一张" x-show="part.status === 'error' && message.image_turn" @click="retryTask(index, part, message.image_turn)"><ui-icon name="rotate-ccw" class="icon-sm"></ui-icon></button>
+                            </div>
+                          </div>
+                        </div>
+                      </template>
+                    </div>
+
+                    <div class="chat-tasks" x-show="parts(message, 'image_url').length">
+                      <template x-for="(part, imageIndex) in parts(message, 'image_url')" :key="imageIndex">
+                        <button type="button" class="chat-zoom chat-task" @click="lightbox(parts(message, 'image_url').map((item) => ({ src: item.image_url.url })), imageIndex)"><img class="chat-result-image" :src="part.image_url.url" alt="" loading="lazy"></button>
+                      </template>
+                    </div>
+
+                    <div class="markdown chat-markdown" x-show="text(message)" x-html="$md(text(message))"></div>
+                  </div>
+                </template>
+              </div>
+            </template>
+            <div class="chat-msg assistant" x-show="waiting"><span class="loading loading-dots loading-sm text-muted"></span></div>
+          </div>
+        </div>
+
+        <div class="chat-dock" :class="{ 'chat-dock-center': !messages.length }">
+          <div class="chat-hero" x-show="!messages.length">
+            <h1 class="chat-hero-title" x-text="{ chat: '今天想聊点什么？', image: '把想法变成画面', voice: '文字与语音互转' }[mode]"></h1>
+            <p class="chat-hero-sub" x-text="{ chat: '提问、联网搜索，或上传图片一起提问', image: '描述想要的画面，也可以加入参考图进行修改', voice: '合成自然语音，或把音频转写成文字' }[mode]"></p>
+          </div>
+
+          <div role="alert" class="alert alert-soft alert-error" x-show="error" x-cloak>
+            <ui-icon name="circle-x"></ui-icon><span class="grow" x-text="error"></span>
+            <button type="button" class="btn btn-ghost btn-xs btn-square" aria-label="关闭" @click="error = ''"><ui-icon name="x" class="icon-sm"></ui-icon></button>
+          </div>
+
+          <div class="composer">
+            <div class="vstack vstack-xs composer-refs" x-show="mode !== 'voice'">
+              <div class="composer-chips">
+                <label class="composer-add" aria-label="添加参考素材">
+                  <ui-icon name="plus"></ui-icon>
+                  <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden @change="addImages($event.target.files); $event.target.value = ''">
+                </label>
+                <template x-for="image in images" :key="image.id">
+                <div class="composer-chip">
+                  <img :src="image.url" :alt="image.name">
+                  <button type="button" :aria-label="'移除 ' + image.name" @click="images = images.filter((item) => item.id !== image.id)"><ui-icon name="x" class="icon-sm"></ui-icon></button>
+                </div>
+                </template>
+              </div>
+              <span class="text-xs text-muted">参考素材 <span class="num" x-text="images.length"></span> 个</span>
+            </div>
+
+            <template x-if="type === 'transcription'">
+              <div class="row row-wrap composer-audio">
+                <label class="btn btn-sm">
+                  <ui-icon name="upload" class="icon-sm"></ui-icon>选择音频
+                  <input type="file" accept="audio/*" hidden @change="pickAudio($event)">
+                </label>
+                <button type="button" class="btn btn-sm" x-show="!recording" :disabled="loading" @click="startRecording()"><ui-icon name="mic" class="icon-sm"></ui-icon>开始录音</button>
+                <button type="button" class="btn btn-sm btn-error btn-soft" x-show="recording" x-cloak @click="stopRecording()"><ui-icon name="circle-stop" class="icon-sm"></ui-icon>停止录音</button>
+                <span class="text-xs text-muted truncate" x-show="audio" x-text="audio && audio.name + ' · ' + $bytes(audio.size)"></span>
+                <span class="tooltip tooltip-right field-help" x-show="!audio" data-tip="支持 mp3、wav、m4a、ogg、flac、webm"><ui-icon name="info" class="icon-sm"></ui-icon></span>
+              </div>
+            </template>
+
+            <textarea class="composer-input" rows="4" aria-label="提示词" :placeholder="placeholder" x-model="input" x-show="type !== 'transcription'" :maxlength="type === 'speech' ? 4000 : null"
+                      @keydown.enter="!$event.shiftKey && !$event.isComposing && ($event.preventDefault(), send())"
+                      @paste="paste($event)"></textarea>
+
+            <div class="row composer-foot">
+              <div class="row row-xs row-wrap grow">
+                <div class="tabs tabs-box tabs-sm" role="tablist" aria-label="创作模式">
+                  <template x-for="item in modes" :key="item.value">
+                    <button type="button" role="tab" class="tab" :class="{ 'tab-active': mode === item.value }" :disabled="recording" @click="setMode(item.value)"><ui-icon :name="item.icon" class="icon-sm"></ui-icon><span x-text="item.label"></span></button>
+                  </template>
+                </div>
+
+
+                <template x-if="mode === 'chat'">
+                  <div class="row row-xs row-wrap">
+                    <ui-select variant="ghost" icon="openai" aria-label="模型" x-model="model">
+                      <template x-for="item in models" :key="item"><option :value="item" x-text="item"></option></template>
+                    </ui-select>
+                    <ui-select variant="ghost" aria-label="思考强度" placeholder="默认思考" x-model="effort">
+                      <template x-for="[value, label] in efforts" :key="value"><option :value="value" x-text="label"></option></template>
+                    </ui-select>
+                    <button type="button" class="btn btn-xs" :class="webSearch ? 'btn-primary' : 'btn-ghost'" :aria-pressed="webSearch" :disabled="loading" @click="webSearch = !webSearch"><ui-icon name="globe" class="icon-sm"></ui-icon>联网搜索</button>
+                  </div>
+                </template>
+
+                <template x-if="mode === 'image'">
+                  <div class="row row-xs row-wrap">
+                    <ui-select variant="ghost" icon="openai" aria-label="模型" x-model="model">
+                      <template x-for="item in imageModels" :key="item"><option :value="item" x-text="item"></option></template>
+                    </ui-select>
+                    <div class="chat-pop-wrap" x-data="{ open: false }" @click.outside="open = false" @keydown.escape="open = false">
+                      <button type="button" class="btn btn-ghost btn-xs" :aria-expanded="open" @click="open = !open"><ui-icon name="sliders-horizontal" class="icon-sm"></ui-icon><span x-text="settingsLabel"></span></button>
+                      <div class="chat-pop vstack" x-show="open" x-cloak x-transition.opacity>
+                        <div class="chat-pop-row">
+                          <span class="field-label">数量</span>
+                          <div class="tabs tabs-box tabs-sm" role="tablist">
+                            <template x-for="count in 8" :key="count">
+                              <button type="button" role="tab" class="tab" :class="{ 'tab-active': settings.count === count }" x-text="count" @click="settings.count = count"></button>
+                            </template>
+                          </div>
+                        </div>
+                        <div class="vstack vstack-sm">
+                          <span class="field-label">宽高比</span>
+                          <div class="chat-options">
+                            <template x-for="item in ratios" :key="item[0]">
+                              <button type="button" class="btn btn-ghost chat-ratio" :class="{ 'chat-ratio-active': settings.ratio === item[0] }" @click="setRatio(item[0])">
+                                <span class="chat-ratio-box">
+                                  <ui-icon name="image" class="icon-sm" x-show="item[0] === 'auto'"></ui-icon>
+                                  <span class="chat-ratio-shape" x-show="item[0] !== 'auto'" :style="{ aspectRatio: item[1] + '/' + item[2], [item[1] >= item[2] ? 'width' : 'height']: '100%' }"></span>
+                                </span>
+                                <span x-text="item[0]"></span>
+                              </button>
+                            </template>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <span class="row row-xs text-xs text-muted tooltip" data-tip="可用账号的剩余生图额度" x-show="$store.app.admin"><ui-icon name="coins" class="icon-sm"></ui-icon>剩余 <span class="num" x-text="quota === null ? '—' : $num(quota)"></span></span>
+                  </div>
+                </template>
+
+                <template x-if="mode === 'voice'">
+                  <div class="row row-xs row-wrap">
+                    <div class="tabs tabs-box tabs-sm" role="tablist" aria-label="语音类型">
+                      <button type="button" role="tab" class="tab" :class="{ 'tab-active': type === 'speech' }" :disabled="recording" @click="setType('speech')">合成</button>
+                      <button type="button" role="tab" class="tab" :class="{ 'tab-active': type === 'transcription' }" :disabled="recording" @click="setType('transcription')">转写</button>
+                    </div>
+                    <ui-select variant="ghost" aria-label="音色" x-model="voice" x-show="type === 'speech'">
+                      <template x-for="[value, label] in voices" :key="value"><option :value="value" x-text="label"></option></template>
+                    </ui-select>
+                    <ui-select variant="ghost" aria-label="格式" x-model="format" x-show="type === 'speech'">
+                      <template x-for="[value, label] in formats" :key="value"><option :value="value" x-text="label"></option></template>
+                    </ui-select>
+                  </div>
+                </template>
+              </div>
+              <button type="button" class="btn btn-primary btn-sm btn-circle" aria-label="提交" :disabled="!canSend" @click="send()">
+                <span class="loading loading-spinner loading-xs" x-show="loading"></span>
+                <ui-icon name="arrow-up" x-show="!loading"></ui-icon>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </template>
+
+  <template id="page-accounts">
+    <div class="page" x-data="accounts">
+      <div class="page-head">
+        <h1 class="title-page">号池</h1>
+        <div class="row" x-show="tab === 'accounts'">
+          <button type="button" class="btn btn-sm" @click="loadModels()"><ui-icon name="list-tree" class="icon-sm"></ui-icon>可用模型</button>
+          <button type="button" class="btn btn-sm" :disabled="busy === 'quota' || !summary?.total" @click="queryAll()"><ui-icon name="coins" class="icon-sm" x-show="busy !== 'quota'"></ui-icon><span class="loading loading-spinner loading-xs" x-show="busy === 'quota'"></span>查询全部额度</button>
+          <button type="button" class="btn btn-sm" :disabled="loading" @click="loadAccounts()"><ui-icon name="refresh-cw" class="icon-sm" :class="{ spin: loading }"></ui-icon>刷新</button>
+          <button type="button" class="btn btn-sm btn-primary" @click="openImport()"><ui-icon name="upload" class="icon-sm"></ui-icon>导入</button>
+        </div>
+        <div class="row" x-show="tab !== 'accounts'" x-cloak>
+          <button type="button" class="btn btn-sm btn-primary" @click="openSourceForm()"><ui-icon name="plus" class="icon-sm"></ui-icon>添加连接</button>
+        </div>
+      </div>
+
+      <div class="vstack vstack-lg">
+        <div class="tabs tabs-border" role="tablist">
+          <button type="button" role="tab" class="tab" :class="{ 'tab-active': tab === 'accounts' }" @click="tab = 'accounts'">账号</button>
+          <button type="button" role="tab" class="tab" :class="{ 'tab-active': tab === 'cpa' }" @click="tab = 'cpa'">CPA</button>
+          <button type="button" role="tab" class="tab" :class="{ 'tab-active': tab === 'sub2api' }" @click="tab = 'sub2api'">Sub2API</button>
+        </div>
+
+        <!-- 账号 -->
+        <template x-if="tab === 'accounts'">
+          <div class="vstack vstack-lg">
+            <template x-if="!summary">
+              <div class="grid grid-4"><template x-for="i in 4"><div class="skeleton metric-skeleton"></div></template></div>
+            </template>
+            <template x-if="summary">
+              <div class="grid grid-4">
+                <template x-for="metric in metrics" :key="metric.label">
+                  <div class="metric-tile">
+                    <div class="metric-label"><span x-text="metric.label"></span><ui-icon :name="metric.icon" class="icon-sm"></ui-icon></div>
+                    <div class="metric-value" x-text="$num(metric.value)"></div>
+                    <div class="metric-meta" x-text="metric.meta"></div>
+                  </div>
+                </template>
+              </div>
+            </template>
+
+            <section class="panel panel-flush">
+              <div class="panel-head row-wrap">
+                <div class="row row-wrap">
+                  <label class="input input-sm search-input">
+                    <ui-icon name="search" class="icon-sm text-subtle"></ui-icon>
+                    <input type="search" placeholder="搜索邮箱" x-model.debounce.400ms="query">
+                  </label>
+                  <ui-select x-model="type">
+                    <option value="">全部类型</option>
+                    <template x-for="item in types" :key="item"><option :value="item" x-text="item"></option></template>
+                  </ui-select>
+                  <ui-select x-model="status">
+                    <option value="">全部状态</option>
+                    <template x-for="item in Object.keys(statuses)" :key="item"><option :value="item" x-text="item"></option></template>
+                  </ui-select>
+                </div>
+                <div class="row" x-show="selected.length">
+                  <span class="text-muted num">已选 <span x-text="selected.length"></span> 项</span>
+                  <button type="button" class="btn btn-sm btn-ghost" @click="selected = []">取消选择</button>
+                  <button type="button" class="btn btn-sm btn-error btn-soft" :disabled="busy === 'delete'" @click="remove(selected, `删除所选 ${selected.length} 个账号`)"><ui-icon name="trash-2" class="icon-sm"></ui-icon>删除所选</button>
+                </div>
+                <button type="button" class="btn btn-sm btn-error btn-soft tooltip tooltip-left" data-tip="删除当前页状态为异常的账号" x-show="!selected.length" :disabled="!abnormal.length || busy === 'delete'" @click="remove(abnormal.map((item) => item.access_token), `移除当前页 ${abnormal.length} 个异常账号`)"><ui-icon name="trash-2" class="icon-sm"></ui-icon>移除异常账号</button>
+              </div>
+              <div class="table-wrap">
+                <table class="table table-sm">
+                  <thead>
+                    <tr>
+                      <th class="col-check"><input type="checkbox" class="checkbox checkbox-sm" aria-label="全选当前页" :checked="allSelected" @change="selected = $event.target.checked ? items.map((item) => item.access_token) : []"></th>
+                      <th>邮箱</th><th class="text-center">类型</th><th class="text-center">线路</th><th class="text-center">状态</th><th class="text-center">额度</th>
+                      <th class="text-center"><span class="row row-xs row-center">调用<span class="tooltip tooltip-bottom field-help" data-tip="进行中 / 成功 / 失败；空闲时进行中持续大于 0 说明有任务未正常结束"><ui-icon name="info" class="icon-sm"></ui-icon></span></span></th>
+                      <th class="text-center">创建时间</th>
+                      <th class="col-actions">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template x-for="item in items" :key="item.access_token">
+                      <tr>
+                        <td class="col-check"><input type="checkbox" class="checkbox checkbox-sm" aria-label="选择" :value="item.access_token" x-model="selected"></td>
+                        <td class="text-strong" x-text="item.email || '—'"></td>
+                        <td class="text-center"><span class="badge badge-sm badge-soft badge-info" x-text="item.type"></span></td>
+                        <td class="text-center"><span class="row row-xs row-center"><span class="badge badge-sm badge-soft" x-show="item.is_codex">Codex</span><span class="badge badge-sm badge-soft">Web</span></span></td>
+                        <td class="text-center"><span class="badge badge-sm badge-soft" :class="statuses[item.status]" x-text="item.status"></span></td>
+                        <td class="text-center nowrap"><span class="num" x-text="$num(Math.max(0, item.remaining))"></span> <span class="text-xs text-muted tooltip" :data-tip="$time(item.reset_after)" x-text="resetText(item.reset_after)"></span></td>
+                        <td class="text-center num nowrap"><span :class="item.image_inflight ? 'text-warning text-strong' : 'text-subtle'" x-text="item.image_inflight"></span> / <span x-text="$num(item.success)"></span> / <span x-text="$num(item.fail)"></span></td>
+                        <td class="text-center num text-muted nowrap" x-text="$time(item.created_at)"></td>
+                        <td class="col-actions">
+                          <button type="button" class="btn btn-ghost btn-sm btn-square tooltip" data-tip="详情" aria-label="详情" @click="detail = item; detailTab = 'info'"><ui-icon name="eye" class="icon-sm"></ui-icon></button>
+                          <button type="button" class="btn btn-ghost btn-sm btn-square tooltip" data-tip="刷新额度" aria-label="刷新额度" :disabled="busy === 'quota' || busy === item.access_token" @click="refreshQuota(item)"><ui-icon name="refresh-cw" class="icon-sm" :class="{ spin: busy === item.access_token }"></ui-icon></button>
+                          <button type="button" class="btn btn-ghost btn-sm btn-square tooltip" data-tip="编辑" aria-label="编辑" @click="openEdit(item)"><ui-icon name="pencil" class="icon-sm"></ui-icon></button>
+                          <button type="button" class="btn btn-ghost btn-sm btn-square tooltip text-danger" data-tip="删除" aria-label="删除" @click="remove([item.access_token], '删除这个账号')"><ui-icon name="trash-2" class="icon-sm"></ui-icon></button>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+              <div class="center-fill" x-show="loading && !items.length"><span class="loading loading-spinner loading-sm"></span></div>
+              <div class="empty" x-show="!loading && !items.length"><ui-icon name="users-round"></ui-icon><span x-text="query || type || status ? '没有匹配的账号' : '号池中还没有账号'"></span></div>
+              <ui-pager x-show="total > 10" :page="page" :size="size" :total="total" @change="page = $event.detail.page; size = $event.detail.size; loadAccounts()"></ui-pager>
+            </section>
+          </div>
+        </template>
+
+        <!-- CPA / Sub2API 连接 -->
+        <template x-if="tab !== 'accounts'">
+          <section class="panel panel-flush">
+            <div class="table-wrap">
+              <table class="table table-sm">
+                <thead>
+                  <tr>
+                    <th>连接</th>
+                    <template x-if="tab === 'sub2api'"><th>登录方式</th></template>
+                    <template x-if="tab === 'sub2api'"><th>分组</th></template>
+                    <th>最近导入</th><th class="col-actions">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <template x-for="item in sources ?? []" :key="item.id">
+                    <tr>
+                      <td>
+                        <div class="text-strong" x-text="item.name || item.base_url"></div>
+                        <div class="text-xs text-muted" x-text="item.base_url"></div>
+                      </td>
+                      <template x-if="tab === 'sub2api'"><td x-text="item.email || (item.has_api_key ? 'API Key' : '—')"></td></template>
+                      <template x-if="tab === 'sub2api'"><td x-text="item.group_id || '全部分组'"></td></template>
+                      <td>
+                        <span class="text-subtle" x-show="!item.import_job">—</span>
+                        <template x-if="item.import_job">
+                          <div class="vstack vstack-xs">
+                            <div class="row">
+                              <span class="badge badge-sm badge-soft" :class="jobStatus[item.import_job.status][1]" x-text="jobStatus[item.import_job.status][0]"></span>
+                              <span class="num text-muted" x-text="`${item.import_job.completed} / ${item.import_job.total}`"></span>
+                              <span class="text-xs text-subtle num" x-text="$short(item.import_job.created_at)"></span>
+                            </div>
+                            <progress class="progress" :class="item.import_job.status === 'failed' ? 'progress-error' : 'progress-neutral'" :value="progress(item.import_job)" max="100"></progress>
+                            <div class="text-xs text-muted num" x-text="`新增 ${item.import_job.added} · 跳过 ${item.import_job.skipped} · 刷新 ${item.import_job.refreshed} · 失败 ${item.import_job.failed}`"></div>
+                            <div class="text-xs text-danger break-all" x-show="item.import_job.errors.length" x-text="item.import_job.errors[0]?.error"></div>
+                          </div>
+                        </template>
+                      </td>
+                      <td class="col-actions">
+                        <button type="button" class="btn btn-ghost btn-sm" :disabled="syncing === item.id" @click="browse(item)"><span class="loading loading-spinner loading-xs" x-show="syncing === item.id"></span><ui-icon name="download" class="icon-sm" x-show="syncing !== item.id"></ui-icon>选择导入</button>
+                        <button type="button" class="btn btn-ghost btn-sm btn-square tooltip" data-tip="编辑" aria-label="编辑" @click="openSourceForm(item)"><ui-icon name="pencil" class="icon-sm"></ui-icon></button>
+                        <button type="button" class="btn btn-ghost btn-sm btn-square tooltip text-danger" data-tip="删除" aria-label="删除" @click="removeSource(item)"><ui-icon name="trash-2" class="icon-sm"></ui-icon></button>
+                      </td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+            <div class="center-fill" x-show="!sources"><span class="loading loading-spinner loading-sm"></span></div>
+            <div class="empty" x-show="sources && !sources.length"><ui-icon name="server-cog"></ui-icon><span x-text="tab === 'cpa' ? '还没有 CPA 连接' : '还没有 Sub2API 连接'"></span></div>
+          </section>
+        </template>
+      </div>
+
+      <!-- 可用模型 -->
+      <dialog class="modal" x-effect="models.open ? $el.showModal() : $el.close()" @close="models.open = false">
+        <div class="modal-box">
+          <div class="row row-between modal-title">
+            <span>可用模型</span>
+            <button type="button" class="btn btn-ghost btn-sm btn-square tooltip tooltip-left" data-tip="重新获取" aria-label="重新获取" :disabled="models.loading" @click="loadModels(true)"><ui-icon name="refresh-cw" class="icon-sm" :class="{ spin: models.loading }"></ui-icon></button>
+          </div>
+          <div class="center-fill" x-show="models.loading && !models.items.length"><span class="loading loading-spinner loading-sm"></span></div>
+          <div class="empty" x-show="!models.loading && !models.items.length"><ui-icon name="list-tree"></ui-icon>暂无可用模型</div>
+          <div class="row row-wrap" x-show="models.items.length">
+            <template x-for="model in models.items" :key="model.id">
+              <ui-model :name="model.id"></ui-model>
+            </template>
+          </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>关闭</button></form>
+      </dialog>
+
+      <!-- 账号详情 -->
+      <dialog class="modal" x-effect="detail ? $el.showModal() : $el.close()" @close="detail = null">
+        <div class="modal-box modal-wide">
+          <template x-if="detail">
+            <div class="vstack">
+              <div class="modal-head">
+                <h3 class="modal-title truncate" x-text="detail.email || '账号详情'"></h3>
+                <div class="tabs tabs-box tabs-sm" role="tablist">
+                  <button type="button" role="tab" class="tab" :class="{ 'tab-active': detailTab === 'info' }" @click="detailTab = 'info'">概况</button>
+                  <button type="button" role="tab" class="tab" :class="{ 'tab-active': detailTab === 'token' }" @click="detailTab = 'token'">凭证</button>
+                </div>
+                <button type="button" class="btn btn-ghost btn-sm btn-square" aria-label="关闭" @click="detail = null"><ui-icon name="x" class="icon-sm"></ui-icon></button>
+              </div>
+              <dl class="kv" x-show="detailTab === 'info'">
+                <dt>用户 ID</dt><dd><span class="mono copyable" x-show="detail.user_id" x-text="detail.user_id" @click="$copy(detail.user_id)"></span><span x-show="!detail.user_id">—</span></dd>
+                <dt>账号 ID</dt><dd><span class="mono copyable" x-show="detail.account_id" x-text="detail.account_id" @click="$copy(detail.account_id)"></span><span x-show="!detail.account_id">—</span></dd>
+                <dt>类型</dt><dd><span class="badge badge-sm badge-soft badge-info" x-text="detail.type"></span></dd>
+                <dt>线路</dt><dd class="row row-xs"><span class="badge badge-sm badge-soft" x-show="detail.is_codex">Codex</span><span class="badge badge-sm badge-soft">Web</span></dd>
+                <dt>状态</dt><dd><span class="badge badge-sm badge-soft" :class="statuses[detail.status]" x-text="detail.status"></span></dd>
+                <dt>账号代理</dt><dd x-text="detail.proxy || '使用全局代理'"></dd>
+                <dt>额度</dt><dd class="num" x-text="`剩余 ${Math.max(0, detail.remaining)} / 总计 ${Math.max(0, detail.quota)}`"></dd>
+                <dt>调用</dt><dd class="num" x-text="`成功 ${detail.success} · 失败 ${detail.fail} · 进行中 ${detail.image_inflight}`"></dd>
+                <dt>恢复时间</dt><dd class="num" x-text="$time(detail.reset_after)"></dd>
+                <dt>最后使用</dt><dd class="num" x-text="$time(detail.last_used_at)"></dd>
+                <dt>最后刷新</dt><dd class="num" x-text="$time(detail.last_refresh_at)"></dd>
+                <dt>创建时间</dt><dd class="num" x-text="$time(detail.created_at)"></dd>
+                <dt>最后错误</dt><dd :class="{ 'text-danger': detail.last_error }" x-text="detail.last_error || '—'"></dd>
+              </dl>
+              <dl class="kv" x-show="detailTab === 'token'">
+                <dt>Access Token</dt><dd><span class="mono copyable" title="点击复制" x-text="mask(detail.access_token)" @click="$copy(detail.access_token)"></span></dd>
+                <dt>Refresh Token</dt><dd><span class="mono copyable" title="点击复制" x-show="detail.refresh_token" x-text="mask(detail.refresh_token)" @click="$copy(detail.refresh_token)"></span><span x-show="!detail.refresh_token">—</span></dd>
+                <dt>ID Token</dt><dd><span class="mono copyable" title="点击复制" x-show="detail.id_token" x-text="mask(detail.id_token)" @click="$copy(detail.id_token)"></span><span x-show="!detail.id_token">—</span></dd>
+              </dl>
+            </div>
+          </template>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>关闭</button></form>
+      </dialog>
+
+      <!-- 编辑账号 -->
+      <dialog class="modal" x-effect="edit.open ? $el.showModal() : $el.close()" @close="edit.open = false">
+        <form class="modal-box vstack" @submit.prevent="saveEdit()">
+          <h3 class="modal-title">编辑账号</h3>
+          <div class="field">
+            <span class="field-label">状态</span>
+            <ui-select class="block" x-model="edit.status">
+              <template x-for="item in Object.keys(statuses)" :key="item"><option :value="item" x-text="item"></option></template>
+            </ui-select>
+          </div>
+          <div class="field">
+            <label class="field-label" for="account-proxy">账号代理<span class="tooltip field-help" data-tip="留空时使用全局代理"><ui-icon name="info" class="icon-sm"></ui-icon></span></label>
+            <div class="input-group">
+              <input id="account-proxy" class="input input-sm mono" x-model="edit.proxy" placeholder="http://127.0.0.1:7890">
+              <button type="button" class="btn btn-sm" :disabled="!edit.proxy || edit.testing" @click="testProxy()"><span class="loading loading-spinner loading-xs" x-show="edit.testing"></span><ui-icon name="plug-zap" class="icon-sm" x-show="!edit.testing"></ui-icon>测试</button>
+            </div>
+          </div>
+          <div class="modal-action">
+            <button type="button" class="btn btn-sm" @click="edit.open = false">取消</button>
+            <button type="submit" class="btn btn-sm btn-primary" :disabled="edit.saving"><span class="loading loading-spinner loading-xs" x-show="edit.saving"></span>保存</button>
+          </div>
+        </form>
+        <form method="dialog" class="modal-backdrop"><button>关闭</button></form>
+      </dialog>
+
+      <!-- 导入账号 -->
+      <dialog class="modal" x-effect="imp.open ? $el.showModal() : $el.close()" @close="imp.open = false">
+        <div class="modal-box vstack">
+          <div class="row modal-title">
+            <button type="button" class="btn btn-ghost btn-sm btn-square" aria-label="返回导入方式" x-show="imp.method !== 'menu'" @click="imp.method = 'menu'"><ui-icon name="arrow-left" class="icon-sm"></ui-icon></button>
+            <span x-text="importTitle"></span>
+          </div>
+
+          <div class="vstack vstack-sm" x-show="imp.method === 'menu'">
+            <template x-for="option in [
+              { method: 'oauth', icon: 'log-in', title: '登录已有账号', text: '在浏览器登录 ChatGPT 账号，导入后自动续期' },
+              { method: 'token', icon: 'key-round', title: 'Access Token', text: '粘贴或从 TXT 文件读取，每行一个' },
+              { method: 'session', icon: 'file-json', title: 'Session JSON', text: '从 chatgpt.com 复制完整的登录信息' },
+              { method: 'codex', icon: 'file-json', title: 'Codex 认证 JSON', text: '导入后标记为 Codex 账号' },
+              { method: 'files', icon: 'files', title: '账号 JSON 文件', text: '支持单个账号、账号数组和 CPA 文件，可多选' },
+              { method: 'cpa', icon: 'cloud', title: '从 CPA 导入', text: '从已连接的 CPA 服务选择账号' },
+              { method: 'sub2api', icon: 'server-cog', title: '从 Sub2API 导入', text: '从已连接的 Sub2API 服务选择账号' },
+            ]" :key="option.method">
+              <button type="button" class="option-card" @click="['cpa', 'sub2api'].includes(option.method) ? gotoSource(option.method) : imp.method = option.method">
+                <ui-icon :name="option.icon"></ui-icon>
+                <span class="vstack vstack-xs grow">
+                  <span class="text-strong" x-text="option.title"></span>
+                  <span class="text-xs text-muted" x-text="option.text"></span>
+                </span>
+                <ui-icon name="chevron-right" class="icon-sm text-subtle"></ui-icon>
+              </button>
+            </template>
+          </div>
+
+          <template x-if="imp.method === 'oauth'">
+            <div class="vstack">
+              <div class="field">
+                <label class="field-label" for="oauth-email">邮箱<span class="tooltip field-help" data-tip="选填，登录页会预先填入"><ui-icon name="info" class="icon-sm"></ui-icon></span></label>
+                <input id="oauth-email" type="email" class="input input-sm" x-model="imp.email" placeholder="you@example.com" :disabled="imp.oauth || imp.starting">
+              </div>
+              <button type="button" class="btn btn-sm btn-primary" x-show="!imp.oauth" :disabled="imp.starting" @click="startOAuth()"><span class="loading loading-spinner loading-xs" x-show="imp.starting"></span><ui-icon name="external-link" class="icon-sm" x-show="!imp.starting"></ui-icon>打开授权页面</button>
+              <template x-if="imp.oauth">
+                <div class="vstack">
+                  <div class="field">
+                    <span class="field-label">授权地址</span>
+                    <span class="mono copyable break-all" title="点击复制" x-text="imp.oauth.authorize_url" @click="$copy(imp.oauth.authorize_url)"></span>
+                    <div class="row">
+                      <a class="btn btn-sm" :href="imp.oauth.authorize_url" target="_blank" rel="noreferrer"><ui-icon name="external-link" class="icon-sm"></ui-icon>再次打开</a>
+                      <button type="button" class="btn btn-sm" @click="imp.oauth = null; imp.callback = ''"><ui-icon name="rotate-ccw" class="icon-sm"></ui-icon>重新生成</button>
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label class="field-label" for="oauth-callback">回调地址<span class="tooltip field-help" data-tip="登录完成后浏览器跳转到 platform.openai.com/auth/callback?code=…，复制地址栏中的完整地址；也可只填 code"><ui-icon name="info" class="icon-sm"></ui-icon></span></label>
+                    <textarea id="oauth-callback" class="textarea textarea-sm mono" rows="3" x-model="imp.callback" placeholder="https://platform.openai.com/auth/callback?code=...&state=..."></textarea>
+                  </div>
+                </div>
+              </template>
+              <div role="alert" class="alert alert-soft alert-warning">
+                <ui-icon name="triangle-alert"></ui-icon><span>授权码只能使用一次，需在 10 分钟内完成。如果回调页显示错误，请重新生成后再登录。</span>
+              </div>
+            </div>
+          </template>
+
+          <template x-if="imp.method === 'token'">
+            <div class="field">
+              <div class="row row-between">
+                <label class="field-label" for="import-tokens">Access Token<span class="text-subtle num" x-text="`已识别 ${tokenList.length} 个`"></span></label>
+                <button type="button" class="btn btn-ghost btn-xs" @click="$refs.txt.click()"><ui-icon name="file-text" class="icon-sm"></ui-icon>读取 TXT</button>
+              </div>
+              <textarea id="import-tokens" class="textarea textarea-sm mono" rows="10" x-model="imp.tokens" placeholder="每行一个 Access Token"></textarea>
+              <input type="file" accept=".txt,text/plain" hidden x-ref="txt" @change="readTxt($event)">
+            </div>
+          </template>
+
+          <template x-if="imp.method === 'session'">
+            <div class="vstack">
+              <div role="alert" class="alert alert-soft alert-warning">
+                <ui-icon name="triangle-alert"></ui-icon><span>请使用不常用的小号导入，避免主力账号被封禁。</span>
+              </div>
+              <div class="field">
+                <div class="row row-between">
+                  <label class="field-label" for="import-session">Session JSON</label>
+                  <a class="btn btn-ghost btn-xs" href="https://chatgpt.com/api/auth/session" target="_blank" rel="noreferrer">获取页面<ui-icon name="external-link" class="icon-sm"></ui-icon></a>
+                </div>
+                <textarea id="import-session" class="textarea textarea-sm mono" rows="10" x-model="imp.session" placeholder='粘贴页面返回的完整内容，需包含 "accessToken"'></textarea>
+              </div>
+            </div>
+          </template>
+
+          <template x-if="imp.method === 'codex'">
+            <div class="field">
+              <label class="field-label" for="import-codex">Codex 认证 JSON</label>
+              <textarea id="import-codex" class="textarea textarea-sm mono" rows="12" x-model="imp.codex" placeholder='包含 "access_token"、"refresh_token"、"id_token" 的内容'></textarea>
+            </div>
+          </template>
+
+          <template x-if="imp.method === 'files'">
+            <div class="empty">
+              <ui-icon name="files"></ui-icon>
+              <span>选择一个或多个账号 JSON 文件，导入前会确认数量</span>
+              <button type="button" class="btn btn-sm btn-primary" :disabled="imp.submitting" @click="$refs.json.click()"><span class="loading loading-spinner loading-xs" x-show="imp.submitting"></span>选择文件</button>
+              <input type="file" accept=".json,application/json" multiple hidden x-ref="json" @change="readJsonFiles($event)">
+            </div>
+          </template>
+
+          <div class="modal-action" x-show="['oauth', 'token', 'session', 'codex'].includes(imp.method)">
+            <button type="button" class="btn btn-sm" @click="imp.open = false">取消</button>
+            <button type="button" class="btn btn-sm btn-primary" :disabled="imp.submitting || (imp.method === 'oauth' ? !imp.callback : imp.method === 'token' ? !tokenList.length : !imp[imp.method])" @click="importTyped()"><span class="loading loading-spinner loading-xs" x-show="imp.submitting"></span>导入</button>
+          </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>关闭</button></form>
+      </dialog>
+
+      <!-- CPA 连接 -->
+      <dialog class="modal" x-effect="poolForm.open ? $el.showModal() : $el.close()" @close="poolForm.open = false">
+        <form class="modal-box vstack" @submit.prevent="savePool()">
+          <h3 class="modal-title" x-text="poolForm.id ? '编辑 CPA 连接' : '添加 CPA 连接'"></h3>
+          <div class="field">
+            <label class="field-label" for="pool-name">名称</label>
+            <input id="pool-name" class="input input-sm" x-model="poolForm.name" placeholder="选填，例如主号池">
+          </div>
+          <div class="field">
+            <label class="field-label" for="pool-url">服务地址</label>
+            <input id="pool-url" class="input input-sm mono" x-model="poolForm.base_url" placeholder="http://your-cpa-host:8317">
+          </div>
+          <div class="field">
+            <label class="field-label" for="pool-secret">管理密钥</label>
+            <label class="input input-sm">
+              <input id="pool-secret" class="grow mono" :type="poolForm.show ? 'text' : 'password'" x-model="poolForm.secret" :placeholder="poolForm.id ? '留空则不修改' : 'CPA 管理密钥'">
+              <button type="button" class="btn btn-ghost btn-xs btn-square" :aria-label="poolForm.show ? '隐藏' : '显示'" @click="poolForm.show = !poolForm.show"><ui-icon :name="poolForm.show ? 'eye-off' : 'eye'" class="icon-sm"></ui-icon></button>
+            </label>
+          </div>
+          <div class="modal-action">
+            <button type="button" class="btn btn-sm" @click="poolForm.open = false">取消</button>
+            <button type="submit" class="btn btn-sm btn-primary" :disabled="!poolForm.base_url || (!poolForm.id && !poolForm.secret) || poolForm.saving"><span class="loading loading-spinner loading-xs" x-show="poolForm.saving"></span>保存</button>
+          </div>
+        </form>
+        <form method="dialog" class="modal-backdrop"><button>关闭</button></form>
+      </dialog>
+
+      <!-- Sub2API 连接 -->
+      <dialog class="modal" x-effect="serverForm.open ? $el.showModal() : $el.close()" @close="serverForm.open = false">
+        <form class="modal-box vstack" @submit.prevent="saveServer()">
+          <h3 class="modal-title" x-text="serverForm.id ? '编辑 Sub2API 连接' : '添加 Sub2API 连接'"></h3>
+          <template x-if="serverForm.open">
+            <div class="vstack">
+              <div class="field">
+                <label class="field-label" for="server-name">名称</label>
+                <input id="server-name" class="input input-sm" x-model="serverForm.name" placeholder="选填，例如自建服务">
+              </div>
+              <div class="field">
+                <label class="field-label" for="server-url">服务地址</label>
+                <input id="server-url" class="input input-sm mono" x-model="serverForm.base_url" placeholder="http://your-sub2api-host:8080">
+              </div>
+              <div class="field">
+                <span class="field-label">登录方式</span>
+                <ui-select class="block" x-model="serverForm.auth">
+                  <option value="password">管理员邮箱和密码</option>
+                  <option value="api_key">管理员 API Key</option>
+                </ui-select>
+              </div>
+              <template x-if="serverForm.auth === 'password'">
+                <div class="field">
+                  <label class="field-label" for="server-email">管理员邮箱</label>
+                  <input id="server-email" type="email" class="input input-sm" x-model="serverForm.email" placeholder="admin@example.com">
+                </div>
+              </template>
+              <div class="field">
+                <label class="field-label" for="server-secret" x-text="serverForm.auth === 'password' ? '管理员密码' : '管理员 API Key'"></label>
+                <label class="input input-sm">
+                  <input id="server-secret" class="grow mono" :type="serverForm.show ? 'text' : 'password'" x-model="serverForm[serverForm.auth]" :placeholder="serverForm.id ? '留空则不修改' : ''">
+                  <button type="button" class="btn btn-ghost btn-xs btn-square" :aria-label="serverForm.show ? '隐藏' : '显示'" @click="serverForm.show = !serverForm.show"><ui-icon :name="serverForm.show ? 'eye-off' : 'eye'" class="icon-sm"></ui-icon></button>
+                </label>
+              </div>
+              <div class="field">
+                <div class="row row-between">
+                  <label class="field-label" for="server-group">分组<span class="tooltip field-help" data-tip="只同步该分组的 OpenAI 账号；留空同步全部，ungrouped 表示未分组。保存连接后可读取分组列表"><ui-icon name="info" class="icon-sm"></ui-icon></span></label>
+                  <button type="button" class="btn btn-ghost btn-xs" x-show="serverForm.id" :disabled="serverForm.loadingGroups" @click="loadGroups()"><ui-icon name="refresh-cw" class="icon-sm" :class="{ spin: serverForm.loadingGroups }"></ui-icon>读取分组</button>
+                </div>
+                <input id="server-group" class="input input-sm mono" x-show="!serverForm.groups" x-model="serverForm.group_id" placeholder="留空同步全部分组">
+                <template x-if="serverForm.groups">
+                  <ui-select class="block" x-model="serverForm.group_id">
+                    <option value="">全部分组</option>
+                    <option value="ungrouped">未分组</option>
+                    <template x-for="group in serverForm.groups" :key="group.id"><option :value="group.id" x-text="groupLabel(group)"></option></template>
+                  </ui-select>
+                </template>
+              </div>
+            </div>
+          </template>
+          <div class="modal-action">
+            <button type="button" class="btn btn-sm" @click="serverForm.open = false">取消</button>
+            <button type="submit" class="btn btn-sm btn-primary" :disabled="serverForm.saving || !serverForm.base_url || (serverForm.auth === 'password' ? !serverForm.email || (!serverForm.id && !serverForm.password) : !serverForm.id && !serverForm.api_key)"><span class="loading loading-spinner loading-xs" x-show="serverForm.saving"></span>保存</button>
+          </div>
+        </form>
+        <form method="dialog" class="modal-backdrop"><button>关闭</button></form>
+      </dialog>
+
+      <!-- 选择远程账号 -->
+      <dialog class="modal" x-effect="browser.open ? $el.showModal() : $el.close()" @close="browser.open = false">
+        <div class="modal-box modal-wide vstack">
+          <div class="modal-title">
+            <div>选择要导入的账号</div>
+            <div class="text-xs text-muted" x-text="browser.source && (browser.source.name || browser.source.base_url)"></div>
+          </div>
+          <div class="row row-between row-wrap">
+            <label class="input input-sm search-input">
+              <ui-icon name="search" class="icon-sm text-subtle"></ui-icon>
+              <input type="search" :placeholder="browser.kind === 'cpa' ? '搜索邮箱或文件名' : '搜索邮箱、名称或套餐'" x-model="browser.query" @input.debounce.300ms="browser.page = 1; reloadBrowser()">
+            </label>
+            <span class="text-muted num" x-text="`共 ${browserTotal} 个 · 已选 ${browser.selected.length} 个`"></span>
+          </div>
+          <div class="table-wrap">
+            <table class="table table-sm">
+              <thead>
+                <tr>
+                  <th class="col-check"><input type="checkbox" class="checkbox checkbox-sm" aria-label="全选本页" :checked="browserAll" @change="toggleBrowserAll()"></th>
+                  <th>账号</th>
+                  <template x-if="browser.kind === 'sub2api'"><th>套餐</th></template>
+                  <template x-if="browser.kind === 'sub2api'"><th>状态</th></template>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-for="row in browserPage" :key="row.key">
+                  <tr>
+                    <td class="col-check"><input type="checkbox" class="checkbox checkbox-sm" aria-label="选择" :value="row.key" x-model="browser.selected"></td>
+                    <td>
+                      <div class="text-strong" x-text="row.title"></div>
+                      <div class="text-xs text-muted break-all" x-text="row.meta"></div>
+                    </td>
+                    <template x-if="browser.kind === 'sub2api'"><td><span class="badge badge-sm badge-soft" x-show="row.plan" x-text="row.plan"></span></td></template>
+                    <template x-if="browser.kind === 'sub2api'"><td><span class="badge badge-sm badge-soft" :class="{ 'badge-success': row.status === 'active' }" x-show="row.status" x-text="row.status"></span></td></template>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+          <div class="empty" x-show="!browserRows.length"><ui-icon name="search"></ui-icon><span x-text="browser.query ? '没有匹配的账号' : '对方服务中没有可导入的账号'"></span></div>
+          <ui-pager x-show="browserTotal > 20" :page="browser.page" :size="browser.size" :total="browserTotal" sizes="20,50,100,200" @change="browser.page = $event.detail.page; browser.size = $event.detail.size; reloadBrowser()"></ui-pager>
+          <div class="modal-action">
+            <button type="button" class="btn btn-sm" @click="browser.open = false">取消</button>
+            <button type="button" class="btn btn-sm" x-show="browser.kind === 'sub2api'" :disabled="!browserTotal || browser.starting" @click="startSourceImport(true)">导入全部<span class="num" x-text="browserTotal"></span></button>
+            <button type="button" class="btn btn-sm btn-primary" :disabled="!browser.selected.length || browser.starting" @click="startSourceImport()"><span class="loading loading-spinner loading-xs" x-show="browser.starting"></span>导入<span class="num" x-show="browser.selected.length" x-text="browser.selected.length"></span></button>
+          </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>关闭</button></form>
+      </dialog>
+    </div>
+  </template>
+
+  <template id="page-keys">
+    <div class="page" x-data="keys">
+      <div class="page-head">
+        <h1 class="title-page">密钥</h1>
+        <div class="row">
+          <label class="input input-sm search-input">
+            <ui-icon name="search" class="icon-sm text-subtle"></ui-icon>
+            <input type="search" placeholder="搜索名称或密钥" x-model="query" @input="page = 1">
+          </label>
+          <button type="button" class="btn btn-sm btn-primary" @click="openForm()"><ui-icon name="plus" class="icon-sm"></ui-icon>新增密钥</button>
+        </div>
+      </div>
+
+      <section class="panel panel-flush">
+        <div class="table-wrap">
+          <table class="table table-sm">
+            <thead>
+              <tr><th>名称</th><th>密钥</th><th>订阅等级</th><th>线路</th><th>启用</th><th>创建时间</th><th>最近使用</th><th class="col-actions">操作</th></tr>
+            </thead>
+            <tbody>
+              <template x-for="item in paged" :key="item.id">
+                <tr>
+                  <td class="text-strong" x-text="item.name || '—'"></td>
+                  <td><span class="mono copyable" title="点击复制" x-text="item.key" @click="$copy(item.key)"></span></td>
+                  <td x-text="item.plan.map((value) => ({ free: 'Free', plus: 'Plus', team: 'Team', pro: 'Pro' })[value]).join('、')"></td>
+                  <td x-text="item.route.map((value) => ({ web: 'Web', codex: 'Codex' })[value]).join('、')"></td>
+                  <td><input type="checkbox" class="toggle toggle-sm" :checked="item.enabled" :aria-label="item.enabled ? '禁用' : '启用'" @change="toggle(item, $event.target.checked)"></td>
+                  <td class="num text-muted nowrap" x-text="$time(item.created_at)"></td>
+                  <td class="num text-muted nowrap" x-text="$time(item.last_used_at)"></td>
+                  <td class="col-actions">
+                    <button type="button" class="btn btn-ghost btn-sm btn-square tooltip" data-tip="编辑" aria-label="编辑" @click="openForm(item)"><ui-icon name="pencil" class="icon-sm"></ui-icon></button>
+                    <button type="button" class="btn btn-ghost btn-sm btn-square tooltip text-danger" data-tip="删除" aria-label="删除" @click="remove(item)"><ui-icon name="trash-2" class="icon-sm"></ui-icon></button>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+        <div class="center-fill" x-show="loading"><span class="loading loading-spinner loading-sm"></span></div>
+        <div class="empty" x-show="!loading && !filtered.length"><ui-icon name="key-round"></ui-icon><span x-text="query ? '没有匹配的密钥' : '暂无用户密钥'"></span></div>
+        <ui-pager x-show="filtered.length > size" :page="page" :size="size" :total="filtered.length" @change="page = $event.detail.page; size = $event.detail.size"></ui-pager>
+      </section>
+
+      <dialog class="modal" x-effect="form.open ? $el.showModal() : $el.close()" @close="form.open = false">
+        <form class="modal-box vstack" @submit.prevent="save()">
+          <h3 class="modal-title" x-text="form.id ? '编辑密钥' : '新增密钥'"></h3>
+          <div class="field">
+            <label class="field-label" for="key-name">名称</label>
+            <input id="key-name" class="input input-sm" x-model="form.name" placeholder="用于区分使用者">
+          </div>
+          <div class="field">
+            <label class="field-label" for="key-value">密钥</label>
+            <input id="key-value" class="input input-sm mono" :class="{ 'input-error': form.error }" x-model="form.key" placeholder="登录与调用时使用" @input="form.error = ''">
+            <span class="field-error" x-show="form.error" x-text="form.error"></span>
+          </div>
+          <div class="field">
+            <span class="field-label">订阅等级</span>
+            <ui-select class="block" multiple aria-label="订阅等级" x-model="form.plan"><option value="free">Free</option><option value="plus">Plus</option><option value="team">Team</option><option value="pro">Pro</option></ui-select>
+          </div>
+          <div class="field">
+            <span class="field-label">线路</span>
+            <ui-select class="block" multiple aria-label="线路" x-model="form.route"><option value="web">Web</option><option value="codex">Codex</option></ui-select>
+          </div>
+          <div class="modal-action">
+            <button type="button" class="btn btn-sm" @click="form.open = false">取消</button>
+            <button type="submit" class="btn btn-sm btn-primary" :disabled="!form.key || form.saving"><span class="loading loading-spinner loading-xs" x-show="form.saving"></span>保存</button>
+          </div>
+        </form>
+        <form method="dialog" class="modal-backdrop"><button>关闭</button></form>
+      </dialog>
+    </div>
+  </template>
+
+  <template id="page-gallery">
+    <div class="page" x-data="gallery">
+      <div class="page-head">
+        <h1 class="title-page">图库</h1>
+        <div class="row row-wrap">
+          <button type="button" class="btn btn-sm" :disabled="busy" @click="compress()"><span class="loading loading-spinner loading-xs" x-show="busy === 'compress'"></span><ui-icon name="archive" class="icon-sm" x-show="busy !== 'compress'"></ui-icon>压缩优化</button>
+          <button type="button" class="btn btn-sm" :disabled="busy" @click="cleanup.open = true"><ui-icon name="eraser" class="icon-sm"></ui-icon>清理空间</button>
+          <button type="button" class="btn btn-sm btn-error btn-soft" :disabled="busy" @click="byDate = { open: true, date: '' }"><ui-icon name="calendar-days" class="icon-sm"></ui-icon>按日期删除</button>
+          <button type="button" class="btn btn-ghost btn-sm btn-square tooltip tooltip-left" data-tip="刷新" aria-label="刷新" :disabled="loading" @click="load()"><ui-icon name="refresh-cw" class="icon-sm" :class="{ spin: loading }"></ui-icon></button>
+        </div>
+      </div>
+
+      <div class="vstack vstack-lg">
+        <template x-if="!storage">
+          <div class="grid grid-4"><template x-for="i in 4"><div class="skeleton metric-skeleton"></div></template></div>
+        </template>
+        <template x-if="storage">
+          <div class="grid grid-4">
+            <div class="metric-tile">
+              <div class="metric-label"><span>磁盘总量</span><ui-icon name="hard-drive" class="icon-sm"></ui-icon></div>
+              <div class="metric-value" x-text="$bytes(storage.disk_total_mb * 1048576)"></div>
+              <div class="metric-meta" x-text="'已用 ' + $bytes(storage.disk_used_mb * 1048576)"></div>
+            </div>
+            <div class="metric-tile">
+              <div class="metric-label"><span>剩余空间</span><ui-icon name="gauge" class="icon-sm"></ui-icon></div>
+              <div class="metric-value" :class="storage.disk_free_mb < 200 ? 'text-danger' : storage.disk_free_mb < 500 ? 'text-warning' : ''" x-text="$bytes(storage.disk_free_mb * 1048576)"></div>
+              <div class="metric-meta" x-text="(storage.disk_free_mb / storage.disk_total_mb * 100).toFixed(1) + '% 可用'"></div>
+            </div>
+            <div class="metric-tile">
+              <div class="metric-label"><span>图片数量</span><ui-icon name="images" class="icon-sm"></ui-icon></div>
+              <div class="metric-value" x-text="$num(storage.image_count)"></div>
+            </div>
+            <div class="metric-tile">
+              <div class="metric-label"><span>图片占用</span><ui-icon name="layers" class="icon-sm"></ui-icon></div>
+              <div class="metric-value" x-text="$bytes(storage.image_size_bytes)"></div>        </div>
+          </div>
+        </template>
+
+        <div class="row row-wrap">
+          <ui-date class="gallery-range" mode="range" placeholder="创建日期" x-model="range" @input="load()"></ui-date>
+          <span class="spacer"></span>
+          <div class="tabs tabs-box tabs-sm" role="tablist">
+            <button type="button" role="tab" class="tab" :class="{ 'tab-active': view === 'card' }" @click="view = 'card'">卡片</button>
+            <button type="button" role="tab" class="tab" :class="{ 'tab-active': view === 'table' }" @click="view = 'table'">表格</button>
+          </div>
+        </div>
+
+        <section class="panel panel-flush">
+          <div class="panel-head row-wrap">
+            <div class="row row-lg row-wrap">
+              <span class="text-muted" x-text="'共 ' + $num(items.length) + ' 张'"></span>
+              <label class="check-row"><input type="checkbox" class="checkbox checkbox-sm" :checked="pageSelected" :disabled="!items.length" @change="toggle(paged.map((item) => item.rel), $event.target.checked)">本页全选</label>
+              <label class="check-row"><input type="checkbox" class="checkbox checkbox-sm" :checked="allSelected" :disabled="!items.length" @change="toggle(items.map((item) => item.rel), $event.target.checked)">全选结果</label>
+              <span class="text-muted" x-show="selected.length" x-text="'已选 ' + selected.length + ' 张'"></span>
+            </div>
+            <div class="row row-wrap">
+              <template x-if="selected.length">
+                <div class="row">
+                  <button type="button" class="btn btn-ghost btn-sm" @click="selected = []">取消选择</button>
+                  <button type="button" class="btn btn-sm" :disabled="busy" @click="downloadSelected()"><span class="loading loading-spinner loading-xs" x-show="busy === 'download'"></span><ui-icon name="download" class="icon-sm" x-show="busy !== 'download'"></ui-icon>下载所选</button>
+                  <button type="button" class="btn btn-sm btn-error btn-soft" :disabled="busy" @click="remove({ paths: selected }, '删除所选图片', `删除所选的 ${selected.length} 张图片后无法恢复。`)"><ui-icon name="trash-2" class="icon-sm"></ui-icon>删除所选</button>
+                </div>
+              </template>
+              <button type="button" class="btn btn-sm btn-error btn-soft" x-show="filtered && !selected.length" :disabled="busy || !items.length" @click="remove({ ...filters, all_matching: true }, '删除符合条件的图片', `删除当前筛选出的 ${items.length} 张图片后无法恢复。`)"><ui-icon name="trash-2" class="icon-sm"></ui-icon>删除筛选结果</button>
+            </div>
+          </div>
+
+          <div class="gallery-grid" x-show="view === 'card' && paged.length">
+            <template x-for="item in paged" :key="item.rel">
+              <div class="gallery-card vstack vstack-sm" :class="{ selected: selected.includes(item.rel) }">
+                <div class="gallery-media">
+                  <button type="button" class="thumb gallery-thumb" aria-label="预览" @click="preview(item)">
+                    <img :src="item.thumbnail_url" alt="" loading="lazy" @error="$el.src !== item.url && ($el.src = item.url)">
+                  </button>
+                  <input type="checkbox" class="checkbox checkbox-sm gallery-check" :checked="selected.includes(item.rel)" aria-label="选择" @change="toggle([item.rel], $event.target.checked)">
+                  <span class="gallery-meta num" x-text="$bytes(item.size) + ' · ' + item.width + ' × ' + item.height"></span>
+                </div>
+                <div class="row">
+                  <span class="grow truncate text-xs text-muted num" x-text="item.created_at"></span>
+                  <button type="button" class="btn btn-ghost btn-xs btn-square tooltip" data-tip="下载" aria-label="下载" @click="download(item)"><ui-icon name="download" class="icon-sm"></ui-icon></button>
+                  <button type="button" class="btn btn-ghost btn-xs btn-square tooltip" data-tip="复制地址" aria-label="复制地址" @click="$copy(item.url)"><ui-icon name="link-2" class="icon-sm"></ui-icon></button>
+                  <button type="button" class="btn btn-ghost btn-xs btn-square tooltip text-danger" data-tip="删除" aria-label="删除" @click="remove({ paths: [item.rel] }, '删除图片', '删除后无法恢复。')"><ui-icon name="trash-2" class="icon-sm"></ui-icon></button>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <div class="table-wrap" x-show="view === 'table' && paged.length">
+            <table class="table table-sm">
+              <thead>
+                <tr>
+                  <th class="col-check"><input type="checkbox" class="checkbox checkbox-sm" aria-label="本页全选" :checked="pageSelected" @change="toggle(paged.map((item) => item.rel), $event.target.checked)"></th>
+                  <th>图片</th><th>名称</th><th>创建时间</th><th>尺寸</th><th>大小</th><th class="col-actions">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-for="item in paged" :key="item.rel">
+                  <tr>
+                    <td class="col-check"><input type="checkbox" class="checkbox checkbox-sm" :aria-label="'选择 ' + item.name" :checked="selected.includes(item.rel)" @change="toggle([item.rel], $event.target.checked)"></td>
+                    <td>
+                      <button type="button" class="thumb gallery-thumb-sm" :aria-label="'预览 ' + item.name" @click="preview(item)">
+                        <img :src="item.thumbnail_url" alt="" loading="lazy" @error="$el.src !== item.url && ($el.src = item.url)">
+                      </button>
+                    </td>
+                    <td class="gallery-name"><span class="mono copyable truncate" title="点击复制地址" x-text="item.name" @click="$copy(item.url)"></span></td>
+                    <td class="num text-muted nowrap" x-text="item.created_at"></td>
+                    <td class="num nowrap" x-text="item.width + ' × ' + item.height"></td>
+                    <td class="num nowrap" x-text="$bytes(item.size)"></td>
+                    <td class="col-actions">
+                      <button type="button" class="btn btn-ghost btn-sm btn-square tooltip" data-tip="预览" aria-label="预览" @click="preview(item)"><ui-icon name="maximize-2" class="icon-sm"></ui-icon></button>
+                      <button type="button" class="btn btn-ghost btn-sm btn-square tooltip" data-tip="下载" aria-label="下载" :disabled="busy" @click="download(item)"><ui-icon name="download" class="icon-sm"></ui-icon></button>
+                      <button type="button" class="btn btn-ghost btn-sm btn-square tooltip text-danger" data-tip="删除" aria-label="删除" :disabled="busy" @click="remove({ paths: [item.rel] }, '删除图片', `删除「${item.name}」后无法恢复。`)"><ui-icon name="trash-2" class="icon-sm"></ui-icon></button>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="center-fill" x-show="loading && !items.length"><span class="loading loading-spinner loading-sm"></span></div>
+          <div class="empty" x-show="!loading && !items.length"><ui-icon name="images"></ui-icon><span x-text="filtered ? '没有符合条件的图片' : '暂无图片'"></span></div>
+          <ui-pager x-show="items.length > 12" :page="page" :size="size" :total="items.length" sizes="12,24,48" @change="page = $event.detail.page; size = $event.detail.size"></ui-pager>
+        </section>
+      </div>
+
+      <dialog class="modal" x-effect="byDate.open ? $el.showModal() : $el.close()" @close="byDate.open = false">
+        <form class="modal-box vstack" @submit.prevent="removeByDate()">
+          <h3 class="modal-title">按日期删除</h3>
+          <div class="field">
+            <span class="field-label">删除这一天及之前的全部图片</span>
+            <ui-date placeholder="选择日期" x-model="byDate.date"></ui-date>
+          </div>
+          <div role="alert" class="alert alert-soft alert-warning"><ui-icon name="triangle-alert"></ui-icon><span>图片及缩略图会被永久删除，无法恢复。</span></div>
+          <div class="modal-action">
+            <button type="button" class="btn btn-sm" @click="byDate.open = false">取消</button>
+            <button type="submit" class="btn btn-sm btn-error" :disabled="!byDate.date || busy"><span class="loading loading-spinner loading-xs" x-show="busy === 'delete'"></span>删除</button>
+          </div>
+        </form>
+        <form method="dialog" class="modal-backdrop"><button>关闭</button></form>
+      </dialog>
+
+      <dialog class="modal" x-effect="cleanup.open ? $el.showModal() : $el.close()" @close="cleanup.open = false">
+        <form class="modal-box vstack" @submit.prevent="cleanupSpace()">
+          <h3 class="modal-title">清理空间</h3>
+          <label class="field">
+            <span class="field-label">目标剩余空间<span class="tooltip tooltip-right field-help" data-tip="从最早的图片开始删除，直到磁盘剩余空间达到目标值"><ui-icon name="info" class="icon-sm"></ui-icon></span></span>
+            <span class="input input-sm"><input type="number" x-model.number="cleanup.target"><span class="text-subtle">MB</span></span>
+          </label>
+          <div class="modal-action">
+            <button type="button" class="btn btn-sm" @click="cleanup.open = false">取消</button>
+            <button type="submit" class="btn btn-sm btn-error" :disabled="!cleanup.target || busy"><span class="loading loading-spinner loading-xs" x-show="busy === 'cleanup'"></span>开始清理</button>
+          </div>
+        </form>
+        <form method="dialog" class="modal-backdrop"><button>关闭</button></form>
+      </dialog>
+    </div>
+  </template>
+
+  <template id="page-logs">
+    <div class="page" x-data="logs">
+      <div class="page-head">
+        <h1 class="title-page">日志</h1>
+        <div class="row row-wrap">
+          <span class="logs-refresh" x-show="refreshedAt" x-text="'上次刷新 ' + refreshedAt"></span>
+          <ui-date class="logs-range" mode="range" placeholder="记录日期" x-model="range" @input="go(1, size)"></ui-date>
+          <label class="check-row"><input type="checkbox" class="toggle toggle-sm" x-model="auto">自动刷新</label>
+          <ui-select x-model="interval" :disabled="!auto">
+            <template x-for="value in ['3', '5', '10', '30', '60']" :key="value"><option :value="value" x-text="value + ' 秒'"></option></template>
+          </ui-select>
+          <button type="button" class="btn btn-ghost btn-sm btn-square tooltip tooltip-left" data-tip="刷新" aria-label="刷新" @click="load()"><ui-icon name="refresh-cw" class="icon-sm"></ui-icon></button>
+        </div>
+      </div>
+
+      <div class="vstack">
+        <div role="alert" class="alert alert-error alert-soft" x-show="error" x-cloak>
+          <ui-icon name="circle-x"></ui-icon><span>日志暂时无法更新：<span x-text="error"></span></span>
+        </div>
+
+        <section class="panel panel-flush">
+          <div class="panel-head" x-show="selected.length" x-cloak>
+            <span class="text-muted" x-text="'已选 ' + selected.length + ' 条'"></span>
+            <div class="row">
+              <button type="button" class="btn btn-ghost btn-sm" @click="selected = []">取消选择</button>
+              <button type="button" class="btn btn-sm btn-error btn-soft" @click="remove([...selected])"><ui-icon name="trash-2" class="icon-sm"></ui-icon>删除所选</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table table-sm">
+              <thead>
+                <tr>
+                  <th class="col-check"><input type="checkbox" class="checkbox checkbox-sm" aria-label="本页全选" :checked="pageSelected" :disabled="!items.length" @change="selected = $event.target.checked ? items.map((log) => log.id) : []"></th>
+                  <th>时间</th><th>令牌名称</th><th>进度</th><th>图片</th><th>Endpoint</th><th class="col-actions">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-for="log in items" :key="log.id">
+                  <tr>
+                    <td class="col-check"><input type="checkbox" class="checkbox checkbox-sm" aria-label="选择日志" :value="log.id" x-model="selected"></td>
+                    <td class="num text-muted nowrap" x-text="$time(log.time)"></td>
+                    <td class="nowrap" x-text="log.detail.key_name"></td>
+                    <td class="logs-progress">
+                      <div class="vstack vstack-xs">
+                        <div class="row">
+                          <ui-icon class="icon-sm" :class="status(log).tone + (log.detail.status === 'running' ? ' spin' : '')" :name="status(log).icon"></ui-icon>
+                          <span class="grow truncate" :title="log.detail.stage" x-text="log.detail.stage"></span>
+                          <span class="logs-duration num text-muted" x-text="$duration(duration(log))"></span>
+                          <span class="badge badge-sm badge-soft" :class="status(log).badge" x-text="status(log).label"></span>
+                        </div>
+                        <progress class="progress logs-bar" :class="status(log).bar" :value="log.detail.status === 'running' ? null : 100" max="100"></progress>
+                      </div>
+                    </td>
+                    <td>
+                      <div class="row row-xs" x-show="urls(log).length">
+                        <template x-for="(url, index) in urls(log).slice(0, 3)" :key="url">
+                          <button type="button" class="thumb logs-thumb" aria-label="查看图片" @click="preview(log, index)">
+                            <img :src="thumb(url)" alt="" loading="lazy" @error="$el.src !== url && ($el.src = url)">
+                          </button>
+                        </template>
+                        <span class="text-xs text-muted" x-show="urls(log).length > 3" x-text="'+' + (urls(log).length - 3)"></span>
+                      </div>
+                      <span class="text-subtle" x-show="!urls(log).length">—</span>
+                    </td>
+                    <td class="logs-endpoint"><span class="mono truncate" :title="log.detail.endpoint" x-text="log.detail.endpoint"></span></td>
+                    <td class="col-actions">
+                      <button type="button" class="btn btn-ghost btn-sm btn-square tooltip" data-tip="详情" aria-label="详情" @click="detail = log; detailTab = 'overview'"><ui-icon name="eye" class="icon-sm"></ui-icon></button>
+                      <button type="button" class="btn btn-ghost btn-sm btn-square tooltip tooltip-left text-danger" data-tip="删除" aria-label="删除" @click="remove([log.id])"><ui-icon name="trash-2" class="icon-sm"></ui-icon></button>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+          <div class="center-fill" x-show="loading"><span class="loading loading-spinner loading-sm"></span></div>
+          <div class="empty" x-show="!loading && !items.length"><ui-icon name="scroll-text"></ui-icon><span>暂无日志</span></div>
+          <ui-pager x-show="total > 10" :page="page" :size="size" :total="total" @change="go($event.detail.page, $event.detail.size)"></ui-pager>
+        </section>
+      </div>
+
+      <dialog class="modal" x-effect="detail ? $el.showModal() : $el.close()" @close="detail = null">
+        <div class="modal-box logs-modal">
+          <template x-if="detail">
+            <div class="vstack">
+              <div class="modal-head">
+                <h3 class="modal-title">调用详情</h3>
+                <div class="tabs tabs-box tabs-sm" role="tablist">
+                  <template x-for="[key, label] in [['overview', '概览'], ['events', '进度'], ['images', '图片'], ['raw', '原始数据']]" :key="key">
+                    <button type="button" role="tab" class="tab" :class="{ 'tab-active': detailTab === key }" x-show="key !== 'images' || urls(detail).length" @click="detailTab = key" x-text="label"></button>
+                  </template>
+                </div>
+                <button type="button" class="btn btn-ghost btn-sm btn-square" aria-label="关闭" @click="detail = null"><ui-icon name="x" class="icon-sm"></ui-icon></button>
+              </div>
+
+              <div class="vstack vstack-lg" x-show="detailTab === 'overview'">
+                <dl class="inline-stats">
+                  <div><dt>状态</dt><dd class="row row-xs"><ui-icon class="icon-sm" :class="status(detail).tone" :name="status(detail).icon"></ui-icon><span x-text="status(detail).title"></span></dd></div>
+                  <div><dt>阶段</dt><dd class="truncate" :title="detail.detail.stage" x-text="detail.detail.stage"></dd></div>
+                  <div><dt>耗时</dt><dd class="num" x-text="$duration(duration(detail))"></dd></div>
+                  <div><dt>进度节点</dt><dd class="num" x-text="detail.detail.events.length"></dd></div>
+                </dl>
+                <dl class="logs-overview">
+                  <div class="logs-item"><dt>日志 ID</dt><dd><span class="mono copyable" title="点击复制" x-text="detail.id" @click="$copy(detail.id)"></span></dd></div>
+                  <div class="logs-item"><dt>记录时间</dt><dd class="num" x-text="$time(detail.time)"></dd></div>
+                  <div class="logs-item" :class="{ 'logs-item-long': detail.summary.length > 24 }"><dt>日志简述</dt><dd x-text="detail.summary"></dd></div>
+                  <template x-for="[key, value] in scalars" :key="key">
+                    <div class="logs-item" :class="{ 'logs-item-long': String(value).length > 24 || String(value).includes('\n') }"><dt x-text="label(key)"></dt><dd class="pre-wrap" x-text="value"></dd></div>
+                  </template>
+                </dl>
+              </div>
+
+              <div x-show="detailTab === 'events'">
+                <div class="empty" x-show="!detail.detail.events.length"><ui-icon name="list-tree"></ui-icon>暂无进度记录</div>
+                <ol class="logs-steps">
+                  <template x-for="(event, index) in detail.detail.events" :key="index">
+                    <li class="logs-step">
+                      <ui-icon class="icon-sm logs-step-icon" :class="index === detail.detail.events.length - 1 ? status(detail).tone : 'text-success'" :name="index === detail.detail.events.length - 1 ? status(detail).icon : 'circle-check'"></ui-icon>
+                      <div class="logs-step-body">
+                        <div class="row row-between logs-step-head">
+                          <span class="text-strong" x-text="event.message"></span>
+                          <span class="text-xs text-muted num"><span x-text="event.time"></span><span class="logs-elapsed" x-text="$duration(event.elapsed_ms)"></span></span>
+                        </div>
+                        <dl class="kv logs-event-kv tile mono text-xs" x-show="Object.keys(event.detail ?? {}).some((key) => key !== 'position')">
+                          <template x-for="[key, value] in Object.entries(event.detail ?? {}).filter(([key]) => key !== 'position')" :key="key">
+                            <div class="logs-kv-row"><dt x-text="key"></dt><dd x-text="format(value)"></dd></div>
+                          </template>
+                        </dl>
+                      </div>
+                    </li>
+                  </template>
+                </ol>
+              </div>
+
+              <div class="logs-images" x-show="detailTab === 'images'">
+                <template x-for="(url, index) in urls(detail)" :key="url">
+                  <button type="button" class="thumb logs-image" aria-label="查看图片" @click="preview(detail, index)">
+                    <img :src="thumb(url)" alt="" loading="lazy" @error="$el.src !== url && ($el.src = url)">
+                  </button>
+                </template>
+              </div>
+
+              <pre class="code" x-show="detailTab === 'raw'" x-text="json"></pre>
+            </div>
+          </template>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>关闭</button></form>
+      </dialog>
+    </div>
+  </template>
+
+  <template id="page-settings">
+    <div class="page page-split" x-data="settings">
+      <div class="page-head">
+        <h1 class="title-page">设置</h1>
+        <div class="row" x-show="config">
+          <button type="button" class="btn btn-ghost btn-sm btn-square tooltip tooltip-left" data-tip="撤销未保存的修改" aria-label="撤销未保存的修改" :disabled="busy || !dirty" @click="undo()"><ui-icon name="rotate-ccw" class="icon-sm"></ui-icon></button>
+          <button type="button" class="btn btn-sm btn-primary" :disabled="busy || !dirty" @click="run('save', () => save())"><span class="loading loading-spinner loading-xs" x-show="busy === 'save'"></span>保存</button>
+        </div>
+      </div>
+
+      <div class="center-fill" x-show="!config"><span class="loading loading-spinner loading-sm"></span></div>
+
+      <template x-if="config">
+        <div class="settings-layout">
+          <nav class="settings-nav" aria-label="设置分组">
+            <template x-for="item in tabs" :key="item.key">
+              <button type="button" class="nav-item" :aria-current="tab === item.key ? 'page' : null" @click="tab = item.key"><span class="grow" x-text="item.label"></span><span class="nav-dot" x-show="isDirty(item.key)" aria-label="有未保存的修改"></span></button>
+            </template>
+          </nav>
+
+          <section class="settings-body">
+            <h2 class="settings-title" x-text="tabs.find((item) => item.key === tab).label"></h2>
+
+            <!-- 全局设置 -->
+            <div x-show="tab === 'global'">
+              <div class="setting-row">
+                <div class="setting-text"><div class="setting-name">生图模型名称</div><p class="setting-desc">对外提供的生图模型名称，留空使用 gpt-image-2.6。</p></div>
+                <input class="input input-sm mono" x-model="config.image_model_name" placeholder="gpt-image-2.6">
+              </div>
+              <div class="setting-row">
+                <div class="setting-text"><div class="setting-name">默认上游模型</div><p class="setting-desc">网页对话、网页生图和语音请求上游时使用的模型，auto 由上游自动选择。</p></div>
+                <input class="input input-sm mono" x-model="config.default_upstream_model_name" placeholder="auto">
+              </div>
+              <div class="setting-row">
+                <div class="setting-text"><div class="setting-name">默认思考强度</div><p class="setting-desc">模型名未指定思考强度时使用的级别。</p></div>
+                <div class="tabs tabs-box tabs-sm segmented"><template x-for="[value, label] in thinking"><button type="button" class="tab" :class="{ 'tab-active': config.default_thinking_effort === value }" @click="config.default_thinking_effort = value" x-text="label"></button></template></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-text"><div class="setting-name">Codex 生图模型</div><p class="setting-desc">Codex 线路生成图片时调用的模型。</p></div>
+                <input class="input input-sm mono" x-model="config.image_codex_model" placeholder="gpt-6-luna">
+              </div>
+              <div class="setting-row">
+                <div class="setting-text"><div class="setting-name">Codex 画图模型</div><p class="setting-desc">Codex 线路实际生成图片的画图工具所用模型。</p></div>
+                <input class="input input-sm mono" x-model="config.image_codex_image_model" placeholder="gpt-image-2.6">
+              </div>
+              <div class="setting-row setting-row-block">
+                <div class="setting-text"><div class="setting-name">全局附加指令</div><p class="setting-desc">每次请求都会作为系统指令附加在对话最前面。</p></div>
+                <textarea class="textarea textarea-sm" rows="8" x-model="config.global_system_prompt" placeholder="输入统一约束或角色设定"></textarea>
+              </div>
+            </div>
+
+            <!-- 账号维护 -->
+            <div x-show="tab === 'account'">
+              <div class="setting-row">
+                <div class="setting-text"><div class="setting-name">账号刷新间隔</div><p class="setting-desc">自动刷新账号额度与状态的频率。</p></div>
+                <label class="input input-sm"><input type="number" x-model.number="config.refresh_account_interval_minute"><span class="text-subtle">分钟</span></label>
+              </div>
+              <div class="setting-row">
+                <div class="setting-text"><div class="setting-name">自动移除异常账号</div><p class="setting-desc">账号失效或无法使用时从号池中移除。</p></div>
+                <div class="tabs tabs-box tabs-sm segmented"><template x-for="[value, label] in onOff"><button type="button" class="tab" :class="{ 'tab-active': config.auto_remove_invalid_accounts === value }" @click="config.auto_remove_invalid_accounts = value" x-text="label"></button></template></div>
+              </div>
+            </div>
+
+            <!-- 图片生成 -->
+            <div x-show="tab === 'image'">
+              <div class="setting-row">
+                <div class="setting-text"><div class="setting-name">图片访问地址</div><p class="setting-desc">生成图片结果链接使用的地址前缀。</p></div>
+                <input class="input input-sm" x-model="config.base_url" placeholder="https://example.com">
+              </div>
+              <template x-for="item in imageNumbers" :key="item.key">
+                <div class="setting-row">
+                  <div class="setting-text"><div class="setting-name" x-text="item.label"></div><p class="setting-desc" x-text="item.desc"></p></div>
+                  <label class="input input-sm"><input type="number" x-model.number="config[item.key]"><span class="text-subtle" x-text="item.unit"></span></label>
+                </div>
+              </template>
+              <div class="setting-row">
+                <div class="setting-text"><div class="setting-name">任务结束后移除本地对话</div><p class="setting-desc">图片任务完成、失败或超时后，隐藏对应的对话记录。</p></div>
+                <div class="tabs tabs-box tabs-sm segmented"><template x-for="[value, label] in onOff"><button type="button" class="tab" :class="{ 'tab-active': config.remove_conversation_after_result === value }" @click="config.remove_conversation_after_result = value" x-text="label"></button></template></div>
+              </div>
+            </div>
+
+            <!-- 图片存储 -->
+            <div x-show="tab === 'storage'">
+              <div class="setting-row">
+                <div class="setting-text"><div class="setting-name">保存位置</div><p class="setting-desc">生成的图片保存在本机、WebDAV 或同时保存。</p></div>
+                <div class="tabs tabs-box tabs-sm segmented"><template x-for="[value, label] in storageModes"><button type="button" class="tab" :class="{ 'tab-active': config.image_storage.mode === value }" @click="config.image_storage.mode = value; config.image_storage.enabled = value !== 'local'" x-text="label"></button></template></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-text"><div class="setting-name">WebDAV 地址</div><p class="setting-desc">WebDAV 服务的访问地址。</p></div>
+                <input class="input input-sm" x-model="config.image_storage.webdav_url" :disabled="config.image_storage.mode === 'local'" placeholder="https://example.com/dav">
+              </div>
+              <div class="setting-row">
+                <div class="setting-text"><div class="setting-name">用户名</div><p class="setting-desc">登录 WebDAV 使用的用户名。</p></div>
+                <input class="input input-sm" x-model="config.image_storage.webdav_username" :disabled="config.image_storage.mode === 'local'" autocomplete="off">
+              </div>
+              <div class="setting-row">
+                <div class="setting-text"><div class="setting-name">密码</div><p class="setting-desc">登录 WebDAV 使用的密码。</p></div>
+                <input type="password" class="input input-sm" x-model="config.image_storage.webdav_password" :disabled="config.image_storage.mode === 'local'" autocomplete="new-password">
+              </div>
+              <div class="setting-row">
+                <div class="setting-text"><div class="setting-name">远端目录</div><p class="setting-desc">图片在 WebDAV 中的保存目录。</p></div>
+                <input class="input input-sm" x-model="config.image_storage.webdav_root_path" :disabled="config.image_storage.mode === 'local'" placeholder="chatgpt2api/images">
+              </div>
+              <div class="setting-row">
+                <div class="setting-text"><div class="setting-name">公开访问前缀</div><p class="setting-desc">图片对外展示使用的地址前缀；不填写时通过本服务的 /images/ 地址访问。</p></div>
+                <input class="input input-sm" x-model="config.image_storage.public_base_url" :disabled="config.image_storage.mode === 'local'" placeholder="https://cdn.example.com/images">
+              </div>
+              <div class="setting-row">
+                <div class="setting-text"><div class="setting-name">连接与同步</div><p class="setting-desc">先保存当前设置，再测试连接或把本机已有图片补传到 WebDAV。</p></div>
+                <div class="vstack vstack-xs">
+                  <div class="row row-end">
+                    <button type="button" class="btn btn-sm" :disabled="busy || config.image_storage.mode === 'local'" @click="testStorage()"><span class="loading loading-spinner loading-xs" x-show="busy === 'test-storage'"></span><ui-icon name="cloud" class="icon-sm" x-show="busy !== 'test-storage'"></ui-icon>测试连接</button>
+                    <button type="button" class="btn btn-sm" :disabled="busy || config.image_storage.mode === 'local'" @click="syncStorage()"><span class="loading loading-spinner loading-xs" x-show="busy === 'sync'"></span><ui-icon name="refresh-cw" class="icon-sm" x-show="busy !== 'sync'"></ui-icon>全量同步</button>
+                  </div>
+                  <span class="text-xs text-right" :class="results.storage?.ok ? 'text-success' : 'text-danger'" x-show="results.storage" x-text="results.storage?.text"></span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 网络代理 -->
+            <div x-show="tab === 'proxy'">
+              <div class="setting-row">
+                <div class="setting-text"><div class="setting-name">全局代理</div><p class="setting-desc">未单独配置代理的账号统一使用该代理，支持 HTTP、HTTPS、SOCKS5。</p></div>
+                <div class="vstack vstack-xs">
+                  <div class="input-group">
+                    <input class="input input-sm" x-model="config.proxy" placeholder="http://127.0.0.1:7890" @input="results.proxy = null">
+                    <button type="button" class="btn btn-sm" :disabled="busy || !config.proxy" @click="testProxy()"><span class="loading loading-spinner loading-xs" x-show="busy === 'test-proxy'"></span>测试</button>
+                  </div>
+                  <span class="text-xs" :class="results.proxy?.ok ? 'text-success' : 'text-danger'" x-show="results.proxy" x-text="results.proxy?.text"></span>
+                </div>
+              </div>
+            </div>
+
+            <!-- FlareSolverr -->
+            <div x-show="tab === 'clearance'">
+              <div role="alert" class="alert alert-soft alert-warning settings-alert">
+                <ui-icon name="triangle-alert"></ui-icon>
+                <span>使用前需先启动 flaresolverr、privoxy、warp-proxy 容器。代理优先级：账号代理 &gt; 清障代理 &gt; 显式代理 &gt; 全局代理。</span>
+              </div>
+              <div class="setting-row">
+                <div class="setting-text"><div class="setting-name">启用清障</div><p class="setting-desc">请求被 Cloudflare 拦截时获取通行凭证后重试。</p></div>
+                <div class="tabs tabs-box tabs-sm segmented"><template x-for="[value, label] in onOff"><button type="button" class="tab" :class="{ 'tab-active': config.proxy_runtime.enabled === value }" @click="config.proxy_runtime.enabled = value" x-text="label"></button></template></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-text"><div class="setting-name">出站方式</div><p class="setting-desc">使用 WARP 部署时选择单代理 / WARP。</p></div>
+                <div class="tabs tabs-box tabs-sm segmented"><template x-for="[value, label] in egressModes"><button type="button" class="tab" :class="{ 'tab-active': config.proxy_runtime.egress_mode === value }" :disabled="!config.proxy_runtime.enabled" @click="config.proxy_runtime.egress_mode = value" x-text="label"></button></template></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-text"><div class="setting-name">清障代理地址</div><p class="setting-desc">支持 http、https、socks5；带认证可写成 协议://账号:密码@主机:端口。</p></div>
+                <div class="vstack vstack-xs">
+                  <div class="input-group">
+                    <input class="input input-sm" x-model="config.proxy_runtime.proxy_url" :disabled="!config.proxy_runtime.enabled || config.proxy_runtime.egress_mode !== 'single_proxy'" placeholder="http://privoxy:8118">
+                    <button type="button" class="btn btn-sm" :disabled="busy || !config.proxy_runtime.enabled" @click="testRuntimeProxy()"><span class="loading loading-spinner loading-xs" x-show="busy === 'test-runtime'"></span>测试</button>
+                  </div>
+                  <span class="text-xs" :class="results.runtime?.ok ? 'text-success' : 'text-danger'" x-show="results.runtime" x-text="results.runtime?.text"></span>
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-text"><div class="setting-name">资源代理地址</div><p class="setting-desc">下载图片等资源时使用的代理；不填写时使用清障代理。</p></div>
+                <input class="input input-sm" x-model="config.proxy_runtime.resource_proxy_url" :disabled="!config.proxy_runtime.enabled || config.proxy_runtime.egress_mode !== 'single_proxy'">
+              </div>
+              <div class="setting-row">
+                <div class="setting-text"><div class="setting-name">凭证获取方式</div><p class="setting-desc">手动填写 Cookie，或通过 FlareSolverr 自动获取。</p></div>
+                <div class="tabs tabs-box tabs-sm segmented"><template x-for="[value, label] in clearanceModes"><button type="button" class="tab" :class="{ 'tab-active': config.proxy_runtime.clearance.mode === value }" :disabled="!config.proxy_runtime.enabled" @click="config.proxy_runtime.clearance.mode = value" x-text="label"></button></template></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-text"><div class="setting-name">FlareSolverr 地址</div><p class="setting-desc">容器部署时通常为 http://flaresolverr:8191。</p></div>
+                <input class="input input-sm" x-model="config.proxy_runtime.clearance.flaresolverr_url" :disabled="!config.proxy_runtime.enabled || config.proxy_runtime.clearance.mode !== 'flaresolverr'" placeholder="http://flaresolverr:8191">
+              </div>
+              <template x-for="item in clearanceNumbers" :key="item.key">
+                <div class="setting-row">
+                  <div class="setting-text"><div class="setting-name" x-text="item.label"></div><p class="setting-desc" x-text="item.desc"></p></div>
+                  <label class="input input-sm"><input type="number" x-model.number="config.proxy_runtime.clearance[item.key]" :disabled="!config.proxy_runtime.enabled || config.proxy_runtime.clearance.mode === 'none'"><span class="text-subtle">秒</span></label>
+                </div>
+              </template>
+              <div class="setting-row setting-row-block">
+                <div class="setting-text"><div class="setting-name">User-Agent</div><p class="setting-desc">获取与使用通行凭证时携带的浏览器标识。</p></div>
+                <input class="input input-sm mono" x-model="config.proxy_runtime.clearance.user_agent" :disabled="!config.proxy_runtime.enabled || config.proxy_runtime.clearance.mode === 'none'">
+              </div>
+              <div class="setting-row setting-row-block">
+                <div class="setting-text"><div class="setting-name">手动 Cookie</div><p class="setting-desc" x-text="config.proxy_runtime.clearance.has_cf_cookies || config.proxy_runtime.clearance.has_cf_clearance ? '已保存过 Cookie，留空保存不会清除；保存后不再显示原值。' : '保存后不再显示原值。'"></p></div>
+                <textarea class="textarea textarea-sm mono" rows="3" x-model="config.proxy_runtime.clearance.cf_cookies" :disabled="!config.proxy_runtime.enabled || config.proxy_runtime.clearance.mode !== 'manual'" placeholder="foo=bar; cf_clearance=..."></textarea>
+              </div>
+              <div class="setting-row">
+                <div class="setting-text"><div class="setting-name">单独 cf_clearance</div><p class="setting-desc">只填写 cf_clearance 的值。</p></div>
+                <input class="input input-sm mono" x-model="config.proxy_runtime.clearance.cf_clearance" :disabled="!config.proxy_runtime.enabled || config.proxy_runtime.clearance.mode !== 'manual'">
+              </div>
+              <div class="setting-row">
+                <div class="setting-text"><div class="setting-name">测试获取凭证</div><p class="setting-desc">先保存当前设置，再对目标地址获取一次通行凭证。</p></div>
+                <div class="vstack vstack-xs">
+                  <div class="input-group">
+                    <input class="input input-sm" x-model="targetUrl" :disabled="!config.proxy_runtime.enabled || config.proxy_runtime.clearance.mode === 'none'">
+                    <button type="button" class="btn btn-sm" :disabled="busy || !config.proxy_runtime.enabled || config.proxy_runtime.clearance.mode === 'none'" @click="testClearance()"><span class="loading loading-spinner loading-xs" x-show="busy === 'test-clearance'"></span>测试</button>
+                  </div>
+                  <span class="text-xs" :class="results.clearance?.ok ? 'text-success' : 'text-danger'" x-show="results.clearance" x-text="results.clearance?.text"></span>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </template>
+    </div>
+  </template>
+
+  <template id="page-docs">
+    <div class="page docs" x-data="docs">
+      <nav class="docs-nav" aria-label="文档目录">
+        <div class="nav-group">开始使用</div>
+        <template x-for="[id, label] in guides" :key="id">
+          <button type="button" class="nav-item" :aria-current="active === id ? 'page' : null" x-text="label" @click="jump(id)"></button>
+        </template>
+        <div class="nav-group">接口</div>
+        <template x-for="(item, index) in docs" :key="item.path">
+          <button type="button" class="nav-item" :aria-current="active === 'endpoint-' + index ? 'page' : null" @click="jump('endpoint-' + index)">
+            <span class="docs-method mono" :class="item.method === 'GET' ? 'text-success' : 'text-muted'" x-text="item.method"></span>
+            <span class="truncate" x-text="item.title"></span>
+          </button>
+        </template>
+      </nav>
+
+      <article class="docs-body vstack vstack-lg">
+        <section id="overview" class="docs-section vstack vstack-md">
+          <div class="row">
+            <h1 class="title-page">接入说明</h1>
+            <span class="tooltip tooltip-right field-help" data-tip="第三方应用可通过 OpenAI 兼容协议调用模型、对话、搜索、图片生成及可编辑文件任务，所有接口使用统一地址和 Bearer Token 鉴权。"><ui-icon name="info" class="icon-sm"></ui-icon></span>
+          </div>
+          <div class="grid grid-2">
+            <div class="panel vstack vstack-xs">
+              <span class="field-label">服务地址</span>
+              <span class="mono copyable break-all" title="点击复制" x-text="base" @click="$copy(base)"></span>
+            </div>
+            <div class="panel vstack vstack-xs">
+              <span class="field-label">OpenAI Base URL</span>
+              <span class="mono copyable break-all" title="点击复制" x-text="base + '/v1'" @click="$copy(base + '/v1')"></span>
+            </div>
+          </div>
+        </section>
+
+        <section id="authentication" class="docs-section vstack vstack-md">
+          <div class="row">
+            <h2 class="title-section">身份认证</h2>
+            <span class="tooltip tooltip-right field-help" data-tip="每次请求在 Authorization Header 中携带 API Key。"><ui-icon name="info" class="icon-sm"></ui-icon></span>
+          </div>
+          <pre class="code copyable" title="点击复制" x-text="'Authorization: Bearer ' + key" @click="$copy('Authorization: Bearer ' + key)"></pre>
+        </section>
+
+        <section id="models" class="docs-section vstack vstack-md">
+          <div class="row">
+            <h2 class="title-section">可用模型</h2>
+          </div>
+          <div class="row row-wrap">
+            <template x-for="model in models" :key="model">
+              <ui-model :name="model"></ui-model>
+            </template>
+          </div>
+        </section>
+
+        <template x-for="(item, index) in docs" :key="item.path">
+          <section :id="'endpoint-' + index" class="docs-section vstack vstack-md">
+            <div class="vstack vstack-xs">
+              <h2 class="title-section" x-text="item.title"></h2>
+              <div class="row">
+                <span class="badge badge-sm badge-soft mono" :class="item.method === 'GET' ? 'badge-success' : 'badge-neutral'" x-text="item.method"></span>
+                <code class="mono text-muted break-all" x-text="item.path"></code>
+              </div>
+            </div>
+            <div class="grid grid-2">
+              <template x-for="[label, rows] in [['输入参数', item.input], ['输出参数', item.output]]" :key="label">
+                <div class="vstack vstack-sm">
+                  <h3 class="field-label" x-text="label"></h3>
+                  <div class="panel panel-flush">
+                    <div class="table-wrap">
+                      <table class="table table-sm">
+                        <thead><tr><th>参数</th><th>类型</th><th>说明</th></tr></thead>
+                        <tbody>
+                          <template x-for="[name, type, desc] in rows" :key="name">
+                            <tr><td class="mono nowrap" x-text="name"></td><td class="mono text-muted" x-text="type"></td><td class="text-muted" x-text="desc"></td></tr>
+                          </template>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </div>
+            <div class="vstack vstack-sm">
+              <h3 class="field-label">请求示例</h3>
+              <pre class="code copyable" title="点击复制" x-text="item.example(base, key)" @click="$copy(item.example(base, key))"></pre>
+            </div>
+          </section>
+        </template>
+      </article>
+    </div>
+  </template>
+</body>
+</html>
+
