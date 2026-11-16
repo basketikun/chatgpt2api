@@ -1,7 +1,7 @@
 <h1 align="center">ChatGPT2API</h1>
 
 
-<p align="center">ChatGPT2API 主要是对 ChatGPT 官网相关能力进行逆向整理与封装，提供面向 ChatGPT 图片生成、图片编辑、多图组图编辑场景的 OpenAI 兼容图片 API / 代理，并集成在线画图、号池管理、多种账号导入方式与 Docker 自托管部署能力。</p>
+<p align="center">ChatGPT2API 主要是对 ChatGPT 官网相关能力进行逆向整理与封装，提供面向 ChatGPT 图片生成、图片编辑、多图组图编辑场景的 OpenAI 兼容图片 API / 代理，并集成在线画图、号池管理、多种账号导入方式与 Docker 自托管部署能力。基于 Go 开发，支持高并发，内存占用极低，空闲时仅约 25MB。</p>
 
 > [!WARNING]
 > 免责声明：
@@ -63,77 +63,21 @@ cd chatgpt2api
 docker compose up -d
 ```
 
-启动前请先在 `config.json` 中设置 `auth-key`，也可以在 `docker-compose.yml` 中通过 `CHATGPT2API_AUTH_KEY` 覆盖。
+启动前请先在 `config.yaml` 中设置 `api-key`，也可以在 `.env` 中通过 `CHATGPT2API_AUTH_KEY` 覆盖。
 
 - Web 面板：`http://localhost:3000`
 - API 地址：`http://localhost:3000/v1`
 - 数据目录：`./data`
 
-### WARP / FlareSolverr 稳定代理部署
-
-如果图片链路经常遇到 Cloudflare 拦截，可以启用附带的 WARP + Privoxy + FlareSolverr 方案：
-
-```bash
-cp .env.example .env
-docker compose -f docker-compose.warp.yml up -d --build
-```
-
-该 compose 会启动：
-
-- `warp-proxy`：提供 WARP SOCKS5 出口。
-- `privoxy`：把 WARP SOCKS5 转成 HTTP 代理。
-- `flaresolverr`：刷新 Cloudflare clearance。
-- `init-config`：幂等写入 `proxy_runtime` 默认配置。
-- `app`：启动 ChatGPT2API 主服务。
-
-默认只让上游 OpenAI / ChatGPT 请求走稳定代理，账号邮箱、CPA 等辅助链路不会被强制接管。账号自身配置的代理优先级最高，其次是稳定代理运行时，再其次是显式代理和旧版全局代理。
-
-可在 `.env` 中调整端口和代理运行时参数，也可在后台设置页的「稳定代理运行时」面板手动保存、测试代理和测试 clearance。
-
 ### 本地开发
 
-启动后端：
-
 ```bash
-git clone git@github.com:basketikun/chatgpt2api.git
-cd chatgpt2api
-uv sync
-uv run main.py
+go run .
 ```
 
-启动前端：
+前端位于 `web/`，无需构建，服务启动后直接访问。
 
-```bash
-cd chatgpt2api/web
-bun install
-bun run dev
-```
-
-后续更新新版本：
-
-```bash
-docker pull ghcr.io/basketikun/chatgpt2api:latest
-docker-compose down
-docker-compose up -d
-
-```
-
-### 存储后端配置
-
-支持通过环境变量 `STORAGE_BACKEND` 切换存储方式：
-
-- `json` - 本地 JSON 文件（默认）
-- `sqlite` - 本地 SQLite 数据库
-- `postgres` - 外部 PostgreSQL（需配置 `DATABASE_URL`）
-- `git` - Git 私有仓库（需配置 `GIT_REPO_URL` 和 `GIT_TOKEN`）
-
-示例：使用 PostgreSQL
-
-```yaml
-environment:
-  - STORAGE_BACKEND=postgres
-  - DATABASE_URL=postgresql://user:password@host:5432/dbname
-```
+部署与升级见 [docs/deployment.md](docs/deployment.md)。
 
 ## 功能
 
@@ -141,26 +85,22 @@ environment:
 
 - 兼容 `POST /v1/images/generations` 图片生成接口
 - 兼容 `POST /v1/images/edits` 图片编辑接口
+- 兼容 `POST /v1/audio/speech` 语音合成接口（ChatGPT 官网 voice 模型）
+- 兼容 `POST /v1/audio/transcriptions` 语音转写接口
 - 兼容面向图片场景的 `POST /v1/chat/completions`
 - 兼容面向图片场景的 `POST /v1/responses`
-- `GET /v1/models` 返回 `gpt-image-2`、`codex-gpt-image-2`、`auto`、`gpt-5`、`gpt-5-1`、`gpt-5-2`、`gpt-5-3`、`gpt-5-3-mini`、
-  `gpt-5-mini`
+- `GET /v1/models` 汇总各账号可用的官方模型，常见值包括 `auto`、`gpt-6`、`gpt-6-mini`、`gpt-6-t-mini`、
+  `gpt-5-6`、`gpt-5-6-mini`、`gpt-5.6-terra-wm`、`gpt-5.6-luna-wm`、`research`，以及生图别名 `gpt-image-2.6`
 - 支持通过 `n` 返回多张生成结果
-- 支持生成可编辑 PPT 文件
-- 支持生成可编辑 PSD 文件
-- 支持 Codex 中的画图接口逆向，仅 `Plus` / `Team` / `Pro` 订阅可用，模型别名为 `codex-gpt-image-2`，如有需要可自行在其他场景映射回
-  `gpt-image-2`，用于和官网画图区分；也就意味着同一账号会同时有官网和 Codex 两份生图额度
+- 支持 Codex 中的画图接口逆向，仅 `Plus` / `Team` / `Pro` 订阅可用；对外仍统一使用 `gpt-image-2.6`，在用户密钥上选择订阅等级和线路（Web / Codex）决定走哪类账号，
+  同一账号会同时有官网和 Codex 两份生图额度；Codex 线路默认主控模型 `gpt-6-luna`、画图工具模型 `gpt-image-2.6`，可在设置页调整
 
-### 在线画图功能
+### 创作台
 
-- 内置在线画图工作台，支持生成、图片编辑与多图组图编辑
-- 支持 `gpt-image-2`、`codex-gpt-image-2`、`auto`、`gpt-5`、`gpt-5-1`、`gpt-5-2`、`gpt-5-3`、`gpt-5-3-mini`、`gpt-5-mini` 模型选择
-- 编辑模式支持参考图上传
-- 前端支持多图生成交互
-- 本地保存图片会话历史，支持回看、删除和清空
-- 支持服务端缓存图片URL
-- 图片生成进度追踪，超时后可继续等待
-- 图片懒加载与滚动位置记忆，优化大量图片场景性能
+- 内置创作台，支持对话（联网搜索、图片提问）、生图与图片编辑、语音合成与转写
+- 生图支持质量、尺寸、数量和参考图设置，任务可在后台继续并支持超时后继续等待
+- 创作记录保存在服务端，可回看、删除和清空
+- 非管理员密钥登录后直接进入创作台
 
 ### 号池管理功能
 
@@ -174,10 +114,6 @@ environment:
 - 支持搜索、筛选、批量刷新、导出、手动编辑和清理账号
 - 支持四种导入方式：本地 CPA JSON 文件导入、远程 CPA 服务器导入、`sub2api` 服务器导入、`access_token` 导入
 - 支持在设置页配置 `sub2api` 服务器，筛选并批量导入其中的 OpenAI OAuth 账号
-
-### 实验性 / 规划中
-
-- 详细状态说明见：[功能清单](./docs/feature-status.en.md)
 
 ## 效果展示
 
@@ -200,7 +136,7 @@ environment:
 所有 AI 接口都需要请求头：
 
 ```http
-Authorization: Bearer <auth-key>
+Authorization: Bearer <api-key>
 ```
 
 <details>
@@ -211,7 +147,7 @@ Authorization: Bearer <auth-key>
 
 ```bash
 curl http://localhost:8000/v1/models \
-  -H "Authorization: Bearer <auth-key>"
+  -H "Authorization: Bearer <api-key>"
 ```
 
 <details>
@@ -220,7 +156,7 @@ curl http://localhost:8000/v1/models \
 
 | 字段   | 说明                                                                                                         |
 |:-----|:-----------------------------------------------------------------------------------------------------------|
-| 返回模型 | `gpt-image-2`、`codex-gpt-image-2`、`auto`、`gpt-5`、`gpt-5-1`、`gpt-5-2`、`gpt-5-3`、`gpt-5-3-mini`、`gpt-5-mini` |
+| 返回模型 | 以 `/v1/models` 实时返回为准，常见 `auto`、`gpt-6`、`gpt-6-mini`、`gpt-5-6`、`gpt-5-6-mini`、`gpt-5.6-terra-wm`、`gpt-5.6-luna-wm`、`research`、`gpt-image-2.6` |
 | 接入场景 | 可接入 Cherry Studio、New API 等上游或客户端                                                                          |
 
 <br>
@@ -236,9 +172,9 @@ OpenAI 兼容图片生成接口，用于文生图。
 ```bash
 curl http://localhost:8000/v1/images/generations \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <auth-key>" \
+  -H "Authorization: Bearer <api-key>" \
   -d '{
-    "model": "gpt-image-2",
+    "model": "gpt-image-2.6",
     "prompt": "一只漂浮在太空里的猫",
     "n": 1,
     "response_format": "b64_json"
@@ -251,9 +187,11 @@ curl http://localhost:8000/v1/images/generations \
 
 | 字段                | 说明                                                 |
 |:------------------|:---------------------------------------------------|
-| `model`           | 图片模型，当前可用值以 `/v1/models` 返回结果为准，推荐使用 `gpt-image-2` |
+| `model`           | 图片模型，当前可用值以 `/v1/models` 返回结果为准，推荐使用 `gpt-image-2.6` |
 | `prompt`          | 图片生成提示词                                            |
 | `n`               | 生成数量，当前后端限制为 `1-4`                                 |
+| `size`            | 可选，如 `1024x1024`、`1536x1024`；会换算成上游的 `aspect_ratio` |
+| `quality`         | 可选，`auto` / `low` / `medium` / `high` 等，作为质量提示传给模型       |
 | `response_format` | 当前请求模型中包含该字段，默认值为 `b64_json`                       |
 
 <br>
@@ -268,8 +206,8 @@ OpenAI 兼容图片编辑接口，可上传图片文件，也可按官方 JSON �
 
 ```bash
 curl http://localhost:8000/v1/images/edits \
-  -H "Authorization: Bearer <auth-key>" \
-  -F "model=gpt-image-2" \
+  -H "Authorization: Bearer <api-key>" \
+  -F "model=gpt-image-2.6" \
   -F "prompt=把这张图改成赛博朋克夜景风格" \
   -F "n=1" \
   -F "image=@./input.png"
@@ -279,10 +217,10 @@ curl http://localhost:8000/v1/images/edits \
 
 ```bash
 curl http://localhost:8000/v1/images/edits \
-  -H "Authorization: Bearer <auth-key>" \
+  -H "Authorization: Bearer <api-key>" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "gpt-image-2",
+    "model": "gpt-image-2.6",
     "prompt": "把这张图改成赛博朋克夜景风格",
     "images": [
       {"image_url": "https://example.com/input.png"}
@@ -296,7 +234,7 @@ curl http://localhost:8000/v1/images/edits \
 
 | 字段          | 说明                                            |
 |:------------|:----------------------------------------------|
-| `model`     | 图片模型， `gpt-image-2`                           |
+| `model`     | 图片模型， `gpt-image-2.6`                           |
 | `prompt`    | 图片编辑提示词                                       |
 | `n`         | 生成数量，当前后端限制为 `1-4`                            |
 | `image`     | 需要编辑的图片文件，使用 multipart/form-data 上传           |
@@ -316,9 +254,9 @@ curl http://localhost:8000/v1/images/edits \
 ```bash
 curl http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <auth-key>" \
+  -H "Authorization: Bearer <api-key>" \
   -d '{
-    "model": "gpt-image-2",
+    "model": "gpt-image-2.6",
     "messages": [
       {
         "role": "user",
@@ -341,6 +279,7 @@ curl http://localhost:8000/v1/chat/completions \
 | `stream`             | 文本、搜索和图片场景均支持，仍在测试                                                           |
 | `tools`              | 文本场景支持 `web_search` / `web_search_preview` / `web_search_preview_2025_03_11` |
 | `web_search_options` | 传入时会触发网页搜索兼容逻辑                                                               |
+| `thinking_effort`    | 可选，按账号/模型透传 `low` / `medium` / `high` / `standard` / `extended` / `xhigh` / `max` / `ultra` 等档位；`auto` 表示不发送。不同套餐开放的档位不同 |
 
 <br>
 </details>
@@ -355,9 +294,9 @@ curl http://localhost:8000/v1/chat/completions \
 ```bash
 curl http://localhost:8000/v1/responses \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <auth-key>" \
+  -H "Authorization: Bearer <api-key>" \
   -d '{
-    "model": "gpt-5",
+    "model": "gpt-6",
     "input": "生成一张未来感城市天际线图片",
     "tools": [
       {
@@ -382,6 +321,67 @@ curl http://localhost:8000/v1/responses \
 </details>
 </details>
 
+<details>
+<summary><code>POST /v1/audio/speech</code></summary>
+<br>
+
+调用 ChatGPT 官网 voice 模型做语音合成，返回音频二进制。需要 `Plus` / `Team` / `Pro` 等带语音能力的登录态账号。
+
+```bash
+curl http://localhost:8000/v1/audio/speech \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <api-key>" \
+  -d '{
+    "model": "gpt-tts",
+    "input": "你好，这是一段语音合成的测试。",
+    "voice": "alloy",
+    "response_format": "mp3"
+  }' \
+  --output speech.mp3
+```
+
+<details>
+<summary>字段说明</summary>
+<br>
+
+| 字段                | 说明                                                                                                                     |
+|:------------------|:-----------------------------------------------------------------------------------------------------------------------|
+| `input`           | 要合成的文本，必填                                                                                                              |
+| `voice`           | 官网音色标识（`juniper`、`maple`、`cove`、`breeze`、`orbit`/Spruce、`glimmer`/Sol、`ember`、`fathom`/Arbor、`vale`）；也兼容 OpenAI 音色名（`alloy`、`ash`、`coral`、`echo`、`fable`、`onyx`、`nova`、`sage`、`shimmer`） |
+| `response_format` | 音频格式，默认 `mp3`                                                                                                           |
+| `email`           | 可选，指定使用号池中的某个账号                                                                                                        |
+
+<br>
+</details>
+</details>
+
+<details>
+<summary><code>POST /v1/audio/transcriptions</code></summary>
+<br>
+
+调用 ChatGPT 官网语音识别接口做转写，`multipart/form-data` 上传音频文件。
+
+```bash
+curl http://localhost:8000/v1/audio/transcriptions \
+  -H "Authorization: Bearer <api-key>" \
+  -F "file=@speech.mp3" \
+  -F "model=gpt-transcribe"
+```
+
+<details>
+<summary>说明</summary>
+<br>
+
+| 字段                | 说明                                       |
+|:------------------|:-----------------------------------------|
+| `file`            | 音频文件，必填                                  |
+| `response_format` | 传 `text` 时返回纯文本，默认返回 `{"text": "..."}`     |
+| `email`           | 可选，指定使用号池中的某个账号                          |
+
+<br>
+</details>
+</details>
+
 ## 社区支持
 
 学 AI , 上 L 站：[LinuxDO](https://linux.do)
@@ -397,3 +397,4 @@ curl http://localhost:8000/v1/responses \
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/chart?repos=basketikun/chatgpt2api&type=date&legend=top-left)](https://www.star-history.com/?repos=basketikun%2Fchatgpt2api&type=date&legend=top-left)
+
