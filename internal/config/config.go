@@ -25,6 +25,7 @@ type Config struct {
 	Cache          CacheSettings   `yaml:"chat_completion_cache" json:"chat_completion_cache"`
 	MaxUploadMB    int64           `yaml:"max_upload_mb" json:"max_upload_mb"`
 	Port           string          `yaml:"-" json:"-"`
+	Bind           string          `yaml:"-" json:"-"`
 	Version        string          `yaml:"-" json:"-"`
 	path           string
 	raw            map[string]any
@@ -118,6 +119,9 @@ func Load(path string) (*Config, error) {
 	if value := os.Getenv("PORT"); value != "" {
 		cfg.Port = value
 	}
+	// 监听地址。默认空 = 监听全部网卡(0.0.0.0)，与历史行为一致，Docker 部署不受影响。
+	// 需要收紧到回环时设 BIND_ADDR=127.0.0.1。
+	cfg.Bind = strings.TrimSpace(os.Getenv("BIND_ADDR"))
 	if data, err := os.ReadFile("VERSION"); err == nil && strings.TrimSpace(string(data)) != "" {
 		cfg.Version = strings.TrimSpace(string(data))
 	}
