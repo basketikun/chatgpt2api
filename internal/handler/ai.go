@@ -117,7 +117,7 @@ func (h *AIHandler) chat(c *gin.Context) {
 			}
 			c.Writer.WriteString("data: [DONE]\n\n")
 			c.Writer.Flush()
-			callLog.Save("命中缓存", "success", map[string]any{"cache": true})
+			callLog.Save("命中缓存", "success", nil)
 			return
 		}
 		id, created := service.NewID("chatcmpl-"), time.Now().Unix()
@@ -175,7 +175,7 @@ func (h *AIHandler) chat(c *gin.Context) {
 	var cached gin.H
 	if !search && h.service.CachedProtocol(cacheKey, false, &cached) {
 		c.JSON(http.StatusOK, cached)
-		callLog.Save("命中缓存", "success", map[string]any{"cache": true})
+		callLog.Save("命中缓存", "success", nil)
 		return
 	}
 	id, created := service.NewID("chatcmpl-"), time.Now().Unix()
@@ -284,7 +284,7 @@ func (h *AIHandler) responses(c *gin.Context) {
 				}
 				c.Writer.WriteString("data: [DONE]\n\n")
 				c.Writer.Flush()
-				callLog.Save("命中缓存", "success", map[string]any{"cache": true})
+				callLog.Save("命中缓存", "success", nil)
 				return
 			}
 		}
@@ -367,7 +367,7 @@ func (h *AIHandler) responses(c *gin.Context) {
 		var cached gin.H
 		if h.service.CachedProtocol(cacheKey, false, &cached) {
 			c.JSON(http.StatusOK, cached)
-			callLog.Save("命中缓存", "success", map[string]any{"cache": true})
+			callLog.Save("命中缓存", "success", nil)
 			return
 		}
 	}
