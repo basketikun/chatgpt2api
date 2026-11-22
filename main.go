@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"net"
 	"net/http"
 	"os/signal"
 	"syscall"
@@ -70,7 +71,7 @@ func main() {
 
 	scheduler := service.NewScheduler(accountService, imageService, taskService, logService, cfg)
 	scheduler.Run(ctx)
-	server := &http.Server{Addr: ":" + cfg.Port, Handler: engine, ReadHeaderTimeout: 10 * time.Second}
+	server := &http.Server{Addr: net.JoinHostPort(cfg.Bind, cfg.Port), Handler: engine, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
