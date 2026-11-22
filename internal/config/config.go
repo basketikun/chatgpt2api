@@ -2,6 +2,8 @@ package config
 
 import (
 	"errors"
+	"fmt"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -119,9 +121,14 @@ func Load(path string) (*Config, error) {
 	if value := os.Getenv("PORT"); value != "" {
 		cfg.Port = value
 	}
-	// 监听地址。默认空 = 监听全部网卡(0.0.0.0)，与历史行为一致，Docker 部署不受影响。
-	// 需要收紧到回环时设 BIND_ADDR=127.0.0.1。
-	cfg.Bind = strings.TrimSpace(os.Getenv("BIND_ADDR"))
+	// 监听地址。默认空 = 监听全部网卡(0.0.0.0)，与历史行为一致。
+	// 需要收紧到回环时设 BIND_ADDR=127.0.0.1；端口仍由 PORT 决定，不要写进 BIND_ADDR。
+	if value := strings.TrimSpace(os.Getenv("BIND_ADDR")); value != "" {
+		if err := validateBind(value); err != nil {
+			return nil, err
+		}
+		cfg.Bind = value
+	}
 	if data, err := os.ReadFile("VERSION"); err == nil && strings.TrimSpace(string(data)) != "" {
 		cfg.Version = strings.TrimSpace(string(data))
 	}
@@ -129,6 +136,21 @@ func Load(path string) (*Config, error) {
 		return nil, errors.New("请先在 config.yaml 或 CHATGPT2API_AUTH_KEY 中设置管理员密钥")
 	}
 	return cfg, nil
+}
+
+// validateBind 只接受裸的监听地址（IP 或主机名），端口必须通过 PORT 配置。
+// 否则 net.JoinHostPort 会把 "127.0.0.1:8080" 当成主机名，启动时只报难以理解的解析错误。
+func validateBind(value string) error {
+	if _, err := netip.ParseAddr(value); err == nil {
+		return nil
+	}
+	if strings.ContainsAny(value, ":/[]") {
+		return fmt.Errorf("BIND_ADDR 只填写监听地址（IP 或主机名），不要包含端口或方括号；端口请用 PORT 配置：%q", value)
+	}
+	if strings.ContainsAny(value, " \t\r\n%") {
+		return fmt.Errorf("BIND_ADDR 不是合法的监听地址：%q", value)
+	}
+	return nil
 }
 
 func (c *Config) Public() map[string]any {

@@ -26,6 +26,8 @@ docker compose up -d
 - 面板：`http://localhost:3000`
 - API：`http://localhost:3000/v1`
 
+仅允许本机访问时，把编排文件里的 `3000:80` 改成 `127.0.0.1:3000:80`；直接运行二进制则设置 `BIND_ADDR=127.0.0.1`（端口仍由 `PORT` 决定）。
+
 需要持久保留 `config.yaml`、`.env`、`data/`。数据库默认 SQLite（`data/chatgpt2api.db`），可通过 `.env` 的 `DATABASE_URL` 切换为 PostgreSQL / MySQL。
 
 ## WARP / FlareSolverr 稳定代理
