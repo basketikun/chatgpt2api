@@ -203,9 +203,11 @@ func (s *AIService) PrepareMessages(messages []map[string]any) []map[string]any 
 	return result
 }
 
-func (s *AIService) ProtocolCacheKey(body map[string]any, messages []map[string]any, stream bool) string {
+// ProtocolCacheKey 按接口协议分区缓存：/v1/chat/completions 与 /v1/responses
+// 归一化后的 messages 可能完全相同，key 里必须带协议，否则会互相命中对方的响应格式。
+func (s *AIService) ProtocolCacheKey(protocol string, body map[string]any, messages []map[string]any, stream bool) string {
 	keys := []string{"frequency_penalty", "max_completion_tokens", "max_tokens", "metadata", "model", "presence_penalty", "reasoning_effort", "response_format", "seed", "stop", "stream_options", "temperature", "thinking_effort", "tool_choice", "tools", "top_p", "user", "reasoning"}
-	payload := map[string]any{"messages": messages, "stream": stream}
+	payload := map[string]any{"protocol": protocol, "messages": messages, "stream": stream}
 	for _, key := range keys {
 		if value, ok := body[key]; ok {
 			payload[key] = value

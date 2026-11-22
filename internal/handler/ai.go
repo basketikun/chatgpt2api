@@ -107,7 +107,7 @@ func (h *AIHandler) chat(c *gin.Context) {
 		c.Writer.Flush()
 		return
 	}
-	cacheKey := h.service.ProtocolCacheKey(body, messages, stream)
+	cacheKey := h.service.ProtocolCacheKey("chat.completions", body, messages, stream)
 	if stream {
 		var cached []gin.H
 		if !search && h.service.CachedProtocol(cacheKey, true, &cached) {
@@ -271,7 +271,7 @@ func (h *AIHandler) responses(c *gin.Context) {
 		c.JSON(http.StatusOK, response)
 		return
 	}
-	cacheKey := h.service.ProtocolCacheKey(body, messages, stream)
+	cacheKey := h.service.ProtocolCacheKey("responses", body, messages, stream)
 	if stream {
 		if !search {
 			var cached []gin.H
