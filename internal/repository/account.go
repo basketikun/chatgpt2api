@@ -251,6 +251,31 @@ func (r *Repository) AcquireImageAccount(ctx context.Context, routes []string, p
 	return Account{}, false, nil
 }
 
+// ImageAccountAvailable 判断是否还有本次请求未尝试过、当前可用的图片账号。
+// 被并发占满但仍能轮到的账号算可用（调用方应继续等待）；已尝试过的账号不算，
+// 避免账号都试过一遍后还在空转。
+func (r *Repository) ImageAccountAvailable(ctx context.Context, routes []string, plans []string, attempted map[string]bool) (bool, error) {
+	db := r.db.WithContext(ctx).Model(&Account{}).Where("status = ? AND quota > 0", "正常")
+	if !slices.Contains(routes, "web") {
+		db = db.Where("is_codex = ?", true)
+	}
+	if len(plans) > 0 {
+		db = db.Where("type IN ?", plans)
+	}
+	if len(attempted) > 0 {
+		emails := make([]string, 0, len(attempted))
+		for email := range attempted {
+			emails = append(emails, email)
+		}
+		db = db.Where("email NOT IN ?", emails)
+	}
+	var count int64
+	if err := db.Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 func (r *Repository) ReleaseImageAccount(ctx context.Context, email string, success bool, now string) (Account, error) {
 	values := map[string]any{
 		"image_inflight": gorm.Expr("CASE WHEN image_inflight > 0 THEN image_inflight - 1 ELSE 0 END"),

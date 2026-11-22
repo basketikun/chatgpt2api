@@ -150,6 +150,13 @@ func (s *AccountService) ImageToken(ctx context.Context, routes []string, plans 
 			return "", err
 		}
 		if !acquired {
+			available, err := s.repo.ImageAccountAvailable(ctx, routes, plans, attempted)
+			if err != nil {
+				return "", err
+			}
+			if !available {
+				return "", fmt.Errorf("当前没有可用图片额度（已尝试 %d 个账号）", len(attempted))
+			}
 			select {
 			case <-ctx.Done():
 				return "", ctx.Err()
