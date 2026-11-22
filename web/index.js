@@ -98,11 +98,44 @@ function saveBlob(blob, name) {
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
+/** 生成唯一 ID。crypto.randomUUID 只在安全上下文（HTTPS、localhost）可用，HTTP 访问时降级。 */
+function uid() {
+  if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  if (globalThis.crypto?.getRandomValues) crypto.getRandomValues(bytes);
+  else for (let index = 0; index < bytes.length; index++) bytes[index] = Math.floor(Math.random() * 256);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/** 复制文本。navigator.clipboard 同样只在安全上下文可用，HTTP 访问时退回 execCommand。 */
+async function writeClipboard(text) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch {
+      // 权限被拒或页面不是安全上下文时退回下面的兜底方案
+    }
+  }
+  const area = Object.assign(document.createElement("textarea"), { value: text });
+  area.setAttribute("readonly", "");
+  area.style.position = "fixed";
+  area.style.opacity = "0";
+  document.body.append(area);
+  area.select();
+  const copied = document.execCommand("copy");
+  area.remove();
+  if (!copied) throw new Error("当前浏览器不支持复制，请手动选择文本复制");
+}
+
 /* ---------- 反馈 ---------- */
 /** 只在失败、需要等待或需要用户处理时调用，成功状态由界面变化体现。 */
 function toast(text, type = "error", icon = "") {
   const store = Alpine.store("toast");
-  const item = { id: crypto.randomUUID(), text, type, icon };
+  const item = { id: uid(), text, type, icon };
   store.items.push(item);
   setTimeout(() => store.items.splice(store.items.indexOf(item), 1), type === "error" ? 6000 : 4000);
 }
@@ -119,7 +152,7 @@ function lightbox(images, index) {
 
 /** 复制文本，并让触发元素短暂高亮作为反馈。 */
 async function copyText(text, el) {
-  await navigator.clipboard.writeText(text);
+  await writeClipboard(text);
   el.animate([{ background: "var(--color-success-soft)" }, { background: "transparent" }], { duration: 800 });
 }
 
@@ -153,7 +186,7 @@ customElements.define("ui-model", class extends HTMLElement {
     const name = this.getAttribute("name");
     this.innerHTML = `<button type="button" class="model-chip" title="点击复制"><ui-icon name="openai" class="icon-sm"></ui-icon><span class="truncate"></span></button>`;
     this.querySelector("span").textContent = name;
-    this.firstChild.onclick = () => navigator.clipboard.writeText(name).then(() => toast(`已复制 ${name}`, "success", "openai"), (error) => toast(error.message));
+    this.firstChild.onclick = () => writeClipboard(name).then(() => toast(`已复制 ${name}`, "success", "openai"), (error) => toast(error.message));
   }
 });
 
@@ -505,7 +538,7 @@ const running = (part) => part.status === "queued" || part.status === "running";
 const imagePart = (task, index, total, ratio) => ({ type: "image_task", task_id: String(task.id), index, total, ratio, status: task.status, progress: task.progress, elapsed_seconds: task.elapsed_seconds, duration_ms: task.duration_ms, url: task.results[0]?.url, error: task.error });
 const userContent = (text, images) => images.length ? [...(text ? [{ type: "text", text }] : []), ...images.map((image) => ({ type: "image_url", image_url: { url: image.url } }))] : text;
 const sizeOf = (settings) => settings.ratio === "auto" ? "auto" : ratios.find(([value]) => value === settings.ratio).slice(1, 3).join("x");
-const fromUrl = async (url, name) => ({ id: crypto.randomUUID(), name, url, file: await urlToFile(url, name) });
+const fromUrl = async (url, name) => ({ id: uid(), name, url, file: await urlToFile(url, name) });
 
 /** 创作模式：每个模式对应的记录类型，第一个为默认类型。 */
 const creationModes = [
@@ -693,7 +726,7 @@ Alpine.data("chat", () => {
         const images = await Promise.all([...files].map(async (file) => {
           if (!file.type.startsWith("image/")) throw new Error(`${file.name} 不是图片文件`);
           if (file.size > 10 * 1024 * 1024) throw new Error(`${file.name} 超过 10MB`);
-          return { id: crypto.randomUUID(), name: file.name, url: await readDataUrl(file), file };
+          return { id: uid(), name: file.name, url: await readDataUrl(file), file };
         }));
         this.images.push(...images);
       } catch (error) {
