@@ -1075,7 +1075,9 @@ func writeImageError(c *gin.Context, err error) {
 	}
 	message := err.Error()
 	lower := strings.ToLower(message)
-	if strings.Contains(lower, "backend-api/") || strings.Contains(lower, "status=") || strings.Contains(lower, "body=") || strings.Contains(lower, "chatgpt.com") || strings.Contains(lower, "upstreamhttperror") {
+	if code == "upstream_prepare_rejected" {
+		message = "The upstream rejected the conversation preparation request. Try again with fewer reference images, or retry later."
+	} else if strings.Contains(lower, "backend-api/") || strings.Contains(lower, "status=") || strings.Contains(lower, "body=") || strings.Contains(lower, "chatgpt.com") || strings.Contains(lower, "upstreamhttperror") {
 		message = "The image generation request failed. Please try again later."
 	}
 	c.JSON(status, gin.H{"error": gin.H{"message": message, "type": errorType, "param": param, "code": code}})

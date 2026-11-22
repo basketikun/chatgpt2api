@@ -213,6 +213,11 @@ func (u *OpenAIBackendAPI) prepareConversation(ctx context.Context, model string
 	return *result.ConduitToken, nil
 }
 
+// prepareMaxUploadIDs 是 prepare 接口能接受的 upload ID 上限。3 个及以上会返回
+// 422 Invalid conversation body（#426）；该字段只是预检提示，正式会话消息里
+// 仍然携带全部附件，因此超过上限时整体省略。
+const prepareMaxUploadIDs = 2
+
 func preparePayload(model string, hints []string, mimeTypes []string, uploadIDs []string) map[string]any {
 	body := map[string]any{"client_prepare_state": "sent", "action": "next", "model": model, "parent_message_id": "client-created-root", "timezone": "Asia/Shanghai", "timezone_offset_min": -480, "is_do_not_remember": false, "local_function_names": []string{"local.continue_in_work"}, "client_prepare_dispatch": "debounced", "client_prepare_source": "composer_editor_state"}
 	if len(hints) > 0 {
@@ -221,7 +226,7 @@ func preparePayload(model string, hints []string, mimeTypes []string, uploadIDs 
 	if len(mimeTypes) > 0 {
 		body["attachment_mime_types"] = mimeTypes
 	}
-	if len(uploadIDs) > 0 {
+	if len(uploadIDs) > 0 && len(uploadIDs) <= prepareMaxUploadIDs {
 		body["prepare_image_upload_ids"] = uploadIDs
 	}
 	return body

@@ -14,6 +14,7 @@ import (
 	"image/draw"
 	"image/png"
 	"math"
+	"net/http"
 	"slices"
 	"strconv"
 	"strings"
@@ -323,7 +324,7 @@ func (s *AIService) generateImage(ctx context.Context, request ImageRequest, cal
 	if err != nil {
 		imageErr := newImageError(err)
 		imageErr.ConversationID, imageErr.AccountEmail = conversationID, email
-		return ImageResult{}, imageErr.Code != "content_policy_violation", imageErr
+		return ImageResult{}, imageRetryable(imageErr), imageErr
 	}
 	stored, err := s.images.Save(ctx, data, request.BaseURL)
 	if err != nil {
@@ -402,6 +403,11 @@ func newImageError(err error) *ImageError {
 	if errors.As(err, &imageErr) {
 		return imageErr
 	}
+	// 上游 prepare 接口对会话准备参数返回 400/422 时与账号无关，换号重试没有意义。
+	var upstreamErr *chatgpt.UpstreamHTTPError
+	if errors.As(err, &upstreamErr) && upstreamErr.Context == "/backend-api/f/conversation/prepare" && (upstreamErr.StatusCode == http.StatusBadRequest || upstreamErr.StatusCode == http.StatusUnprocessableEntity) {
+		return &ImageError{Err: err, Status: http.StatusUnprocessableEntity, Type: "invalid_request_error", Code: "upstream_prepare_rejected"}
+	}
 	message := strings.ToLower(err.Error())
 	if strings.Contains(message, "图片额度") || strings.Contains(message, "no available") && strings.Contains(message, "image quota") {
 		return &ImageError{Err: errors.New("no available image quota"), Status: 429, Type: "insufficient_quota", Code: "insufficient_quota"}
@@ -410,6 +416,11 @@ func newImageError(err error) *ImageError {
 		return &ImageError{Err: err, Status: 400, Type: "invalid_request_error", Code: "content_policy_violation"}
 	}
 	return &ImageError{Err: err, Status: 502, Type: "server_error", Code: "upstream_error"}
+}
+
+// imageRetryable 判断换账号重试是否有意义：内容违规和上游准备参数被拒绝都与账号无关。
+func imageRetryable(err *ImageError) bool {
+	return err.Code != "content_policy_violation" && err.Code != "upstream_prepare_rejected"
 }
 
 func imageValue(values []string, index int, fallback string) string {
